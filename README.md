@@ -1,28 +1,53 @@
 # VocalCompass
 
-VocalCompass 是一个 AI 个性化跟唱教练 Demo。它不只给用户一个分数，而是比较原唱和用户的演唱差异，指出具体问题，给出可执行的建议，并支持单句重练和长期弱点记忆。
+VocalCompass 是一个 AI 个性化跟唱教练。
 
-## 项目结构
+它不只是告诉你唱了多少分，而是帮助你完成完整的练习闭环：
 
 ```text
-server/   FastAPI 后端、音频分析管线、差异诊断和用户记忆
-web/      React + TypeScript + Vite 移动端网页
-tests/    后端测试
+唱歌
+  ↓
+发现问题
+  ↓
+理解问题
+  ↓
+单句重练
+  ↓
+看到改善
+  ↓
+记住长期弱点
 ```
 
-## 为什么使用 SQLite
+## 产品能力
 
-当前目标是十天左右完成一个稳定、可演示的产品闭环，而不是立即部署成多人在线生产系统。SQLite 适合这个阶段，原因是：
+- 上传一首歌曲，分析原唱的人声、音高、旋律和歌词时间轴
+- 跟唱时查看原唱与用户的音高差异
+- 识别偏高、偏低、抢拍、拖拍、长音提前结束等问题
+- 用容易理解的语言解释问题，并给出下一遍的练习建议
+- 点击“练这一句”，完成听原唱、跟唱、分析、反馈的单句练习循环
+- 记录长期反复出现的弱点，生成历史趋势和个性化练习方向
+- 英文歌曲支持连读、重音、弱读和词间停顿提示
 
-- 不需要额外启动 PostgreSQL 或 MySQL 服务，安装和演示成本低。
-- 一个数据库文件就能保存歌曲分析结果、练习记录、问题记录和用户弱点。
-- Python 标准库和 FastAPI 生态支持成熟，开发速度快。
-- 本地 Demo、单用户或少量并发时性能足够。
-- 后续可以通过 Repository 层迁移到 PostgreSQL，不需要改变前端 API 和核心业务模型。
+## 项目状态
 
-SQLite 不是最终生产数据库方案。如果未来需要多用户、高并发、云端部署、复杂检索或多实例运行，应迁移到 PostgreSQL。当前阶段优先保证音频分析和“发现问题 → 单句重练 → 看见改善”的产品闭环。
+当前是 Demo 初始框架阶段：
 
-## 后端启动
+- 后端基础 API 已完成
+- 音频上传接口已完成
+- Song Profile 和诊断数据模型已建立
+- 前端 Vite 页面骨架已建立
+- Demucs、Pitch 模型和 WhisperX 尚未接入
+
+## 技术栈
+
+- 前端：React、TypeScript、Vite
+- 后端：Python、FastAPI
+- 数据存储：Demo 阶段使用 SQLite
+- 音频分析：计划接入 Demucs、Pitch 模型和 WhisperX
+
+## 快速启动
+
+### 启动后端
 
 需要 Python 3.11 或更高版本。
 
@@ -34,42 +59,12 @@ Copy-Item .env.example .env
 uvicorn server.main:app --reload
 ```
 
-启动后访问：
+后端启动后：
 
-- API 文档：`http://127.0.0.1:8000/docs`
-- 健康检查：`http://127.0.0.1:8000/api/v1/health`
+- API 文档：http://127.0.0.1:8000/docs
+- 健康检查：http://127.0.0.1:8000/api/v1/health
 
-运行测试和静态检查：
-
-```powershell
-pytest
-ruff check server tests
-```
-
-## 当前后端接口
-
-### 健康检查
-
-```text
-GET /api/v1/health
-```
-
-### 上传歌曲并创建分析任务
-
-```text
-POST /api/v1/songs/analyze
-Content-Type: multipart/form-data
-```
-
-表单字段：
-
-- `audio`：MP3、WAV 或 FLAC 文件
-- `title`：可选，歌曲名称
-- `lyrics`：可选，歌词文本
-
-当前接口会校验并持久化音频，返回 `queued` 状态的分析任务。下一步由音频 Worker 接入人声分离、Pitch 提取、歌词对齐和 Song Profile 生成。
-
-## 前端启动
+### 启动前端
 
 需要 Node.js 20 或更高版本。
 
@@ -79,21 +74,31 @@ npm install
 npm run dev
 ```
 
-前端默认运行在 `http://localhost:5173`，并将 `/api` 请求代理到后端 `http://127.0.0.1:8000`。
+前端地址：http://localhost:5173
 
-## 音频模型接入原则
+前端会自动把 `/api` 请求转发到本地 FastAPI 后端。
 
-基础依赖没有强制安装 Demucs、WhisperX 或具体 Pitch 模型。这些模型可能需要较大的下载量、系统音频库或 GPU 环境。模型应该通过 `server/pipelines/contracts.py` 中的接口接入：
+## 上传歌曲接口
 
 ```text
-歌曲音频
-→ 人声分离
-→ 原唱 Pitch / Note
-→ 歌词和词级时间对齐
-→ 英文连读、重音等演唱提示
-→ Song Profile
+POST /api/v1/songs/analyze
 ```
 
-这样可以替换模型而不改变 API 和前端业务流程。
+使用 `multipart/form-data` 上传：
+
+- `audio`：MP3、WAV 或 FLAC 文件
+- `title`：可选的歌曲名称
+- `lyrics`：可选的歌词文本
+
+当前接口会保存音频并返回一个排队中的分析任务。后续音频分析模块会继续生成 Song Profile。
+
+## 开发检查
+
+在项目根目录运行：
+
+```powershell
+pytest
+ruff check server tests
+```
 
 
