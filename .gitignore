@@ -8,7 +8,7 @@ __pycache__/
 .coverage
 htmlcov/
 data/
-models/
+/models/
 *.wav
 *.mp3
 *.flac
