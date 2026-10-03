@@ -14,6 +14,7 @@ class AnalysisStatus(StrEnum):
 
 class AnalysisJob(BaseModel):
     job_id: str
+    song_id: str
     status: AnalysisStatus
     title: str
     has_lyrics: bool

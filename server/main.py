@@ -11,7 +11,7 @@ from server.config import get_settings
 async def lifespan(_: FastAPI):
     settings = get_settings()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    (settings.data_dir / "uploads").mkdir(exist_ok=True)
+    (settings.data_dir / "jobs").mkdir(exist_ok=True)
     yield
 
 

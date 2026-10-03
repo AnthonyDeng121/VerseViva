@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     api_prefix: str = "/api/v1"
     data_dir: Path = Path("data")
     cors_origins: list[str] = ["http://localhost:5173"]
+    max_upload_size_bytes: int = 100 * 1024 * 1024
 
     model_config = SettingsConfigDict(
         env_file=".env",
