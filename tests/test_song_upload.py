@@ -34,6 +34,11 @@ def test_upload_creates_independent_ids_and_isolated_task_directory(upload_clien
     assert payload["has_lyrics"] is True
     saved_audio = data_dir / "jobs" / payload["job_id"] / "input" / "source.mp3"
     assert saved_audio.read_bytes() == b"ID3-valid-demo"
+    assert (saved_audio.parents[1] / "job.json").is_file()
+
+    query_response = client.get(f"/api/v1/songs/jobs/{payload['job_id']}")
+    assert query_response.status_code == 200
+    assert query_response.json() == payload
 
 
 @pytest.mark.parametrize(
@@ -72,3 +77,10 @@ def test_recognized_extension_accepts_generic_browser_content_type(upload_client
     )
 
     assert response.status_code == 202
+
+
+def test_missing_or_malformed_job_id_returns_404(upload_client) -> None:
+    client, _ = upload_client
+
+    assert client.get("/api/v1/songs/jobs/job_00000000000000000000000000000000").status_code == 404
+    assert client.get("/api/v1/songs/jobs/not-a-job-id").status_code == 404

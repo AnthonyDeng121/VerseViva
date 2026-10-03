@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -12,12 +12,34 @@ class AnalysisStatus(StrEnum):
     failed = "failed"
 
 
+class AnalysisStage(StrEnum):
+    queued = "queued"
+    separating_vocals = "separating_vocals"
+    extracting_pitch = "extracting_pitch"
+    aligning_lyrics = "aligning_lyrics"
+    building_profile = "building_profile"
+    completed = "completed"
+    failed = "failed"
+
+
+class AnalysisError(BaseModel):
+    code: str
+    stage: AnalysisStage
+    message: str
+    detail: str | None = None
+
+
 class AnalysisJob(BaseModel):
     job_id: str
     song_id: str
     status: AnalysisStatus
+    stage: AnalysisStage = AnalysisStage.queued
+    progress: int = Field(default=0, ge=0, le=100)
     title: str
     has_lyrics: bool
+    error: AnalysisError | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class SongProfileModel(BaseModel):

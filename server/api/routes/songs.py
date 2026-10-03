@@ -5,6 +5,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 
 from server.config import get_settings
 from server.models.song import AnalysisJob, AnalysisStatus
+from server.storage.job_store import JobStore
 
 router = APIRouter()
 CHUNK_SIZE = 1024 * 1024
@@ -71,11 +72,21 @@ async def analyze_song(
         job_dir.rmdir()
         raise
 
-    # The worker pipeline will consume this durable upload in the next milestone.
-    return AnalysisJob(
+    # The worker pipeline will update this persisted state in the next milestone.
+    job = AnalysisJob(
         job_id=job_id,
         song_id=song_id,
         status=AnalysisStatus.queued,
         title=(title or Path(audio.filename or "Untitled").stem).strip() or "Untitled",
         has_lyrics=bool(lyrics and lyrics.strip()),
     )
+    JobStore(settings.data_dir).save(job)
+    return job
+
+
+@router.get("/jobs/{job_id}", response_model=AnalysisJob)
+async def get_analysis_job(job_id: str) -> AnalysisJob:
+    job = JobStore(get_settings().data_dir).get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Analysis job not found")
+    return job
