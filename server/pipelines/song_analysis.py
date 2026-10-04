@@ -4,19 +4,17 @@ from pathlib import Path
 from server.config import Settings
 from server.models.song import (
     AnalysisError,
-    AnalysisMetadata,
     AnalysisStage,
     AnalysisStatus,
     AudioAssets,
     LyricsSource,
-    SongProfile,
-    VocalRange,
 )
 from server.pipelines.audio_probe import AudioDurationProbe, FfprobeAudioDurationProbe
 from server.pipelines.basic_pitch import BasicPitchAdapter, convert_basic_pitch_csv
 from server.pipelines.contracts import LyricsAligner, PitchExtractor, VocalSeparator
 from server.pipelines.demucs import DemucsAdapter
 from server.pipelines.whisperx import WhisperXAdapter, convert_whisperx_json
+from server.services.song_profile_builder import build_song_profile
 from server.storage.job_store import JobStore
 from server.storage.profile_store import ProfileStore
 
@@ -76,28 +74,7 @@ class SongAnalysisPipeline:
 
             self._advance(job, AnalysisStage.building_profile)
             duration = await self.duration_probe.duration_seconds(source)
-            sentences = []
-            for sentence in alignment.sentences:
-                sentence_notes = [
-                    note
-                    for note in notes
-                    if note.end_seconds >= sentence.start_seconds
-                    and note.start_seconds <= sentence.end_seconds
-                ]
-                sentences.append(sentence.model_copy(update={"notes": sentence_notes}))
-
-            vocal_range = None
-            if notes:
-                lowest = min(notes, key=lambda note: note.midi)
-                highest = max(notes, key=lambda note: note.midi)
-                vocal_range = VocalRange(
-                    lowest_midi=lowest.midi,
-                    highest_midi=highest.midi,
-                    lowest_note=lowest.note_name,
-                    highest_note=highest.note_name,
-                )
-
-            profile = SongProfile(
+            profile = build_song_profile(
                 song_id=job.song_id,
                 title=job.title,
                 duration_seconds=duration,
@@ -106,16 +83,14 @@ class SongAnalysisPipeline:
                     source_url=f"/api/v1/songs/{job.song_id}/audio/source",
                     vocal_url=f"/api/v1/songs/{job.song_id}/audio/vocals",
                 ),
-                vocal_range=vocal_range,
-                sentences=sentences,
-                analysis=AnalysisMetadata(
-                    pipeline_version=PIPELINE_VERSION,
-                    separation_model=self.separation_model,
-                    pitch_model=self.pitch_model,
-                    alignment_model=self.alignment_model,
-                    lyrics_source=LyricsSource.asr,
-                    created_at=datetime.now(UTC),
-                ),
+                sentences=alignment.sentences,
+                notes=notes,
+                pipeline_version=PIPELINE_VERSION,
+                separation_model=self.separation_model,
+                pitch_model=self.pitch_model,
+                alignment_model=self.alignment_model,
+                lyrics_source=LyricsSource.asr,
+                created_at=datetime.now(UTC),
             )
             self.profile_store.save(profile)
             self._advance(job, AnalysisStage.completed, AnalysisStatus.completed)
