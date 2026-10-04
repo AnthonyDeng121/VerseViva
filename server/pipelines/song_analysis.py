@@ -10,7 +10,7 @@ from server.models.song import (
     LyricsSource,
 )
 from server.pipelines.audio_probe import AudioDurationProbe, FfprobeAudioDurationProbe
-from server.pipelines.basic_pitch import BasicPitchAdapter, convert_basic_pitch_csv
+from server.pipelines.basic_pitch import BasicPitchAdapter, convert_basic_pitch_contour
 from server.pipelines.contracts import LyricsAligner, PitchExtractor, VocalSeparator
 from server.pipelines.demucs import DemucsAdapter
 from server.pipelines.whisperx import WhisperXAdapter, convert_whisperx_json
@@ -18,7 +18,7 @@ from server.services.song_profile_builder import build_song_profile
 from server.storage.job_store import JobStore
 from server.storage.profile_store import ProfileStore
 
-PIPELINE_VERSION = "day2-v1"
+PIPELINE_VERSION = "day3-reference-pitch-v1"
 STAGE_PROGRESS = {
     AnalysisStage.separating_vocals: 10,
     AnalysisStage.extracting_pitch: 40,
@@ -64,7 +64,10 @@ class SongAnalysisPipeline:
             pitch_artifacts = await self.pitch_extractor.extract(
                 separation.vocals, job_dir / "pitch"
             )
-            notes = convert_basic_pitch_csv(pitch_artifacts.note_events_csv)
+            pitch_conversion = convert_basic_pitch_contour(
+                pitch_artifacts.note_events_csv,
+                pitch_artifacts.model_output_npz,
+            )
 
             self._advance(job, AnalysisStage.aligning_lyrics)
             alignment_artifacts = await self.lyrics_aligner.align(
@@ -84,7 +87,9 @@ class SongAnalysisPipeline:
                     vocal_url=f"/api/v1/songs/{job.song_id}/audio/vocals",
                 ),
                 sentences=alignment.sentences,
-                notes=notes,
+                notes=pitch_conversion.notes,
+                pitch_points=pitch_conversion.pitch_points,
+                pitch_processing=pitch_conversion.summary,
                 pipeline_version=PIPELINE_VERSION,
                 separation_model=self.separation_model,
                 pitch_model=self.pitch_model,

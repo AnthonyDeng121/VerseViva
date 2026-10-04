@@ -142,6 +142,20 @@ class LyricsSource(StrEnum):
     corrected = "corrected"
 
 
+class PitchProcessingSummary(SongProfileModel):
+    source: str
+    fallback_used: bool = False
+    fallback_reason: str | None = None
+    raw_note_count: int = Field(ge=0)
+    accepted_note_count: int = Field(ge=0)
+    rejected_note_count: int = Field(ge=0)
+    raw_pitch_point_count: int = Field(ge=0)
+    output_pitch_point_count: int = Field(ge=0)
+    confidence_threshold: float = Field(ge=0, le=1)
+    minimum_note_duration_seconds: float = Field(ge=0)
+    octave_corrections: int = Field(ge=0)
+
+
 class AnalysisMetadata(SongProfileModel):
     pipeline_version: str
     separation_model: str
@@ -149,6 +163,7 @@ class AnalysisMetadata(SongProfileModel):
     alignment_model: str
     lyrics_source: LyricsSource
     created_at: datetime
+    pitch_processing: PitchProcessingSummary | None = None
 
 
 class SongProfile(SongProfileModel):

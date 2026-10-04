@@ -134,6 +134,11 @@ def test_pipeline_builds_and_persists_song_profile(tmp_path: Path) -> None:
     assert profile.vocal_range.lowest_note == "C4"
     assert profile.vocal_range.highest_note == "E4"
     assert len(profile.sentences[0].notes) == 2
+    assert len(profile.sentences[0].pitch_contour) == 3
+    assert profile.analysis.pitch_processing is not None
+    assert profile.analysis.pitch_processing.output_pitch_point_count == 4
+    assert profile.analysis.pitch_processing.fallback_used is True
+    assert profile.analysis.pipeline_version == "day3-reference-pitch-v1"
     assert profile.analysis.pitch_model == "fake-pitch"
 
 

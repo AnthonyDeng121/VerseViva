@@ -9,6 +9,7 @@ description = "AI personalized singing coach demo"
 requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115,<1",
+  "numpy>=1.26,<3",
   "pydantic-settings>=2.6,<3",
   "python-multipart>=0.0.12,<1",
   "uvicorn[standard]>=0.32,<1",
