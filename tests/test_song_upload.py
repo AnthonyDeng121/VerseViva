@@ -6,6 +6,10 @@ from fastapi.testclient import TestClient
 from server.api.routes import songs as songs_route
 from server.config import get_settings
 from server.main import app
+from server.models.song import AnalysisError, AnalysisStage, AnalysisStatus
+from server.storage.job_store import JobStore
+from server.storage.profile_store import ProfileStore
+from tests.test_song_profile_schema import make_profile
 
 
 @pytest.fixture
@@ -115,3 +119,75 @@ def test_upload_starts_automatic_pipeline(
             tmp_path / "jobs" / response.json()["job_id"] / "input" / "source.mp3",
         )
     ]
+
+
+def test_api_exposes_model_failure_after_background_pipeline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FailingPipeline:
+        def __init__(self, data_dir: Path):
+            self.store = JobStore(data_dir)
+
+        async def run(self, job_id: str, source: Path) -> None:
+            job = self.store.get(job_id)
+            assert job is not None
+            job.status = AnalysisStatus.failed
+            job.stage = AnalysisStage.failed
+            job.progress = 10
+            job.error = AnalysisError(
+                code="separating_vocals_failed",
+                stage=AnalysisStage.separating_vocals,
+                message="歌曲分析没有完成，请稍后重试。",
+                detail="simulated Demucs failure",
+            )
+            self.store.save(job)
+
+    monkeypatch.setenv("VOCALCOMPASS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("VOCALCOMPASS_AUTO_RUN_ANALYSIS_PIPELINE", "true")
+    monkeypatch.setattr(
+        songs_route,
+        "build_default_pipeline",
+        lambda settings: FailingPipeline(settings.data_dir),
+    )
+    get_settings.cache_clear()
+    with TestClient(app) as client:
+        upload = client.post(
+            "/api/v1/songs/analyze",
+            files={"audio": ("demo.mp3", b"ID3-demo", "audio/mpeg")},
+        )
+        queried = client.get(f"/api/v1/songs/jobs/{upload.json()['job_id']}")
+    get_settings.cache_clear()
+
+    assert upload.status_code == 202
+    assert queried.status_code == 200
+    payload = queried.json()
+    assert payload["status"] == "failed"
+    assert payload["stage"] == "failed"
+    assert payload["error"]["code"] == "separating_vocals_failed"
+    assert payload["error"]["stage"] == "separating_vocals"
+    assert payload["error"]["message"] == "歌曲分析没有完成，请稍后重试。"
+    assert "Demucs" in payload["error"]["detail"]
+
+
+def test_song_profile_query_returns_saved_profile(upload_client) -> None:
+    client, data_dir = upload_client
+    song_id = "song_0123456789abcdef0123456789abcdef"
+    profile = make_profile().model_copy(update={"song_id": song_id})
+    ProfileStore(data_dir).save(profile)
+
+    response = client.get(f"/api/v1/songs/{song_id}")
+
+    assert response.status_code == 200
+    assert response.json()["songId"] == song_id
+    assert response.json()["schemaVersion"] == "1.0"
+    assert response.json()["sentences"][0]["words"][0]["text"] == "I"
+
+
+def test_missing_or_malformed_song_profile_returns_404(upload_client) -> None:
+    client, _ = upload_client
+
+    missing = client.get("/api/v1/songs/song_00000000000000000000000000000000")
+    malformed = client.get("/api/v1/songs/not-a-song-id")
+
+    assert missing.status_code == 404
+    assert malformed.status_code == 404
