@@ -30,20 +30,33 @@ VocalCompass 是一个 AI 个性化跟唱教练。
 
 ## 项目状态
 
-当前是 Demo 初始框架阶段：
+当前已完成 Day 2 后端核心链路的真实验收，正在进入 Day 3「Reference Visualization」：
 
-- 后端基础 API 已完成
-- 音频上传接口已完成
-- Song Profile 和诊断数据模型已建立
-- 前端 Vite 页面骨架已建立
-- Demucs、Pitch 模型和 WhisperX 尚未接入
+- 已接入 Demucs `htdemucs`，可生成原唱人声与伴奏分离结果
+- 已接入 Basic Pitch，可生成 Note Event CSV、MIDI 和模型原始 NPZ
+- 已接入 WhisperX，可生成句级、词级歌词与时间戳
+- 已完成歌曲上传、任务状态查询、失败信息持久化和 Song Profile 查询 API
+- 已通过真实音频跑通 `上传 → 分离人声 → 提取 Pitch → 对齐歌词 → 生成 Song Profile`
+- Song Profile、PitchPoint、Note、Sentence、WordTiming 和诊断数据模型已建立
+- 前端目前仍是 Vite 页面骨架，上传、任务进度和 Song Profile 页面尚待接入
+
+Day 3 后端重点是将模型原始输出转换为可靠、轻量、可供前端绘制的参考数据：
+
+1. 从 Basic Pitch 模型输出生成真实的连续 `PitchPoint[]`
+2. 过滤静音、低置信度、极短音符和明显的八度误判，并适度平滑
+3. 根据清洗后的有效数据计算音名、音域和句级 Pitch 摘要
+4. 记录清洗前后统计，保留 Debug 可追溯性
+5. 控制 Song Profile JSON 的数据量，避免把原始 NPZ 直接传给浏览器
+6. 建立 Difference Engine v0 的纯函数接口和合成测试数据
 
 ## 技术栈
 
 - 前端：React、TypeScript、Vite
 - 后端：Python、FastAPI
 - 数据存储：Demo 阶段使用 SQLite
-- 音频分析：计划接入 Demucs、Pitch 模型和 WhisperX
+- 音频分析：Demucs、Basic Pitch、WhisperX
+
+当前模型 Pipeline 已在 WSL2 Ubuntu、Python 3.11、FFmpeg 和 CPU 推理环境下验证。手机端只运行 React H5，并通过 HTTPS 调用后端；手机不需要安装这些模型或 WSL。
 
 ## 快速启动
 
@@ -90,7 +103,25 @@ POST /api/v1/songs/analyze
 - `title`：可选的歌曲名称
 - `lyrics`：可选的歌词文本
 
-当前接口会保存音频并返回一个排队中的分析任务。后续音频分析模块会继续生成 Song Profile。
+接口会保存音频并返回一个排队中的分析任务。当自动分析配置开启时，后台会依次执行 Demucs、Basic Pitch、WhisperX，并最终生成 Song Profile。
+
+当前版本虽然接收 `lyrics` 字段，但歌词 Pipeline 仍使用 WhisperX ASR 结果，Song Profile 的 `lyricsSource` 保持为 `asr`；用户歌词/LRC 校正流程尚未实现。
+
+## 查询分析结果
+
+查询任务状态：
+
+```text
+GET /api/v1/songs/jobs/{job_id}
+```
+
+任务完成后查询 Song Profile：
+
+```text
+GET /api/v1/songs/{song_id}
+```
+
+任务状态包含 `queued`、`processing`、`completed` 和 `failed`。处理中会进一步报告人声分离、Pitch 提取、歌词对齐和 Profile 构建等真实阶段。
 
 ## 开发检查
 
