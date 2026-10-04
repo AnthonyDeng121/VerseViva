@@ -18,7 +18,15 @@ class BasicPitchAdapter:
         if not vocal_audio.is_file():
             raise FileNotFoundError(f"Vocal audio does not exist: {vocal_audio}")
         output_dir.mkdir(parents=True, exist_ok=True)
-        await self.runner.run([self.executable, str(output_dir), str(vocal_audio)])
+        await self.runner.run(
+            [
+                self.executable,
+                "--save-note-events",
+                "--save-model-outputs",
+                str(output_dir),
+                str(vocal_audio),
+            ]
+        )
 
         base_name = f"{vocal_audio.stem}_basic_pitch"
         artifacts = PitchArtifacts(

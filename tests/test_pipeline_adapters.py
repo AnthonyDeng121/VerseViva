@@ -61,7 +61,12 @@ def test_basic_pitch_adapter_returns_all_three_artifacts(tmp_path: Path) -> None
     assert result.note_events_csv.name == "vocals_basic_pitch.csv"
     assert result.midi.name == "vocals_basic_pitch.mid"
     assert result.model_output_npz.name == "vocals_basic_pitch.npz"
-    assert runner.commands[0][1:] == [str(output_dir), str(vocal_audio)]
+    assert runner.commands[0][1:] == [
+        "--save-note-events",
+        "--save-model-outputs",
+        str(output_dir),
+        str(vocal_audio),
+    ]
 
 
 def test_whisperx_adapter_supports_language_hint(tmp_path: Path) -> None:
