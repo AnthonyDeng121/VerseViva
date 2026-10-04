@@ -179,7 +179,7 @@ def test_song_profile_query_returns_saved_profile(upload_client) -> None:
 
     assert response.status_code == 200
     assert response.json()["songId"] == song_id
-    assert response.json()["schemaVersion"] == "1.0"
+    assert response.json()["schemaVersion"] == "1.1"
     assert response.json()["sentences"][0]["words"][0]["text"] == "I"
 
 

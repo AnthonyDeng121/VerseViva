@@ -20,7 +20,7 @@
 
 ## 1.2 一句话
 
-**VerseViva 是一个 AI 外语歌曲演唱教练，帮助用户听懂原唱如何把语言放进旋律里，并通过逐句反馈真正唱出来。**
+**VerseViva 是一个 AI 外语歌曲演唱教练，帮助用户看见并听懂原唱在真实演唱中如何省略、合并或改变声音，再通过逐句反馈真正唱出来。**
 
 品牌表达：
 
@@ -34,10 +34,10 @@
 
 用户可能认识歌词、查过音标，音准也基本正确，但唱出来仍然“不像歌”：
 
-- 每个词彼此断开，像逐词朗读
-- 重音位置不对，整句没有推进感
-- 功能词唱得过重、过长
-- 吞音、弱读、连读只会模仿，无法理解
+- 知道原唱“吞了音”，却不知道具体是哪个字母或音素没有释放
+- 把跨词的相同辅音发了两遍，听起来生硬
+- 听到连读后的新声音，却无法还原它由哪两个音融合而来
+- 只会模仿吞音、合并、同化等现象，不理解嘴唇、舌位和气流动作
 - 知道自己“不像原唱”，却不知道具体差在哪里
 - 看完提示以后没有逐句重练，也无法确认第二遍是否改善
 
@@ -79,20 +79,39 @@ VerseViva：原唱怎样把这句话唱进旋律，你实际唱成了什么，�
 
 ### Language in music
 
-分析对象不是脱离旋律的标准口语，而是语言在歌曲中的真实处理：
+分析对象不是脱离旋律的标准口语规则，而是某一版原唱中实际可听见、可定位、可模仿的语流变化：
 
-- linking：词与词如何连接
-- stress：句中哪些词或音节被突出
-- reduction：功能词如何缩短、弱化
-- elision：哪些音可能被省略或融合
-- phrase timing：歌词如何占据旋律时值
-- phrasing：一整句如何连续表达，而不是逐词拼接
+- consonant elision：具体哪个辅音在本次演唱中没有清楚出现
+- unreleased stop：辅音形成闭塞但没有独立释放
+- identical consonant merging：跨词的相同辅音共享一次发音动作
+- coalescent assimilation：相邻音融合成新的听感，例如 `/t/ + /j/` 接近 `/tʃ/`
+- resyllabification：前词尾音进入下一词的起始动作
+- vowel linking：元音边界出现可观察的连接动作
+- phrase timing / pitch / energy：只作为定位、对齐和验证上述现象的辅助证据
+
+“两个词时间上挨得近”不自动等于连读；只有跨词边界发生了可描述、可模仿的发音动作共享或音变，才显示连读类标记。日常口语里的“功能词必弱读、内容词必重读”不得直接作为歌曲诊断规则；`can` 可以因本次旋律被突出，`want` 也可以被快速带过。
+
+### 双层教学界面
+
+演唱主界面只显示歌词与语言无关的字符标记，不在歌词行旁直接堆叠中文标签：
+
+```text
+bad  bad‿do  you  want‿me
+  ×    └─┘          ×
+```
+
+- `×`：对应字母或音素在本次原唱中没有清楚出现或释放
+- `‿`：跨词发生连续的发音动作；不能仅凭时间接近添加
+- `└─┘`：两个字符或音素共享、合并或融合为一个动作
+- 其他符号必须在设计系统中有唯一、稳定的含义
+
+用户展开某一句或点击标记后，才显示中文解释、发音动作和下一遍练习建议。标记层与解释层必须在 Schema 中分离，以便未来韩语等语言复用同一套交互，而不把中文写死在歌词渲染中。
 
 ### 不同不等于错误
 
 原唱是参考演绎，不是唯一正确答案。必须区分：
 
-- 可观察问题：不必要的词间停顿、重音位置明显偏离、歌词漏唱、起止时机偏离
+- 可观察问题：目标音是否出现或释放、相邻音是否发生合并或融合、用户是否额外发出了参考演唱中没有的音、歌词漏唱、起止时机偏离
 - 风格差异：音色、力度、尾音、真假声或情绪处理不同
 
 对风格差异只能描述，不得使用“唱错了”。
@@ -122,31 +141,32 @@ LLM 只能解释已有事实，不得凭感觉生成毫秒、cents、音素准�
 - 人声分离结果
 - 句级、词级时间轴
 - 旋律与 Note/Pitch 参考
-- 候选连读、重读、弱读与乐句提示
+- 候选省音、未释放、相同辅音合并、融合音变与再音节化提示
 - 可播放和可解释的 Song Language Profile
 
 ## 3.2 AI 能听见用户真正唱出来的语言差异
 
 第一版优先识别：
 
-- `linking_gap`：应连续的词之间出现明显停顿
-- `stress_mismatch`：突出位置与参考演唱明显不同
-- `function_word_overemphasis`：功能词相对过重或过长
-- `phrase_timing_early`
-- `phrase_timing_late`
-- `lyric_omission`：可靠时才输出
+- `expected_elision_realized`：参考中未清楚出现的音，用户进行了独立释放
+- `identical_consonants_separated`：参考中共享一次动作的同辅音，用户发成两次
+- `coalescent_assimilation_missing`：参考中发生融合的相邻音，用户仍逐个发出；可靠时才输出
+- `target_phoneme_omitted`：参考中清楚存在的目标音被用户遗漏；可靠时才输出
+- `insufficient_data`：音素证据不足、伴奏遮蔽或对齐不可靠时诚实返回
+
+词间间隔、时值、能量和 Pitch 可以继续计算，但只用于定位音素窗口、置信度控制和辅助解释，不能单独把“间隔小”包装成连读。
 
 音高差异继续计算，但只用于对齐、置信度控制和辅助解释，不作为首页核心卖点。
 
 ## 3.3 AI 能教用户改一处具体问题
 
 ```text
-发现 with‿you 中间断开
+发现 want 的 `t` 在参考中未清楚释放，而用户单独弹出了 `t`
 → 听原唱
 → 0.75× 慢速听
 → 只练这一小段
 → 用户再唱
-→ 比较词间停顿或连续性
+→ 比较同一个目标音的释放证据
 → 明确显示 improved / unchanged / regressed / insufficient_data
 ```
 
@@ -156,9 +176,9 @@ LLM 只能解释已有事实，不得凭感觉生成毫秒、cents、音素准�
 
 ```json
 {
-  "linkingGap": {"count": 6, "recentImprovement": 0.34},
-  "stressMismatch": {"count": 4},
-  "functionWordOveremphasis": {"count": 5}
+  "consonantElision": {"count": 6, "recentImprovement": 0.34},
+  "identicalConsonantMerging": {"count": 4},
+  "coalescentAssimilation": {"count": 5}
 }
 ```
 
@@ -176,11 +196,11 @@ Memory 只能从真实 PracticeAttempt 聚合，不得虚构用户进步。
 
 ## Step 2：理解原唱
 
-用户看到的是教学标记，而不是声学工程数据：
+用户首先看到的是字符标记，而不是中文标签或声学工程数据：
 
 ```text
-I wanna‿be WITH‿YOU toNIGHT
-       连读      连读       重音
+bad  bad‿do  you  want‿me
+  ×    └─┘          ×
 ```
 
 支持：
@@ -189,7 +209,7 @@ I wanna‿be WITH‿YOU toNIGHT
 - 慢速听
 - 只听人声
 - 按句循环
-- 点击提示查看简短解释
+- 点击标记或展开句子后查看中文解释、发音动作与练习建议
 
 ## Step 3：跟唱与录制
 
@@ -206,7 +226,7 @@ I wanna‿be WITH‿YOU toNIGHT
 
 示例：
 
-> `with you` 原唱几乎一口气带过；你在两个词之间停顿约 180ms，所以听起来更像逐词朗读。
+> `want` 的 `t` 在参考演唱中没有清楚释放；你单独弹出了这个音。下一遍唱完 `wan-` 后直接闭唇进入 `me`。
 
 每条问题必须包含：
 
@@ -265,7 +285,7 @@ Song Audio
                   │                       │
           ┌───────┼────────┐              │
           ↓       ↓        ↓              ↓
-       Pitch   Energy   Alignment      Text/G2P
+       Pitch   Energy   Alignment      G2P/phonology
           │       │        │              │
           └───────┴────────┴──────┬───────┘
                                   ↓
@@ -289,15 +309,17 @@ Song Audio
 算法或音频模型负责：
 
 - 词和句子的开始、结束时间
-- 词间无声或低能量间隔
-- 时值比例
+- 目标音素窗口、辅音闭塞与释放候选
+- 音素的存在、缺失、合并与融合证据
+- 词间无声或低能量间隔（辅助证据）
+- 时值比例（辅助证据）
 - 起音和句段边界
 - Pitch、Note、能量等辅助特征
 - 用户与参考的可比较帧
 
 LLM 负责：
 
-- 根据歌词提出候选语言现象
+- 根据歌词、G2P 与语言规则提出候选音变，不得直接确认声学事实
 - 用初学者能懂的中文解释结构化事实
 - 生成下一遍的动作建议
 - 结合历史弱点调整建议优先级
@@ -330,17 +352,36 @@ LLM 负责：
       "id": "sentence_01",
       "startSeconds": 12.4,
       "endSeconds": 16.2,
-      "lyrics": "I wanna be with you tonight",
+      "lyrics": "How bad bad do you want me",
       "words": [],
       "pitchContour": [],
       "languageHints": [
         {
-          "type": "linking",
-          "startWordIndex": 3,
-          "endWordIndex": 4,
-          "display": "with‿you",
+          "id": "hint_want_t",
+          "type": "consonant_elision",
+          "startWordIndex": 5,
+          "endWordIndex": 6,
+          "startSeconds": 14.1,
+          "endSeconds": 14.5,
           "source": "human_curated",
           "confidence": 0.95,
+          "underlyingPhonemes": ["t"],
+          "observedPhonemes": [],
+          "marks": [
+            {
+              "symbol": "×",
+              "startCharIndex": 22,
+              "endCharIndex": 22,
+              "placement": "below"
+            }
+          ],
+          "details": [
+            {
+              "locale": "zh-CN",
+              "explanation": "原唱没有清楚释放 want 末尾的 t。",
+              "action": "唱完 wan 后直接闭唇进入 me，不要额外弹出 t。"
+            }
+          ],
           "evidence": {}
         }
       ]
@@ -353,15 +394,16 @@ LLM 负责：
 
 ```json
 {
-  "type": "linking_gap",
+  "type": "expected_elision_realized",
   "sentenceId": "sentence_01",
   "startWordIndex": 3,
   "endWordIndex": 4,
   "startSeconds": 14.1,
   "endSeconds": 14.7,
   "metrics": {
-    "referenceGapMs": 24,
-    "userGapMs": 182
+    "phoneme": "t",
+    "referenceReleaseConfidence": 0.12,
+    "userReleaseConfidence": 0.86
   },
   "severity": "medium",
   "confidence": 0.88,
@@ -425,8 +467,8 @@ LLM 负责：
 - 原速、慢速、人声与按句循环播放
 - 麦克风录制用户演唱
 - 用户词级时间对齐
-- `linking_gap` 检测
-- 至少一种重音或时值差异检测
+- 至少一种目标辅音的“参考未清楚释放、用户独立释放”检测
+- 至少一种跨词音素合并或融合的结构化标记
 - 结构化 Language Issue
 - 单句重练
 - 前后两遍使用同一指标比较
@@ -434,8 +476,8 @@ LLM 负责：
 
 ## P1 — 强化差异化
 
-- reduction / function-word overemphasis
-- phrase timing
+- 更多省音、未释放、相同辅音合并与融合音变
+- phrase timing（只作为音变定位与练习的辅助能力）
 - 用户长期弱点与趋势
 - 今日练习建议
 - 自动生成候选语言提示并人工快速校正
@@ -443,8 +485,8 @@ LLM 负责：
 
 ## P2 — 后续探索
 
-- 细粒度音素纠音
-- 日语、韩语、粤语等语言
+- 全量音素准确率评分
+- 韩语等语言的音变规则与 G2P Adapter（复用字符标记 + 展开详情 Schema）
 - 情绪和风格模仿
 - 音色、真假声、声区
 - 社区、分享、排行
@@ -512,14 +554,14 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
 
 - 完成品牌、README、Schema 与代码命名迁移
 - 确定英文 Hero Song 和 2–3 个目标句
-- 人工标注这些句子的 linking / stress / reduction 候选
-- 从参考人声中测量词间间隔、词时值和能量包络
-- 制作一个“连读 vs 明显停顿”的合成或人工录制对照
+- 人工标注这些句子中具体字母/音素的省略、未释放、相同辅音合并与融合音变候选
+- 从参考人声中定位目标音素窗口，检查闭塞、释放、能量与频谱证据
+- 制作一个“参考音变处理 vs 逐字母清楚发音”的合成或人工录制对照
 
 验收：
 
-- 至少一个 `with‿you` 类样例能输出可检查的 reference/user gap 指标
-- 指标与音频听感方向一致
+- 至少一个 `want‿me` 类样例能定位到具体字符，并输出可检查的目标音释放证据
+- 标记和指标与音频听感方向一致
 - 没有使用 LLM 虚构数值
 
 ## Day 2 — Song Language Profile
@@ -543,9 +585,9 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
 目标：用户能在手机上看懂并听懂原唱的一句。
 
 - 歌词逐词渲染与播放高亮
-- linking、stress、reduction 的视觉表达
+- `×`、`‿`、合并桥等纯字符标记的视觉表达，歌词主界面不直接显示中文标签
 - 原速、0.75×、只听人声、按句循环
-- 点击提示显示一句人话解释
+- 点击标记或展开句子后才显示中文解释与发音动作
 - 参考 Pitch 降为辅助视图，不占据首页中心
 
 验收：
@@ -572,15 +614,15 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
 
 目标：稳定检测最小的差异化能力。
 
-- 实现 `linking_gap`
-- 实现 `phrase_timing_early/late`
-- 尝试一个可靠的 `stress_mismatch` 或时值比例问题
+- 实现 `expected_elision_realized`
+- 实现一个可靠的 `identical_consonants_separated` 或 `coalescent_assimilation_missing`
+- 时间、能量、频谱与对齐只作为目标音素判断的证据
 - 建立纯函数接口、阈值配置和 Debug Evidence
 - 使用合成样例与真实样例共同测试
 
 验收：
 
-- 明显连读和明显断开有确定、可重复的不同结果
+- 参考音变处理和逐字母清楚发音有确定、可重复的不同结果
 - 每个问题含指标、置信度和证据引用
 - 没有可靠依据时不输出
 
@@ -596,7 +638,7 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
 
 验收：
 
-- 真实完成一次“180ms → 约 50ms”或同类可观察改善
+- 真实完成一次“额外释放目标辅音 → 不再独立释放”或同类可观察改善
 - UI 不用虚构综合分数表达进步
 
 ## Day 7 — Coach & Second Language Feature
@@ -605,7 +647,7 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
 
 - 定义严格的 Coach Structured Output
 - 输入只包含事实、歌词、提示和历史摘要
-- 增加第二种可靠语言现象：优先 stress，其次 function-word duration
+- 增加第二种可靠音变：优先相同辅音合并，其次 `/t/ + /j/` 等融合音变
 - Structured Output 失败时使用规则模板降级
 
 验收：
@@ -624,7 +666,7 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
 
 验收：
 
-- 多次 linking 问题形成长期弱点
+- 多次辅音省略或合并问题形成长期弱点
 - 改善后趋势能够更新，而不是只累计失败
 
 ## Day 9 — Generalization & TME Story
@@ -658,7 +700,7 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
 
 ```text
 选择英文歌
-→ 看见原唱 linking / stress
+→ 看见原唱在具体字符上的省音 / 合并 / 融合标记
 → 听原唱这一句
 → 用户唱
 → 指出一个具体语言差异
@@ -670,37 +712,7 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
 
 ---
 
-# 12. 双人分工建议
-
-## A — 体验与浏览器音频主责
-
-- React / Mobile H5
-- 歌词与语言提示 UI
-- 播放、循环、慢速与录音
-- 实时状态和练习闭环
-- 手机适配与可用性测试
-
-## B — 音频与语言分析主责
-
-- FastAPI / Pipeline
-- Alignment / G2P / acoustic features
-- Language Difference Engine
-- Coach structured output
-- 存储、缓存与测试
-
-共同负责：
-
-- Hero Song 人工校对
-- 阈值调试
-- 真实用户录音
-- Demo 稳定性
-- 比赛叙事
-
-任何一方都不应只负责样式或只包办全部 AI。
-
----
-
-# 13. Codex 工作方式
+# 12. Codex 工作方式
 
 1. 修改前先读本文与相关代码。
 2. 先说明当前任务如何服务语言教学闭环。
@@ -715,7 +727,7 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
 
 ---
 
-# 14. Demo 成功标准
+# 13. Demo 成功标准
 
 十天后，如果能稳定完成以下流程，即视为 VerseViva Demo 成功：
 

@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
@@ -89,12 +90,74 @@ class Note(SongProfileModel):
         return self
 
 
-class SingingHints(SongProfileModel):
-    linking: list[str] = Field(default_factory=list)
-    stress: list[str] = Field(default_factory=list)
-    reduction: list[str] = Field(default_factory=list)
-    elision: list[str] = Field(default_factory=list)
-    tips: list[str] = Field(default_factory=list)
+class LanguageHintType(StrEnum):
+    consonant_elision = "consonant_elision"
+    unreleased_stop = "unreleased_stop"
+    identical_consonant_merging = "identical_consonant_merging"
+    coalescent_assimilation = "coalescent_assimilation"
+    resyllabification = "resyllabification"
+    vowel_linking = "vowel_linking"
+
+
+class LanguageHintSource(StrEnum):
+    acoustic_observed = "acoustic_observed"
+    text_rule_candidate = "text_rule_candidate"
+    llm_suggestion = "llm_suggestion"
+    human_curated = "human_curated"
+
+
+class MarkPlacement(StrEnum):
+    above = "above"
+    below = "below"
+    inline = "inline"
+    bridge = "bridge"
+
+
+class CharacterMark(SongProfileModel):
+    """A language-independent symbol anchored to characters in the displayed lyrics."""
+
+    symbol: str = Field(min_length=1, max_length=4)
+    start_char_index: int = Field(ge=0)
+    end_char_index: int = Field(ge=0)
+    placement: MarkPlacement
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "CharacterMark":
+        if self.end_char_index < self.start_char_index:
+            raise ValueError("end_char_index must be greater than or equal to start_char_index")
+        return self
+
+
+class LocalizedHintDetail(SongProfileModel):
+    locale: str = Field(min_length=2)
+    explanation: str = Field(min_length=1)
+    action: str = Field(min_length=1)
+
+
+class LanguageHint(SongProfileModel):
+    """A reference-performance phonetic change with compact marks and expandable details."""
+
+    id: str
+    type: LanguageHintType
+    start_word_index: int = Field(ge=0)
+    end_word_index: int = Field(ge=0)
+    start_seconds: float = Field(ge=0)
+    end_seconds: float = Field(ge=0)
+    source: LanguageHintSource
+    confidence: float = Field(ge=0, le=1)
+    underlying_phonemes: list[str] = Field(default_factory=list)
+    observed_phonemes: list[str] = Field(default_factory=list)
+    marks: list[CharacterMark] = Field(min_length=1)
+    details: list[LocalizedHintDetail] = Field(default_factory=list)
+    evidence: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_ranges(self) -> "LanguageHint":
+        if self.end_word_index < self.start_word_index:
+            raise ValueError("end_word_index must be greater than or equal to start_word_index")
+        if self.end_seconds < self.start_seconds:
+            raise ValueError("end_seconds must be greater than or equal to start_seconds")
+        return self
 
 
 class VocalFeatures(SongProfileModel):
@@ -112,13 +175,20 @@ class SongSentence(SongProfileModel):
     words: list[WordTiming] = Field(default_factory=list)
     pitch_contour: list[PitchPoint] = Field(default_factory=list)
     notes: list[Note] = Field(default_factory=list)
-    singing_hints: SingingHints = Field(default_factory=SingingHints)
+    language_hints: list[LanguageHint] = Field(default_factory=list)
     vocal_features: VocalFeatures = Field(default_factory=VocalFeatures)
 
     @model_validator(mode="after")
     def validate_interval(self) -> "SongSentence":
         if self.end_seconds < self.start_seconds:
             raise ValueError("end_seconds must be greater than or equal to start_seconds")
+        for hint in self.language_hints:
+            if hint.end_word_index >= len(self.words):
+                raise ValueError("language hint word indexes must point to sentence words")
+            if any(mark.end_char_index >= len(self.lyrics) for mark in hint.marks):
+                raise ValueError("language hint character marks must point to sentence lyrics")
+            if hint.start_seconds < self.start_seconds or hint.end_seconds > self.end_seconds:
+                raise ValueError("language hint timestamps must stay inside the sentence")
         return self
 
 
@@ -167,7 +237,7 @@ class AnalysisMetadata(SongProfileModel):
 
 
 class SongProfile(SongProfileModel):
-    schema_version: str = "1.0"
+    schema_version: str = "1.1"
     song_id: str
     title: str
     duration_seconds: float = Field(gt=0)

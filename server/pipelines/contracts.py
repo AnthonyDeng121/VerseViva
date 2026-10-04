@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from server.models.song import SingingHints, WordTiming
+from server.models.song import LanguageHint, WordTiming
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,7 +40,7 @@ class LyricsAligner(Protocol):
     ) -> AlignmentArtifacts: ...
 
 
-class EnglishCoach(Protocol):
+class LanguageCoach(Protocol):
     async def analyze(
         self, vocal_audio: Path, lyrics: str, words: list[WordTiming]
-    ) -> SingingHints: ...
+    ) -> list[LanguageHint]: ...

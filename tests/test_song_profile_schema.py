@@ -6,7 +6,13 @@ from pydantic import ValidationError
 from server.models.song import (
     AnalysisMetadata,
     AudioAssets,
+    CharacterMark,
+    LanguageHint,
+    LanguageHintSource,
+    LanguageHintType,
+    LocalizedHintDetail,
     LyricsSource,
+    MarkPlacement,
     Note,
     PitchPoint,
     SongProfile,
@@ -81,7 +87,7 @@ def make_profile() -> SongProfile:
 def test_song_profile_serializes_to_agreed_camel_case_contract() -> None:
     payload = make_profile().model_dump(mode="json", by_alias=True)
 
-    assert payload["schemaVersion"] == "1.0"
+    assert payload["schemaVersion"] == "1.1"
     assert payload["durationSeconds"] == 60.003
     assert payload["audio"]["vocalUrl"].endswith("vocals.wav")
     assert payload["vocalRange"]["lowestMidi"] == 48
@@ -93,10 +99,92 @@ def test_song_profile_serializes_to_agreed_camel_case_contract() -> None:
 def test_optional_future_features_have_honest_empty_defaults() -> None:
     sentence = make_profile().sentences[0]
 
-    assert sentence.singing_hints.linking == []
+    assert sentence.language_hints == []
     assert sentence.vocal_features.vocal_register is None
     assert sentence.vocal_features.falsetto is None
     assert sentence.vocal_features.confidence is None
+
+
+def test_phonetic_hint_separates_lyric_marks_from_chinese_detail() -> None:
+    sentence = SongSentence(
+        id="sentence_hook",
+        start_seconds=10,
+        end_seconds=12,
+        lyrics="want me",
+        words=[
+            WordTiming(id="word_want", text="want", start_seconds=10, end_seconds=10.8),
+            WordTiming(id="word_me", text="me", start_seconds=10.8, end_seconds=12),
+        ],
+        language_hints=[
+            LanguageHint(
+                id="hint_want_t",
+                type=LanguageHintType.consonant_elision,
+                start_word_index=0,
+                end_word_index=1,
+                start_seconds=10.55,
+                end_seconds=10.95,
+                source=LanguageHintSource.human_curated,
+                confidence=0.95,
+                underlying_phonemes=["t"],
+                observed_phonemes=[],
+                marks=[
+                    CharacterMark(
+                        symbol="×",
+                        start_char_index=3,
+                        end_char_index=3,
+                        placement=MarkPlacement.below,
+                    )
+                ],
+                details=[
+                    LocalizedHintDetail(
+                        locale="zh-CN",
+                        explanation="原唱没有清楚释放 want 末尾的 t。",
+                        action="唱完 wan 后直接进入 me，不要额外弹出 t。",
+                    )
+                ],
+                evidence={"reviewedClip": "hero-hook"},
+            )
+        ],
+    )
+
+    payload = sentence.model_dump(mode="json", by_alias=True)
+    hint = payload["languageHints"][0]
+    assert hint["marks"] == [
+        {"symbol": "×", "startCharIndex": 3, "endCharIndex": 3, "placement": "below"}
+    ]
+    assert hint["details"][0]["locale"] == "zh-CN"
+    assert "explanation" not in hint["marks"][0]
+
+
+def test_language_hint_rejects_marks_outside_the_lyric() -> None:
+    with pytest.raises(ValidationError, match="character marks"):
+        SongSentence(
+            id="sentence_bad_hint",
+            start_seconds=0,
+            end_seconds=2,
+            lyrics="want me",
+            words=[WordTiming(id="word_want", text="want", start_seconds=0, end_seconds=1)],
+            language_hints=[
+                LanguageHint(
+                    id="hint_bad",
+                    type=LanguageHintType.consonant_elision,
+                    start_word_index=0,
+                    end_word_index=0,
+                    start_seconds=0.5,
+                    end_seconds=0.8,
+                    source=LanguageHintSource.text_rule_candidate,
+                    confidence=0.5,
+                    marks=[
+                        CharacterMark(
+                            symbol="×",
+                            start_char_index=99,
+                            end_char_index=99,
+                            placement=MarkPlacement.below,
+                        )
+                    ],
+                )
+            ],
+        )
 
 
 @pytest.mark.parametrize(
