@@ -6,120 +6,115 @@
 
 > 听懂每一句，唱活每一首。
 
-## 核心体验
+产品与实现边界以 [AGENTS.md](./AGENTS.md) 为准。音高、节奏和时间对齐是底层证据，不是产品的主要卖点。
 
-```text
-选择一首英文歌
-→ 看懂原唱的连读、重音、弱读与乐句节奏
-→ 唱一句
-→ 定位具体语言差异
-→ 单句重练
-→ 用同一指标验证改善
-→ 记住长期弱点
-```
+## 环境要求
 
-示例：
+当前已验证开发环境是 Windows 11 + WSL2 Ubuntu：
 
-```text
-I wanna‿be WITH‿YOU toNIGHT
-       连读      连读       重音
-```
+- WSL Python 3.11（后端和模型工具）
+- Node.js 22 / npm 10（前端）
+- ffmpeg / ffprobe 4.4+
 
-如果用户在 `with you` 之间出现明显停顿，VerseViva 会定位这两个词、解释为什么听起来像逐词朗读，并让用户立即重练这一句。
+仓库可以位于 Windows 盘，但所有 Python 虚拟环境都应从 WSL 创建。不要复制旧项目的虚拟环境；虚拟环境中的解释器路径不可迁移。
 
-## 差异化
+## 首次安装
 
-```text
-K 歌产品：你唱得准不准？
-歌词产品：这句是什么意思、怎么念？
-VerseViva：原唱怎样把这句话唱进旋律，你实际唱成了什么，下一遍怎么改？
-```
-
-音准、节奏和时间对齐仍然是重要的底层证据，但不再是产品的主要卖点。
-
-## 当前状态
-
-项目继承了 VocalCompass 阶段已经验证的音频底座：
-
-- Demucs `htdemucs` 人声分离
-- Basic Pitch Note Event 与连续 Pitch
-- WhisperX 句级、词级歌词对齐
-- 上传、任务状态、错误持久化与 Song Profile API
-- Pitch 清洗、静音过滤、局部八度修正与前端降采样
-- Difference Engine v0
-- 真实音频全链路验证
-
-接下来按新的 VerseViva 计划优先开发：
-
-- Song Language Profile
-- 英文 G2P / 音节与语言提示
-- `linking_gap`、重音和乐句时序检测
-- 用户演唱对齐
-- 单句重练与前后比较
-- 基于事实的 AI Coach
-- 用户语言演唱弱点 Memory
-
-完整产品上下文与十天计划见 [AGENTS.md](./AGENTS.md)。
-
-## 技术栈
-
-- 前端：React、TypeScript、Vite、Web Audio API
-- 后端：Python 3.11+、FastAPI
-- 数据：SQLite（Demo 阶段）
-- 音频：Demucs、Basic Pitch、WhisperX
-
-模型运行在 Linux 后端或 WSL2 开发环境；手机只运行 H5，并通过 HTTPS 调用 API。
-
-## 快速启动
-
-### 后端
+在 PowerShell 中进入项目，再打开 WSL：
 
 ```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"
-Copy-Item .env.example .env
-uvicorn server.main:app --reload
+Set-Location 'D:\0Desktop2\项目\VerseViva'
+wsl -d Ubuntu
+```
+
+以下命令在 WSL 中执行：
+
+```bash
+cd '/mnt/d/0Desktop2/项目/VerseViva'
+
+python3.11 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip setuptools wheel
+.venv/bin/python -m pip install -e '.[dev]'
+
+python3.11 -m venv .venv-demucs
+.venv-demucs/bin/python -m pip install -r requirements-demucs.txt
+
+python3.11 -m venv .venv-pitch
+.venv-pitch/bin/python -m pip install -r requirements-basic-pitch.txt
+
+python3.11 -m venv .venv-whisperx
+.venv-whisperx/bin/python -m pip install -r requirements-whisperx.txt
+
+cp -n .env.example .env
+
+cd web
+npm install
+```
+
+三个模型工具使用隔离环境，因为各自的 NumPy、TensorFlow 和 Torch 约束可能冲突。模型权重使用工具自身的公共缓存，不放入 Git。
+
+## 配置
+
+应用只读取 `VERSEVIVA_*` 环境变量。默认配置把 data、jobs、songs 和模型输出都放在仓库的 `./data` 下；模型可执行文件也使用仓库相对路径。
+
+`.env` 是本地文件，不会提交。修改 `.env.example` 时不要加入密钥、本机绝对路径或用户音频路径。
+
+## 启动
+
+后端（WSL，仓库根目录）：
+
+```bash
+.venv/bin/uvicorn server.main:app --reload
 ```
 
 - API 文档：http://127.0.0.1:8000/docs
 - 健康检查：http://127.0.0.1:8000/api/v1/health
 
-### 前端
+前端（另一个 WSL 终端）：
 
-```powershell
-Set-Location web
-npm install
+```bash
+cd web
 npm run dev
 ```
 
-前端地址：http://localhost:5173
-
-## 当前 API
-
-上传并分析歌曲：
-
-```text
-POST /api/v1/songs/analyze
-```
-
-查询任务状态：
-
-```text
-GET /api/v1/songs/jobs/{job_id}
-```
-
-查询 Song Profile：
-
-```text
-GET /api/v1/songs/{song_id}
-```
-
-当前上传接口可以接收歌词文本，但 Pipeline 仍以 WhisperX ASR 为主；准确歌词校正和 Song Language Profile 将按新计划实现。
+前端地址为 http://localhost:5173。Vite 会把 `/api` 代理到 `http://127.0.0.1:8000`。
 
 ## 开发检查
 
-```powershell
-pytest
-ruff check server tests
+```bash
+# 仓库根目录
+.venv/bin/pytest
+.venv/bin/ruff check server tests
+
+# web/
+npm run build
+npm run lint
 ```
+
+模型工具轻量验证：
+
+```bash
+.venv-demucs/bin/demucs --help
+.venv-pitch/bin/basic-pitch --help
+.venv-whisperx/bin/whisperx --help
+ffmpeg -version
+ffprobe -version
+```
+
+不要仅为环境验证重复运行完整音频链路。Hero Song 应优先读取 `data/` 中的缓存产物。
+
+## 当前 API
+
+```text
+POST /api/v1/songs/analyze
+GET  /api/v1/songs/jobs/{job_id}
+GET  /api/v1/songs/{song_id}
+```
+
+## 数据与版本控制
+
+`data/`、`.env`、虚拟环境、`web/node_modules/`、前端构建产物、模型权重和用户音频均被忽略，不得提交。现有 `data/` 使用仓库内相对布局，历史审计字段可以保留，但运行时配置不得访问旧项目路径。
+
+## 从 VocalCompass 迁移
+
+VerseViva 复用了 VocalCompass 阶段验证过的 Demucs、Basic Pitch、WhisperX、Song Profile 和 Difference Engine 底座，但已经是独立项目。旧目录只可作为只读迁移来源；日常启动、测试、模型命令与数据读取均不得依赖旧目录，也不得向旧仓库远端推送。

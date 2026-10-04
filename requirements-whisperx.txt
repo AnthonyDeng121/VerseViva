@@ -1,0 +1,13 @@
+# Isolated model environment; version copied from the last verified local toolchain.
+whisperx==3.8.6
+ctranslate2==4.8.2
+faster-whisper==1.2.1
+huggingface-hub==0.36.2
+lightning==2.6.6
+numpy==2.4.6
+pyannote-audio==4.0.7
+tokenizers==0.22.2
+torch==2.8.0
+torchaudio==2.8.0
+torchvision==0.23.0
+transformers==4.57.6

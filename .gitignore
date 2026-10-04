@@ -16,6 +16,7 @@ data/
 *.flac
 web/node_modules/
 web/dist/
+*.tsbuildinfo
 .idea/
 .vscode/
 .DS_Store

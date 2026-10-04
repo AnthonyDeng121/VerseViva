@@ -17,8 +17,12 @@
     "react-dom": "latest"
   },
   "devDependencies": {
+    "@eslint/js": "latest",
     "@types/react": "latest",
-    "@types/react-dom": "latest"
+    "@types/react-dom": "latest",
+    "eslint": "latest",
+    "globals": "latest",
+    "typescript-eslint": "latest"
   }
 }
 
