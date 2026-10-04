@@ -1191,6 +1191,177 @@ B：
 - 分析完成后返回真实 Song Profile，而不是 Mock 数据。
 - API 测试覆盖成功上传、非法类型、空文件、任务不存在和模型失败。
 
+### Day 2 后端真实验收结果（2026-10-04）
+
+实验输入：
+
+```text
+data/day2/input/WONDER.mp3
+```
+
+音频时长：
+
+```text
+45.512s
+```
+
+本次验收从真实 API 入口开始，不使用离线脚本或 Mock：
+
+```text
+POST /api/v1/songs/analyze
+→ queued
+→ separating_vocals
+→ extracting_pitch
+→ aligning_lyrics
+→ building_profile
+→ completed
+→ GET /api/v1/songs/{song_id}
+```
+
+成功任务：
+
+```text
+job_id  = job_903d6b1e7717416889b8f85ff310a851
+song_id = song_6bf25113c26448a29e28981b866764e6
+```
+
+生成的真实 Song Profile：
+
+```text
+data/songs/song_6bf25113c26448a29e28981b866764e6/profile.json
+```
+
+结果摘要：
+
+```text
+schemaVersion: 1.0
+language: en
+durationSeconds: 45.512
+sentences: 5
+word timings: 76
+sentence notes: 175
+raw vocal range: F3 ~ G#6
+pipelineVersion: day2-v1
+separationModel: htdemucs
+pitchModel: basic-pitch
+alignmentModel: whisperx-small
+lyricsSource: asr
+```
+
+注意：`F3 ~ G#6` 是尚未经过 Day 3 清洗的 Basic Pitch 原始音域，可能包含残留伴奏、瞬时误检或八度错误，当前不能直接作为面向用户的可靠音域结论。
+
+#### 首次真实运行发现的问题与修复
+
+第一次真实任务在 `extracting_pitch` 阶段失败：
+
+```text
+job_id = job_202a00042afc4dc0b041be16366d17af
+```
+
+错误为：
+
+```text
+Basic Pitch did not produce expected artifacts:
+vocals_basic_pitch.csv
+vocals_basic_pitch.npz
+```
+
+原因：当前 Basic Pitch CLI 默认只保存 MIDI；Day 1 手动实验使用了完整输出选项，但初版 Adapter 没有显式传入。
+
+修复：Basic Pitch Adapter 增加：
+
+```text
+--save-note-events
+--save-model-outputs
+```
+
+修复后成功生成：
+
+```text
+vocals_basic_pitch.csv
+vocals_basic_pitch.mid
+vocals_basic_pitch.npz
+```
+
+第一次失败任务保留在 `data/jobs/` 中，用于证明失败阶段、错误代码、用户提示和详细错误能够真实持久化与查询。
+
+#### 真实耗时
+
+当前 WSL2 + CPU 环境下，45.5 秒音频总耗时约：
+
+```text
+15 分 18 秒
+```
+
+大致阶段耗时：
+
+```text
+Demucs:                  约 2 分 15 秒
+Basic Pitch:             约 2 分 33 秒
+WhisperX + Word Align:   约 10 分 30 秒
+Song Profile Build:      数秒内
+```
+
+结论：真实三模型链路已经成立，但当前 CPU 全量分析速度不适合作为 2~3 分钟演示中的主要等待段。Hero Song 必须预缓存；临时上传只用于证明泛化能力，并需要使用更短片段、模型预热或更快的推理环境。
+
+#### Day 2 后端验收状态
+
+已完成并验证：
+
+- 文件扩展名、MIME、文件头、空文件和大小限制校验。
+- 独立 `song_id`、`job_id` 和任务工作目录。
+- 任务状态持久化与 `GET /songs/jobs/{job_id}`。
+- Demucs、Basic Pitch、WhisperX Adapter。
+- Basic Pitch 与 WhisperX Converter。
+- 自动 Pipeline 和真实阶段更新。
+- 失败阶段、错误代码、用户信息、详细错误分开保存。
+- Song Profile 持久化与 `GET /songs/{song_id}`。
+- Day 1 真实产物 fixture 和 Day 2 真实 API 全链路。
+- API 测试覆盖成功上传、非法类型、空文件、超大文件、任务不存在、模型失败、Profile 成功和 Profile 不存在。
+- 当前自动测试：`33 passed`；Ruff：`All checks passed`。
+
+尚未完成：
+
+- 前端上传页面。
+- Analysis Loading 和真实任务阶段轮询。
+- Song Profile 页面与 Lyrics Timeline。
+- 前端 TypeScript Schema 对齐。
+- queued、processing、completed、failed UI 与失败重试入口。
+
+因此当前结论是：
+
+> Day 2 后端核心链路已完成真实验收；Day 2 整体仍需完成前端部分后才能正式关闭。
+
+#### 后续优化清单
+
+P0 / 演示稳定性优先：
+
+- 为各 Pipeline 阶段持久化 `started_at`、`finished_at`、`duration_seconds`，不再依赖人工轮询估算耗时。
+- 增加模型预热，避免 WhisperX 首次加载占用大部分等待时间。
+- 使用音频内容哈希建立缓存，重复上传相同音频时跳过 Demucs、Pitch 和 Alignment。
+- 为 Hero Song 固定并预缓存全部产物，演示时直接读取 Song Profile。
+- 为临时上传准备更短的合法测试片段，并显示真实阶段而不是假进度。
+- 为模型进程增加更合理的阶段超时、取消和服务重启恢复策略。
+- 在目标手机上通过 HTTPS URL 验证上传、轮询、弱网与后台恢复。
+
+Day 3 数据质量优化：
+
+- 对 Pitch / Note 做静音过滤、置信度过滤、极短 Note 过滤、八度跳变修正和平滑处理。
+- 音域只根据清洗后的有效数据计算，不直接展示 `F3 ~ G#6` 等原始范围。
+- 从 Basic Pitch NPZ 或其他连续 F0 输出生成真实 `PitchPoint[]`，不把 Note Event 展开成伪连续曲线。
+- 记录清洗前后统计，保留 Debug 可追溯性。
+
+已确认暂缓：
+
+- 用户上传歌词、在线歌词搜索、LRC 合并与人工校对歌词流程暂不在本轮实现，后续作为歌词质量优化单独处理。
+- 当前 Song Profile 的 `lyricsSource` 保持为 `asr`，不得把未实际使用的用户歌词标为 `provided`。
+
+部署边界：
+
+- WSL2 只是 Windows 开发机上的 Linux 后端环境，不是手机端依赖。
+- 手机只运行 React H5，并通过 HTTPS 调用后端 API；Demucs、Basic Pitch、WhisperX 均运行在后端计算环境。
+- 正式部署时后端应运行在 Linux 服务器或等价容器环境，不要求手机具备 WSL。
+
 ---
 
 ## Day 3 — Reference Visualization
