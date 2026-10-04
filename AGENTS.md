@@ -1404,6 +1404,65 @@ B：
 - 拖动播放位置后 UI 能正确恢复。
 - 后端清洗前后数据差异可在 Debug 模式检查。
 
+### Day 3 后端连续 Pitch 实现与真实验收（2026-10-04）
+
+连续 Pitch 数据采用双路径：
+
+```text
+主路径：Basic Pitch NPZ contour + Note Event 约束
+降级路径：Basic Pitch CSV 中官方解码的 pitch_bend
+```
+
+主路径直接读取本系统 Basic Pitch Adapter 生成的可信 NPZ。Note Event 用于确定有效人声区间和主音附近的搜索范围，contour 用于恢复约 86 帧/秒的细粒度音高和帧级置信度。NPZ 缺失、损坏或结构不兼容时，自动回退到 CSV `pitch_bend`，不会让整个歌曲分析任务失败。
+
+已完成：
+
+- 低置信度和极短 Note 过滤。
+- 静音区不生成虚假 PitchPoint。
+- 局部短暂泛音/八度误判修正。
+- 前端数据降采样到约 30 点/秒。
+- PitchPoint 按歌词 Sentence 时间范围写入 Song Profile。
+- 使用清洗后 Pitch 的 5%～95% 稳健分位数计算面向用户的音域。
+- AnalysisMetadata 记录数据来源、是否降级、降级原因、过滤数量和八度修正数量。
+- Difference Engine v0 支持 cents 换算与不跨静音区的参考 Pitch 插值。
+
+真实产物验收：
+
+```text
+Day 1 60 秒样例
+source: basic-pitch-npz-contour-with-note-events
+fallbackUsed: false
+raw notes: 222
+accepted notes: 185
+raw pitch points: 3664
+frontend pitch points: 1311
+清洗后稳健音域: A3 ~ A#4
+
+Day 2 WONDER.mp3（45.512 秒）
+source: basic-pitch-npz-contour-with-note-events
+fallbackUsed: false
+raw notes: 183
+accepted notes: 115
+octave corrections: 7
+raw pitch points: 2184
+frontend pitch points: 795
+清洗后稳健音域: C#4 ~ C#5
+
+Fallback 验收
+缺失 NPZ 时 source: basic-pitch-csv-decoded-bends-fallback
+fallbackUsed: true
+仍可输出 1311 个 PitchPoint
+```
+
+自动化验证：
+
+```text
+39 passed
+Ruff: All checks passed
+```
+
+当前 Day 3 后端参考 Pitch 已完成；播放同步、歌词高亮和 Canvas 曲线仍属于前端待完成内容，因此 Day 3 整体尚未关闭。
+
 ---
 
 ## Day 4 — User Live Pitch

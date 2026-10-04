@@ -40,14 +40,16 @@ VocalCompass 是一个 AI 个性化跟唱教练。
 - Song Profile、PitchPoint、Note、Sentence、WordTiming 和诊断数据模型已建立
 - 前端目前仍是 Vite 页面骨架，上传、任务进度和 Song Profile 页面尚待接入
 
-Day 3 后端重点是将模型原始输出转换为可靠、轻量、可供前端绘制的参考数据：
+Day 3 后端参考 Pitch 已完成首轮实现与真实歌曲验证：
 
-1. 从 Basic Pitch 模型输出生成真实的连续 `PitchPoint[]`
-2. 过滤静音、低置信度、极短音符和明显的八度误判，并适度平滑
-3. 根据清洗后的有效数据计算音名、音域和句级 Pitch 摘要
-4. 记录清洗前后统计，保留 Debug 可追溯性
-5. 控制 Song Profile JSON 的数据量，避免把原始 NPZ 直接传给浏览器
-6. 建立 Difference Engine v0 的纯函数接口和合成测试数据
+- 主路径使用 Basic Pitch NPZ `contour`，并以 Note Event 限定有效人声区间
+- NPZ 缺失或解析失败时，回退到 CSV 中官方解码的逐帧 `pitch_bend`
+- 过滤低置信度、极短音符，并修正局部短暂八度误判
+- 只在有效音符区间生成 Pitch，静音区不伪造曲线
+- 将前端曲线降采样为约 30 点/秒，并按歌词句子写入 Song Profile
+- 使用清洗后数据的稳健分位数计算面向用户的有效音域
+- 在分析元数据中记录清洗阈值、接受/拒绝数量和八度修正数量
+- Difference Engine v0 已支持 cents 换算和不跨静音区的参考 Pitch 插值
 
 ## 技术栈
 
