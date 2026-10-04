@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from server.api.routes import songs as songs_route
 from server.config import get_settings
 from server.main import app
 
@@ -11,6 +12,7 @@ from server.main import app
 def upload_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("VOCALCOMPASS_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("VOCALCOMPASS_MAX_UPLOAD_SIZE_BYTES", "32")
+    monkeypatch.setenv("VOCALCOMPASS_AUTO_RUN_ANALYSIS_PIPELINE", "false")
     get_settings.cache_clear()
     with TestClient(app) as client:
         yield client, tmp_path
@@ -84,3 +86,32 @@ def test_missing_or_malformed_job_id_returns_404(upload_client) -> None:
 
     assert client.get("/api/v1/songs/jobs/job_00000000000000000000000000000000").status_code == 404
     assert client.get("/api/v1/songs/jobs/not-a-job-id").status_code == 404
+
+
+def test_upload_starts_automatic_pipeline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[tuple[str, Path]] = []
+
+    class StubPipeline:
+        async def run(self, job_id: str, source: Path) -> None:
+            calls.append((job_id, source))
+
+    monkeypatch.setenv("VOCALCOMPASS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("VOCALCOMPASS_AUTO_RUN_ANALYSIS_PIPELINE", "true")
+    monkeypatch.setattr(songs_route, "build_default_pipeline", lambda settings: StubPipeline())
+    get_settings.cache_clear()
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/songs/analyze",
+            files={"audio": ("demo.mp3", b"ID3-demo", "audio/mpeg")},
+        )
+    get_settings.cache_clear()
+
+    assert response.status_code == 202
+    assert calls == [
+        (
+            response.json()["job_id"],
+            tmp_path / "jobs" / response.json()["job_id"] / "input" / "source.mp3",
+        )
+    ]

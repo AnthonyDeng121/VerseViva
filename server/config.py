@@ -12,6 +12,15 @@ class Settings(BaseSettings):
     data_dir: Path = Path("data")
     cors_origins: list[str] = ["http://localhost:5173"]
     max_upload_size_bytes: int = 100 * 1024 * 1024
+    auto_run_analysis_pipeline: bool = True
+    demucs_executable: Path = Path(".venv-demucs/bin/demucs")
+    demucs_model: str = "htdemucs"
+    basic_pitch_executable: Path = Path(".venv-pitch/bin/basic-pitch")
+    whisperx_executable: Path = Path(".venv-whisperx/bin/whisperx")
+    whisperx_model: str = "small"
+    whisperx_device: str = "cpu"
+    whisperx_compute_type: str = "int8"
+    ffprobe_executable: str = "ffprobe"
 
     model_config = SettingsConfigDict(
         env_file=".env",

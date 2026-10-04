@@ -1,11 +1,13 @@
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile, status
 
 from server.config import get_settings
-from server.models.song import AnalysisJob, AnalysisStatus
+from server.models.song import AnalysisJob, AnalysisStatus, SongProfile
+from server.pipelines.song_analysis import build_default_pipeline
 from server.storage.job_store import JobStore
+from server.storage.profile_store import ProfileStore
 
 router = APIRouter()
 CHUNK_SIZE = 1024 * 1024
@@ -30,6 +32,7 @@ def has_expected_audio_signature(suffix: str, header: bytes) -> bool:
 
 @router.post("/analyze", response_model=AnalysisJob, status_code=status.HTTP_202_ACCEPTED)
 async def analyze_song(
+    background_tasks: BackgroundTasks,
     audio: UploadFile = File(...),  # noqa: B008
     title: str | None = Form(default=None),
     lyrics: str | None = Form(default=None),
@@ -81,6 +84,12 @@ async def analyze_song(
         has_lyrics=bool(lyrics and lyrics.strip()),
     )
     JobStore(settings.data_dir).save(job)
+    if settings.auto_run_analysis_pipeline:
+        background_tasks.add_task(
+            build_default_pipeline(settings).run,
+            job.job_id,
+            destination,
+        )
     return job
 
 
@@ -90,3 +99,11 @@ async def get_analysis_job(job_id: str) -> AnalysisJob:
     if job is None:
         raise HTTPException(status_code=404, detail="Analysis job not found")
     return job
+
+
+@router.get("/{song_id}", response_model=SongProfile)
+async def get_song_profile(song_id: str) -> SongProfile:
+    profile = ProfileStore(get_settings().data_dir).get(song_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Song profile not found")
+    return profile
