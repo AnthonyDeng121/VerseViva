@@ -14,9 +14,9 @@ from tests.test_song_profile_schema import make_profile
 
 @pytest.fixture
 def upload_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("VOCALCOMPASS_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("VOCALCOMPASS_MAX_UPLOAD_SIZE_BYTES", "32")
-    monkeypatch.setenv("VOCALCOMPASS_AUTO_RUN_ANALYSIS_PIPELINE", "false")
+    monkeypatch.setenv("VERSEVIVA_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("VERSEVIVA_MAX_UPLOAD_SIZE_BYTES", "32")
+    monkeypatch.setenv("VERSEVIVA_AUTO_RUN_ANALYSIS_PIPELINE", "false")
     get_settings.cache_clear()
     with TestClient(app) as client:
         yield client, tmp_path
@@ -101,8 +101,8 @@ def test_upload_starts_automatic_pipeline(
         async def run(self, job_id: str, source: Path) -> None:
             calls.append((job_id, source))
 
-    monkeypatch.setenv("VOCALCOMPASS_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("VOCALCOMPASS_AUTO_RUN_ANALYSIS_PIPELINE", "true")
+    monkeypatch.setenv("VERSEVIVA_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("VERSEVIVA_AUTO_RUN_ANALYSIS_PIPELINE", "true")
     monkeypatch.setattr(songs_route, "build_default_pipeline", lambda settings: StubPipeline())
     get_settings.cache_clear()
     with TestClient(app) as client:
@@ -142,8 +142,8 @@ def test_api_exposes_model_failure_after_background_pipeline(
             )
             self.store.save(job)
 
-    monkeypatch.setenv("VOCALCOMPASS_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("VOCALCOMPASS_AUTO_RUN_ANALYSIS_PIPELINE", "true")
+    monkeypatch.setenv("VERSEVIVA_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("VERSEVIVA_AUTO_RUN_ANALYSIS_PIPELINE", "true")
     monkeypatch.setattr(
         songs_route,
         "build_default_pipeline",

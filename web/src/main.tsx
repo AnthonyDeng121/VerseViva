@@ -5,9 +5,11 @@ import "./styles.css";
 function App() {
   return (
     <main>
-      <p className="eyebrow">VOCALCOMPASS</p>
-      <h1>让每一遍练唱都有方向</h1>
-      <p>项目框架已就绪。下一步接入歌曲上传、分析进度和 Song Profile。</p>
+      <p className="eyebrow">VERSEVIVA · 声声不息</p>
+      <h1>听懂每一句，唱活每一首</h1>
+      <p>
+        不只告诉你歌词怎么读，而是听懂原唱如何把语言放进旋律，并陪你逐句练会。
+      </p>
     </main>
   );
 }

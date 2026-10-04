@@ -1,2 +1,2 @@
-"""VocalCompass backend."""
+"""VerseViva backend."""
 

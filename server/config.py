@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_name: str = "VocalCompass API"
+    app_name: str = "VerseViva API"
     environment: str = "development"
     api_prefix: str = "/api/v1"
     data_dir: Path = Path("data")
@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_file=".env",
-        env_prefix="VOCALCOMPASS_",
+        env_prefix="VERSEVIVA_",
         extra="ignore",
     )
 
