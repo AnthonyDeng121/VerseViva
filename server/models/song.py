@@ -18,6 +18,7 @@ class AnalysisStage(StrEnum):
     separating_vocals = "separating_vocals"
     extracting_pitch = "extracting_pitch"
     aligning_lyrics = "aligning_lyrics"
+    analyzing_language = "analyzing_language"
     building_profile = "building_profile"
     completed = "completed"
     failed = "failed"
@@ -299,10 +300,12 @@ class AnalysisMetadata(SongProfileModel):
     lyrics_source: LyricsSource
     created_at: datetime
     pitch_processing: PitchProcessingSummary | None = None
+    language_analysis_provider: str | None = None
+    language_analysis_model: str | None = None
 
 
 class SongProfile(SongProfileModel):
-    schema_version: str = "1.3"
+    schema_version: str = "1.4"
     song_id: str
     title: str
     duration_seconds: float = Field(gt=0)

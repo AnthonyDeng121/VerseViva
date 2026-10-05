@@ -1,16 +1,294 @@
-import React from "react";
+import React, { FormEvent, useEffect, useMemo, useState } from "react";
 import ReactDOM from "react-dom/client";
 import "./styles.css";
 
+type AnalysisJob = {
+  job_id: string;
+  song_id: string;
+  status: "queued" | "processing" | "completed" | "failed";
+  stage: string;
+  progress: number;
+  error?: { message: string; detail?: string } | null;
+};
+
+type CharacterMark = {
+  symbol: string;
+  startCharIndex: number;
+  endCharIndex: number;
+  placement: "above" | "below" | "inline" | "bridge";
+};
+
+type LanguageHint = {
+  id: string;
+  phenomenon: string;
+  confidence: number;
+  source: string;
+  marks: CharacterMark[];
+  details: { locale: string; explanation: string; action: string }[];
+  evidence: {
+    evidenceStrength?: string;
+    needsHumanReview?: boolean;
+    result?: string;
+  };
+};
+
+type SongSentence = {
+  id: string;
+  startSeconds: number;
+  endSeconds: number;
+  lyrics: string;
+  languageHints: LanguageHint[];
+};
+
+type SongProfile = {
+  songId: string;
+  title: string;
+  audio: { sourceUrl: string; vocalUrl: string };
+  sentences: SongSentence[];
+  analysis: {
+    languageAnalysisProvider?: string | null;
+    languageAnalysisModel?: string | null;
+  };
+};
+
+const STAGE_LABELS: Record<string, string> = {
+  queued: "等待开始",
+  separating_vocals: "正在分离人声",
+  extracting_pitch: "正在提取对齐辅助特征",
+  aligning_lyrics: "正在对齐歌词",
+  analyzing_language: "正在核查跨词发音",
+  building_profile: "正在生成教学标记",
+  completed: "分析完成",
+  failed: "分析失败",
+};
+
 function App() {
+  const [job, setJob] = useState<AnalysisJob | null>(null);
+  const [profile, setProfile] = useState<SongProfile | null>(null);
+  const [selectedHint, setSelectedHint] = useState<LanguageHint | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!job || job.status === "completed" || job.status === "failed") return;
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/v1/songs/jobs/${job.job_id}`);
+        if (!response.ok) throw new Error("读取分析进度失败");
+        const nextJob = (await response.json()) as AnalysisJob;
+        setJob(nextJob);
+        if (nextJob.status === "completed") {
+          const profileResponse = await fetch(`/api/v1/songs/${nextJob.song_id}`);
+          if (!profileResponse.ok) throw new Error("读取歌曲标注失败");
+          setProfile((await profileResponse.json()) as SongProfile);
+        } else if (nextJob.status === "failed") {
+          setError(nextJob.error?.message ?? "歌曲分析失败");
+        }
+      } catch (pollError) {
+        setError(pollError instanceof Error ? pollError.message : "读取分析进度失败");
+      }
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [job]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    setProfile(null);
+    setSelectedHint(null);
+    try {
+      const form = new FormData(event.currentTarget);
+      const response = await fetch("/api/v1/songs/analyze", { method: "POST", body: form });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(payload?.detail ?? "上传失败");
+      }
+      setJob((await response.json()) as AnalysisJob);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "上传失败");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <main>
-      <p className="eyebrow">VERSEVIVA · 声声不息</p>
-      <h1>听懂每一句，唱活每一首</h1>
-      <p>
-        看懂原唱怎样处理声音与 Vocal 层次，分开练主唱、和声和重叠句，再把它们叠成完整演唱。
-      </p>
+      <header className="hero">
+        <p className="eyebrow">VERSEVIVA · 声声不息</p>
+        <h1>听见原唱怎么把词唱在一起</h1>
+        <p className="intro">
+          上传英文歌曲和歌词，系统会分离人声、对齐每个词，并用字符标出可听见的省音、跨词承接与音素合并。
+        </p>
+      </header>
+
+      <form className="upload-card" onSubmit={submit}>
+        <label>
+          <span>歌曲文件</span>
+          <input name="audio" type="file" accept=".mp3,.wav,.flac,audio/*" required />
+        </label>
+        <label>
+          <span>歌曲名</span>
+          <input name="title" type="text" placeholder="例如：Wonder" />
+        </label>
+        <label>
+          <span>歌词</span>
+          <textarea
+            name="lyrics"
+            rows={7}
+            placeholder="粘贴准确歌词；暂不提供时将使用 WhisperX 转写结果"
+          />
+        </label>
+        <button className="primary-button" disabled={submitting}>
+          {submitting ? "正在上传…" : "上传并分析"}
+        </button>
+      </form>
+
+      {job && !profile && (
+        <section className="status-card" aria-live="polite">
+          <div className="status-line">
+            <strong>{STAGE_LABELS[job.stage] ?? job.stage}</strong>
+            <span>{job.progress}%</span>
+          </div>
+          <div className="progress-track">
+            <div className="progress-value" style={{ width: `${job.progress}%` }} />
+          </div>
+          <p>完整歌曲在 CPU 环境下可能需要较长时间，Hero Song 应优先使用缓存。</p>
+        </section>
+      )}
+
+      {error && <p className="error-card">{error}</p>}
+
+      {profile && (
+        <ProfileView profile={profile} selectedHint={selectedHint} onSelect={setSelectedHint} />
+      )}
     </main>
+  );
+}
+
+function ProfileView({
+  profile,
+  selectedHint,
+  onSelect,
+}: {
+  profile: SongProfile;
+  selectedHint: LanguageHint | null;
+  onSelect: (hint: LanguageHint) => void;
+}) {
+  const hintCount = useMemo(
+    () => profile.sentences.reduce((total, sentence) => total + sentence.languageHints.length, 0),
+    [profile],
+  );
+  return (
+    <section className="profile-card">
+      <div className="profile-heading">
+        <div>
+          <p className="eyebrow">分析结果</p>
+          <h2>{profile.title}</h2>
+        </div>
+        <span>{hintCount} 处标记</span>
+      </div>
+
+      <div className="players">
+        <label>
+          <span>原曲</span>
+          <audio controls preload="metadata" src={profile.audio.sourceUrl} />
+        </label>
+        <label>
+          <span>人声</span>
+          <audio controls preload="metadata" src={profile.audio.vocalUrl} />
+        </label>
+      </div>
+
+      <div className="legend" aria-label="标记说明">
+        <span><b>×</b> 未清晰释放</span>
+        <span><b>‿</b> 跨词承接</span>
+        <span><b>└─┘</b> 合并或融合</span>
+      </div>
+
+      <div className="lyrics-list">
+        {profile.sentences.map((sentence) => (
+          <AnnotatedLine key={sentence.id} sentence={sentence} onSelect={onSelect} />
+        ))}
+      </div>
+
+      {selectedHint && <HintDetail hint={selectedHint} />}
+
+      <p className="model-note">
+        标注来源：{profile.analysis.languageAnalysisProvider ?? "未启用"}
+        {profile.analysis.languageAnalysisModel ? ` / ${profile.analysis.languageAnalysisModel}` : ""}。
+        LLM 标注属于候选，弱证据不会显示；比赛 Hero Song 仍需人工校对。
+      </p>
+    </section>
+  );
+}
+
+function AnnotatedLine({
+  sentence,
+  onSelect,
+}: {
+  sentence: SongSentence;
+  onSelect: (hint: LanguageHint) => void;
+}) {
+  const marksAt = new Map<number, { mark: CharacterMark; hint: LanguageHint }[]>();
+  for (const hint of sentence.languageHints) {
+    for (const mark of hint.marks) {
+      const values = marksAt.get(mark.startCharIndex) ?? [];
+      values.push({ mark, hint });
+      marksAt.set(mark.startCharIndex, values);
+    }
+  }
+
+  return (
+    <p className="lyric-line">
+      {Array.from(sentence.lyrics).map((character, index) => (
+        <React.Fragment key={`${sentence.id}-${index}`}>
+          <span className="lyric-character">
+            {character}
+            {(marksAt.get(index) ?? [])
+              .filter(({ mark }) => mark.placement !== "bridge")
+              .map(({ mark, hint }) => (
+                <button
+                  key={`${hint.id}-${mark.symbol}`}
+                  className={`character-mark ${mark.placement}`}
+                  onClick={() => onSelect(hint)}
+                  title="查看解释"
+                >
+                  {mark.symbol}
+                </button>
+              ))}
+          </span>
+          {(marksAt.get(index) ?? [])
+            .filter(({ mark }) => mark.placement === "bridge")
+            .map(({ mark, hint }) => (
+              <button
+                key={`${hint.id}-${mark.symbol}`}
+                className="bridge-mark"
+                onClick={() => onSelect(hint)}
+                title="查看解释"
+              >
+                {mark.symbol}
+              </button>
+            ))}
+        </React.Fragment>
+      ))}
+    </p>
+  );
+}
+
+function HintDetail({ hint }: { hint: LanguageHint }) {
+  const detail = hint.details.find((item) => item.locale === "zh-CN") ?? hint.details[0];
+  if (!detail) return null;
+  return (
+    <aside className="hint-detail">
+      <div className="detail-heading">
+        <strong>{hint.marks.map((mark) => mark.symbol).join(" ")} · {hint.phenomenon}</strong>
+        <span>{hint.evidence.evidenceStrength ?? "unknown"}</span>
+      </div>
+      <p>{detail.explanation}</p>
+      <p className="action"><b>下一遍：</b>{detail.action}</p>
+      {hint.evidence.needsHumanReview && <p className="review-note">这条候选需要人工复核。</p>}
+    </aside>
   );
 }
 
@@ -19,4 +297,3 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <App />
   </React.StrictMode>,
 );
-

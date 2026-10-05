@@ -92,7 +92,7 @@ def make_profile() -> SongProfile:
 def test_song_profile_serializes_to_agreed_camel_case_contract() -> None:
     payload = make_profile().model_dump(mode="json", by_alias=True)
 
-    assert payload["schemaVersion"] == "1.3"
+    assert payload["schemaVersion"] == "1.4"
     assert payload["durationSeconds"] == 60.003
     assert payload["audio"]["vocalUrl"].endswith("vocals.wav")
     assert payload["vocalRange"]["lowestMidi"] == 48

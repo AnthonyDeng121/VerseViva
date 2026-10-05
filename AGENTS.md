@@ -644,12 +644,16 @@ Vocal Part 是参考歌曲的编排事实或候选；Overdub Take 是用户的�
 - 连续 Pitch 清洗、降采样与稳健音域
 - Difference Engine v0 的 cents 与参考 Pitch 插值
 - 39 项后端测试与 Ruff 验证（迁移前基线）
+- Song Language Profile 1.4 与可追溯 `LanguageHint`
+- CMUdict/G2P 相邻词边界候选生成
+- Gemini Structured Output 受限核查 Adapter
+- Audio LLM 结果到 `×`、`‿`、合并桥的确定性映射
+- 上传、任务进度、原曲 / 人声播放与语言标记展开详情的前端骨架
 
 ## 尚未完成
 
-- 可用的前端产品流程
-- Song Language Profile Schema
-- 英文 G2P / 音节结构
+- 完整可用并经过手机验证的前端产品流程
+- G2P 未登录词、缩写和多发音词的消歧
 - 参考演唱语言特征提取
 - 用户演唱上传与对齐
 - Language Difference Engine
@@ -657,6 +661,7 @@ Vocal Part 是参考歌曲的编排事实或候选；Overdub Take 是用户的�
 - Coach、Memory 与最终比赛 Demo
 - Vocal Part 人工标注、双轨歌词与 Overdub Take
 - 浏览器录音延迟校准和多 Take 同步回放
+- 真实 Gemini API 全曲成本、限流、超时与结果质量评测
 
 ## 已知性能事实
 

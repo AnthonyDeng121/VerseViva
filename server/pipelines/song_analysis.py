@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from pathlib import Path
+from shutil import copy2
 
 from server.config import Settings
 from server.models.song import (
@@ -11,18 +12,22 @@ from server.models.song import (
 )
 from server.pipelines.audio_probe import AudioDurationProbe, FfprobeAudioDurationProbe
 from server.pipelines.basic_pitch import BasicPitchAdapter, convert_basic_pitch_contour
-from server.pipelines.contracts import LyricsAligner, PitchExtractor, VocalSeparator
+from server.pipelines.contracts import LanguageCoach, LyricsAligner, PitchExtractor, VocalSeparator
 from server.pipelines.demucs import DemucsAdapter
+from server.pipelines.language_coach import DisabledLanguageCoach, GeminiLanguageCoach
 from server.pipelines.whisperx import WhisperXAdapter, convert_whisperx_json
+from server.services.language import apply_language_observations, generate_language_candidates
+from server.services.lyrics_reconciliation import reconcile_provided_lyrics
 from server.services.song_profile_builder import build_song_profile
 from server.storage.job_store import JobStore
 from server.storage.profile_store import ProfileStore
 
-PIPELINE_VERSION = "day3-reference-pitch-v1"
+PIPELINE_VERSION = "language-annotation-v1"
 STAGE_PROGRESS = {
     AnalysisStage.separating_vocals: 10,
     AnalysisStage.extracting_pitch: 40,
     AnalysisStage.aligning_lyrics: 68,
+    AnalysisStage.analyzing_language: 82,
     AnalysisStage.building_profile: 90,
     AnalysisStage.completed: 100,
 }
@@ -40,6 +45,7 @@ class SongAnalysisPipeline:
         separation_model: str,
         pitch_model: str,
         alignment_model: str,
+        language_coach: LanguageCoach | None = None,
     ):
         self.separator = separator
         self.pitch_extractor = pitch_extractor
@@ -50,6 +56,7 @@ class SongAnalysisPipeline:
         self.separation_model = separation_model
         self.pitch_model = pitch_model
         self.alignment_model = alignment_model
+        self.language_coach = language_coach or DisabledLanguageCoach()
 
     async def run(self, job_id: str, source: Path) -> None:
         job = self.job_store.get(job_id)
@@ -75,8 +82,38 @@ class SongAnalysisPipeline:
             )
             alignment = convert_whisperx_json(alignment_artifacts.alignment_json)
 
+            self._advance(job, AnalysisStage.analyzing_language)
+            provided_lyrics_path = job_dir / "input" / "lyrics.txt"
+            lyrics = (
+                provided_lyrics_path.read_text(encoding="utf-8")
+                if provided_lyrics_path.is_file()
+                else "\n".join(sentence.lyrics for sentence in alignment.sentences)
+            )
+            sentences = alignment.sentences
+            lyrics_source = LyricsSource.asr
+            if provided_lyrics_path.is_file():
+                sentences, lyrics_matched = reconcile_provided_lyrics(lyrics, sentences)
+                if lyrics_matched:
+                    lyrics_source = LyricsSource.provided
+            candidates = generate_language_candidates(sentences)
+            observations = await self.language_coach.analyze(
+                separation.vocals, lyrics, sentences, candidates
+            )
+            annotated_sentences = apply_language_observations(
+                sentences,
+                candidates,
+                observations.observations,
+                provider=self.language_coach.provider,
+                model=self.language_coach.model,
+            )
+
             self._advance(job, AnalysisStage.building_profile)
             duration = await self.duration_probe.duration_seconds(source)
+            _publish_audio_assets(
+                source=source,
+                vocals=separation.vocals,
+                song_dir=self.profile_store.songs_dir / job.song_id,
+            )
             profile = build_song_profile(
                 song_id=job.song_id,
                 title=job.title,
@@ -86,7 +123,7 @@ class SongAnalysisPipeline:
                     source_url=f"/api/v1/songs/{job.song_id}/audio/source",
                     vocal_url=f"/api/v1/songs/{job.song_id}/audio/vocals",
                 ),
-                sentences=alignment.sentences,
+                sentences=annotated_sentences,
                 notes=pitch_conversion.notes,
                 pitch_points=pitch_conversion.pitch_points,
                 pitch_processing=pitch_conversion.summary,
@@ -94,7 +131,9 @@ class SongAnalysisPipeline:
                 separation_model=self.separation_model,
                 pitch_model=self.pitch_model,
                 alignment_model=self.alignment_model,
-                lyrics_source=LyricsSource.asr,
+                language_analysis_provider=self.language_coach.provider,
+                language_analysis_model=self.language_coach.model,
+                lyrics_source=lyrics_source,
                 created_at=datetime.now(UTC),
             )
             self.profile_store.save(profile)
@@ -130,6 +169,17 @@ def build_default_pipeline(settings: Settings) -> SongAnalysisPipeline:
     def executable(path: Path) -> str:
         return str(path if path.is_absolute() else project_root / path)
 
+    language_coach: LanguageCoach = DisabledLanguageCoach()
+    if settings.language_analysis_provider == "gemini":
+        if settings.gemini_api_key is None:
+            raise ValueError(
+                "VERSEVIVA_GEMINI_API_KEY is required when language analysis provider is gemini"
+            )
+        language_coach = GeminiLanguageCoach(
+            api_key=settings.gemini_api_key.get_secret_value(),
+            model=settings.gemini_model,
+        )
+
     return SongAnalysisPipeline(
         separator=DemucsAdapter(
             executable=executable(settings.demucs_executable),
@@ -150,4 +200,12 @@ def build_default_pipeline(settings: Settings) -> SongAnalysisPipeline:
         separation_model=settings.demucs_model,
         pitch_model="basic-pitch",
         alignment_model=f"whisperx-{settings.whisperx_model}",
+        language_coach=language_coach,
     )
+
+
+def _publish_audio_assets(*, source: Path, vocals: Path, song_dir: Path) -> None:
+    audio_dir = song_dir / "audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    copy2(source, audio_dir / f"source{source.suffix.lower()}")
+    copy2(vocals, audio_dir / "vocals.wav")

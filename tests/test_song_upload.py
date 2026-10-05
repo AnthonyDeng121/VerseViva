@@ -40,6 +40,7 @@ def test_upload_creates_independent_ids_and_isolated_task_directory(upload_clien
     assert payload["has_lyrics"] is True
     saved_audio = data_dir / "jobs" / payload["job_id"] / "input" / "source.mp3"
     assert saved_audio.read_bytes() == b"ID3-valid-demo"
+    assert (saved_audio.parent / "lyrics.txt").read_text(encoding="utf-8") == "hello"
     assert (saved_audio.parents[1] / "job.json").is_file()
 
     query_response = client.get(f"/api/v1/songs/jobs/{payload['job_id']}")
@@ -179,7 +180,7 @@ def test_song_profile_query_returns_saved_profile(upload_client) -> None:
 
     assert response.status_code == 200
     assert response.json()["songId"] == song_id
-    assert response.json()["schemaVersion"] == "1.3"
+    assert response.json()["schemaVersion"] == "1.4"
     assert response.json()["sentences"][0]["words"][0]["text"] == "I"
 
 
@@ -191,3 +192,17 @@ def test_missing_or_malformed_song_profile_returns_404(upload_client) -> None:
 
     assert missing.status_code == 404
     assert malformed.status_code == 404
+
+
+def test_song_audio_assets_are_served_only_for_existing_profiles(upload_client) -> None:
+    client, data_dir = upload_client
+    song_id = "song_0123456789abcdef0123456789abcdef"
+    ProfileStore(data_dir).save(make_profile().model_copy(update={"song_id": song_id}))
+    audio_dir = data_dir / "songs" / song_id / "audio"
+    audio_dir.mkdir(parents=True)
+    (audio_dir / "source.mp3").write_bytes(b"ID3-source")
+    (audio_dir / "vocals.wav").write_bytes(b"RIFF-vocals")
+
+    assert client.get(f"/api/v1/songs/{song_id}/audio/source").content == b"ID3-source"
+    assert client.get(f"/api/v1/songs/{song_id}/audio/vocals").content == b"RIFF-vocals"
+    assert client.get(f"/api/v1/songs/{song_id}/audio/unknown").status_code == 404

@@ -1,0 +1,154 @@
+import asyncio
+import json
+from pathlib import Path
+
+from server.models.song import SongSentence
+from server.services.language.models import LanguageCandidate, LanguageObservationBatch
+
+
+class DisabledLanguageCoach:
+    provider = "disabled"
+    model = "disabled"
+
+    async def analyze(
+        self,
+        vocal_audio: Path,
+        lyrics: str,
+        sentences: list[SongSentence],
+        candidates: list[LanguageCandidate],
+    ) -> LanguageObservationBatch:
+        return LanguageObservationBatch(lyrics_match="not_analyzed", observations=[])
+
+
+class GeminiLanguageCoach:
+    provider = "gemini"
+
+    def __init__(self, api_key: str, model: str = "gemini-3.8-flash") -> None:
+        if not api_key:
+            raise ValueError("Gemini API key is required when language analysis is enabled")
+        self.api_key = api_key
+        self.model = model
+
+    async def analyze(
+        self,
+        vocal_audio: Path,
+        lyrics: str,
+        sentences: list[SongSentence],
+        candidates: list[LanguageCandidate],
+    ) -> LanguageObservationBatch:
+        return await asyncio.to_thread(
+            self._analyze_sync,
+            vocal_audio,
+            lyrics,
+            sentences,
+            candidates,
+        )
+
+    def _analyze_sync(
+        self,
+        vocal_audio: Path,
+        lyrics: str,
+        sentences: list[SongSentence],
+        candidates: list[LanguageCandidate],
+    ) -> LanguageObservationBatch:
+        try:
+            from google import genai
+        except ImportError as exc:
+            raise RuntimeError(
+                "Gemini language analysis requires the google-genai package"
+            ) from exc
+
+        client = genai.Client(api_key=self.api_key)
+        uploaded = client.files.upload(file=str(vocal_audio))
+        try:
+            interaction = client.interactions.create(
+                model=self.model,
+                input=[
+                    {"type": "text", "text": _build_prompt(lyrics, sentences, candidates)},
+                    {
+                        "type": "audio",
+                        "uri": uploaded.uri,
+                        "mime_type": uploaded.mime_type,
+                    },
+                ],
+                response_format={
+                    "type": "text",
+                    "mime_type": "application/json",
+                    "schema": LanguageObservationBatch.model_json_schema(),
+                },
+            )
+            batch = LanguageObservationBatch.model_validate_json(interaction.output_text)
+            known_ids = {candidate.id for candidate in candidates}
+            filtered = [
+                observation
+                for observation in batch.observations
+                if observation.candidate_id in known_ids
+            ]
+            return batch.model_copy(update={"observations": filtered})
+        finally:
+            name = getattr(uploaded, "name", None)
+            if name:
+                try:
+                    client.files.delete(name=name)
+                except Exception:
+                    pass
+
+
+def _build_prompt(
+    lyrics: str,
+    sentences: list[SongSentence],
+    candidates: list[LanguageCandidate],
+) -> str:
+    line_payload = [
+        {
+            "lineIndex": index,
+            "sentenceId": sentence.id,
+            "startSeconds": sentence.start_seconds,
+            "endSeconds": sentence.end_seconds,
+            "lyrics": sentence.lyrics,
+        }
+        for index, sentence in enumerate(sentences)
+    ]
+    candidate_payload = [
+        candidate.model_dump(mode="json", by_alias=True) for candidate in candidates
+    ]
+    return f"""
+你正在执行 VerseViva 的音频证据核查。歌词和 G2P 只用于定位候选边界，不能作为声音已经发生的证据。
+
+必须逐一核查 CANDIDATES 中的每个 candidateId，并且每个 ID 恰好返回一次。
+不得自行添加候选，也不得遗漏候选。即使没有语言现象，也必须返回
+continuous_without_change 或 uncertain。漏标不是允许的省略方式。
+
+结果定义：
+- clearly_released：目标塞音存在清晰、独立的释放，但没有跨词承接。
+- not_audibly_released：没有听到目标辅音的独立释放；不区分删除、未释放或声门化。
+- linked_or_resegmented：前词尾音可听地直接承接后词起音或进入后词音节，
+  但没有产生新的融合音。辅音到元音的跨词承接优先考虑此项。
+- merged_or_assimilated：两个边界音共享一次动作或形成新的音质。必须有区别于普通连续发音的可听证据。
+- continuous_without_change：唱得连续，但相对标准音素序列没有可标注的跨词动作变化。
+- uncertain：当前音频不能可靠区分。
+
+约束：
+- 没有停顿不自动等于 linked_or_resegmented。
+- 但也不能因为没有产生“新音”就漏掉真实的辅音到元音重新切分；
+  例如前词尾辅音实际承担后词元音起音时，应返回 linked_or_resegmented。
+- rhotic_to_vowel 候选需要检查词尾 r 音是否实际承接后词元音；
+  如果可听见这种承接，返回 linked_or_resegmented，而不是因为 ER 被归为元音就忽略。
+- /t/ 或 /d/ + /j/ 只有听到明确新增的破擦摩擦段，
+  才能返回 merged_or_assimilated；否则在 not_audibly_released、
+  continuous_without_change、uncertain 中选择。
+- 没听见爆破不足以区分删除与未释放，统一使用 not_audibly_released。
+- 不得编造波形、频谱、舌位、唇形或声门动作。audibleEvidence 只写当前音频中实际可听见的现象。
+- weak 必须 needsHumanReview=true。伴奏、混响、叠唱或分离伪影影响判断时，
+  使用 moderate/weak 或 uncertain。
+- 不生成 displayMarkup、教学动作、IPA 或候选列表之外的分析。
+
+用户提供歌词：
+{lyrics}
+
+对齐后的歌词行：
+{json.dumps(line_payload, ensure_ascii=False)}
+
+CANDIDATES：
+{json.dumps(candidate_payload, ensure_ascii=False)}
+""".strip()

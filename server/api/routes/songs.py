@@ -2,6 +2,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 
 from server.config import get_settings
 from server.models.song import AnalysisJob, AnalysisStatus, SongProfile
@@ -84,6 +85,8 @@ async def analyze_song(
         has_lyrics=bool(lyrics and lyrics.strip()),
     )
     JobStore(settings.data_dir).save(job)
+    if lyrics and lyrics.strip():
+        (input_dir / "lyrics.txt").write_text(lyrics.strip(), encoding="utf-8")
     if settings.auto_run_analysis_pipeline:
         background_tasks.add_task(
             build_default_pipeline(settings).run,
@@ -107,3 +110,23 @@ async def get_song_profile(song_id: str) -> SongProfile:
     if profile is None:
         raise HTTPException(status_code=404, detail="Song profile not found")
     return profile
+
+
+@router.get("/{song_id}/audio/{asset}", response_class=FileResponse)
+async def get_song_audio(song_id: str, asset: str) -> FileResponse:
+    settings = get_settings()
+    profile = ProfileStore(settings.data_dir).get(song_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Song profile not found")
+
+    audio_dir = settings.data_dir / "songs" / song_id / "audio"
+    if asset == "vocals":
+        source = audio_dir / "vocals.wav"
+    elif asset == "source":
+        matches = sorted(audio_dir.glob("source.*"))
+        source = matches[0] if matches else audio_dir / "source"
+    else:
+        raise HTTPException(status_code=404, detail="Audio asset not found")
+    if not source.is_file():
+        raise HTTPException(status_code=404, detail="Audio asset not found")
+    return FileResponse(source)

@@ -9,6 +9,12 @@ from server.pipelines.contracts import (
     SeparationArtifacts,
 )
 from server.pipelines.song_analysis import SongAnalysisPipeline
+from server.services.language import (
+    EvidenceStrength,
+    LanguageObservation,
+    LanguageObservationBatch,
+    ObservationResult,
+)
 from server.storage.job_store import JobStore
 from server.storage.profile_store import ProfileStore
 
@@ -78,6 +84,25 @@ class FailingSeparator:
         raise RuntimeError("separation exploded")
 
 
+class FakeLanguageCoach:
+    provider = "fake-audio-llm"
+    model = "fake-language-model"
+
+    async def analyze(self, vocal_audio, lyrics, sentences, candidates):
+        return LanguageObservationBatch(
+            lyrics_match="match",
+            observations=[
+                LanguageObservation(
+                    candidate_id=candidates[0].id,
+                    result=ObservationResult.linked_or_resegmented,
+                    evidence_strength=EvidenceStrength.strong,
+                    audible_evidence=["前词尾音直接承接后词。"],
+                    needs_human_review=False,
+                )
+            ],
+        )
+
+
 def make_job(data_dir: Path) -> tuple[AnalysisJob, Path, JobStore, ProfileStore]:
     job_id = "job_0123456789abcdef0123456789abcdef"
     song_id = "song_0123456789abcdef0123456789abcdef"
@@ -101,6 +126,7 @@ def make_pipeline(
     job_store: JobStore,
     profile_store: ProfileStore,
     separator=None,
+    language_coach=None,
 ) -> SongAnalysisPipeline:
     return SongAnalysisPipeline(
         separator=separator or FakeSeparator(),
@@ -112,6 +138,7 @@ def make_pipeline(
         separation_model="fake-demucs",
         pitch_model="fake-pitch",
         alignment_model="fake-whisperx",
+        language_coach=language_coach,
     )
 
 
@@ -138,8 +165,13 @@ def test_pipeline_builds_and_persists_song_profile(tmp_path: Path) -> None:
     assert profile.analysis.pitch_processing is not None
     assert profile.analysis.pitch_processing.output_pitch_point_count == 4
     assert profile.analysis.pitch_processing.fallback_used is True
-    assert profile.analysis.pipeline_version == "day3-reference-pitch-v1"
+    assert profile.analysis.pipeline_version == "language-annotation-v1"
     assert profile.analysis.pitch_model == "fake-pitch"
+    assert profile.analysis.language_analysis_provider == "disabled"
+    assert (
+        tmp_path / "songs" / job.song_id / "audio" / "source.mp3"
+    ).read_bytes() == b"ID3-audio"
+    assert (tmp_path / "songs" / job.song_id / "audio" / "vocals.wav").read_bytes() == b"vocals"
 
 
 def test_pipeline_persists_failure_stage_and_message(tmp_path: Path) -> None:
@@ -159,3 +191,20 @@ def test_pipeline_persists_failure_stage_and_message(tmp_path: Path) -> None:
     assert failed.error.stage == AnalysisStage.separating_vocals
     assert failed.error.code == "separating_vocals_failed"
     assert "separation exploded" in (failed.error.detail or "")
+
+
+def test_pipeline_maps_audio_model_observation_into_profile_hint(tmp_path: Path) -> None:
+    job, source, job_store, profile_store = make_job(tmp_path)
+
+    asyncio.run(
+        make_pipeline(
+            job_store,
+            profile_store,
+            language_coach=FakeLanguageCoach(),
+        ).run(job.job_id, source)
+    )
+
+    profile = profile_store.get(job.song_id)
+    assert profile is not None
+    assert profile.sentences[0].language_hints[0].marks[0].symbol == "‿"
+    assert profile.analysis.language_analysis_provider == "fake-audio-llm"

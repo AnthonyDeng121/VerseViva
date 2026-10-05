@@ -2,7 +2,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from server.models.song import LanguageHint, WordTiming
+from server.models.song import SongSentence
+from server.services.language.models import LanguageCandidate, LanguageObservationBatch
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +42,13 @@ class LyricsAligner(Protocol):
 
 
 class LanguageCoach(Protocol):
+    provider: str
+    model: str
+
     async def analyze(
-        self, vocal_audio: Path, lyrics: str, words: list[WordTiming]
-    ) -> list[LanguageHint]: ...
+        self,
+        vocal_audio: Path,
+        lyrics: str,
+        sentences: list[SongSentence],
+        candidates: list[LanguageCandidate],
+    ) -> LanguageObservationBatch: ...

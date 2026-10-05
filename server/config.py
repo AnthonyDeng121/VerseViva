@@ -1,8 +1,8 @@
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
-from pydantic import field_validator
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     whisperx_device: str = "cpu"
     whisperx_compute_type: str = "int8"
     ffprobe_executable: str = "ffprobe"
+    language_analysis_provider: Literal["disabled", "gemini"] = "disabled"
+    gemini_api_key: SecretStr | None = None
+    gemini_model: str = "gemini-3.8-flash"
 
     model_config = SettingsConfigDict(
         env_file=".env",

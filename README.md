@@ -10,6 +10,8 @@
 
 当前产品闭环是：看懂发音处理 → 分清 Vocal 层次 → 逐句跟唱和诊断 → 分轨录制重叠人声 → 同步回放 → 记住真实改善。VerseViva 不承诺把任意混合人声自动分离成独立主唱与和声，也不做完整 DAW；Hero Song 的声部边界首先采用人工校对，自动模型结果必须标明为候选。
 
+当前已接通的语言标注链路是：上传歌曲与歌词 → Demucs 人声分离 → WhisperX 词级对齐 → CMUdict/G2P 遍历全部相邻词边界 → Gemini 对候选逐项进行受限核查 → 程序映射为 `×`、`‿`、合并桥 → 点击标记查看中文证据与练习动作。它是“任意英文歌曲的候选标注流程”，不是母语级自动音素裁判；弱证据不会进入歌词主界面，Hero Song 仍需人工校对。
+
 ## 环境要求
 
 当前已验证开发环境是 Windows 11 + WSL2 Ubuntu：
@@ -61,6 +63,16 @@ npm install
 
 `.env` 是本地文件，不会提交。修改 `.env.example` 时不要加入密钥、本机绝对路径或用户音频路径。
 
+启用 Gemini 语言核查时，在本地 `.env` 设置：
+
+```dotenv
+VERSEVIVA_LANGUAGE_ANALYSIS_PROVIDER=gemini
+VERSEVIVA_GEMINI_API_KEY=你的本地密钥
+VERSEVIVA_GEMINI_MODEL=gemini-3.8-flash
+```
+
+默认 provider 是 `disabled`，因此没有密钥时仍可运行 Demucs、Basic Pitch、WhisperX 和 Profile 流程，但不会自动生成语言标记。密钥不得写入 `.env.example` 或提交到 Git。
+
 ## 启动
 
 后端（WSL，仓库根目录）：
@@ -111,6 +123,8 @@ ffprobe -version
 POST /api/v1/songs/analyze
 GET  /api/v1/songs/jobs/{job_id}
 GET  /api/v1/songs/{song_id}
+GET  /api/v1/songs/{song_id}/audio/source
+GET  /api/v1/songs/{song_id}/audio/vocals
 ```
 
 ## 数据与版本控制

@@ -28,6 +28,8 @@ def build_song_profile(
     separation_model: str,
     pitch_model: str,
     alignment_model: str,
+    language_analysis_provider: str | None = None,
+    language_analysis_model: str | None = None,
     lyrics_source: LyricsSource,
     created_at: datetime,
 ) -> SongProfile:
@@ -87,6 +89,8 @@ def build_song_profile(
             lyrics_source=lyrics_source,
             created_at=created_at,
             pitch_processing=pitch_processing,
+            language_analysis_provider=language_analysis_provider,
+            language_analysis_model=language_analysis_model,
         ),
     )
 
