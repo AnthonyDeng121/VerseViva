@@ -44,3 +44,80 @@ def test_full_song_lyrics_can_be_reconciled_to_uploaded_excerpt() -> None:
     assert [sentence.lyrics for sentence in sentences] == ["We're old", "up in"]
     assert sentences[0].words[0].start_seconds == 1.0
     assert sentences[-1].words[-1].end_seconds == 2.7
+
+
+def test_online_lyrics_win_when_whisperx_has_wrong_words() -> None:
+    asr = SongSentence(
+        id="sentence_001",
+        start_seconds=0,
+        end_seconds=4,
+        lyrics="I know you want my touch four life if you love me right and who knows",
+        words=[
+            WordTiming(
+                id=f"w{index}",
+                text=word,
+                start_seconds=index * 0.25,
+                end_seconds=(index + 1) * 0.25,
+            )
+            for index, word in enumerate(
+                "I know you want my touch four life if you love me right and who knows".split()
+            )
+        ],
+    )
+
+    sentences, matched = reconcile_provided_lyrics(
+        "Intro line\nI know you want my touch for life\n"
+        "If you love me right then who knows\nOutro line",
+        [asr],
+    )
+
+    assert matched is True
+    assert [sentence.lyrics for sentence in sentences] == [
+        "I know you want my touch for life",
+        "If you love me right then who knows",
+    ]
+    assert [word.text for sentence in sentences for word in sentence.words][6] == "for"
+    assert [word.text for sentence in sentences for word in sentence.words][13] == "then"
+
+
+def test_online_lyrics_missing_from_asr_receive_interpolated_times() -> None:
+    asr = SongSentence(
+        id="sentence_001",
+        start_seconds=0,
+        end_seconds=2,
+        lyrics="I know want touch life",
+        words=[
+            WordTiming(
+                id=f"w{index}",
+                text=word,
+                start_seconds=index * 0.4,
+                end_seconds=(index + 1) * 0.4,
+            )
+            for index, word in enumerate("I know want touch life".split())
+        ],
+    )
+
+    sentences, matched = reconcile_provided_lyrics(
+        "I know you want my touch for life",
+        [asr],
+    )
+
+    assert matched is True
+    words = sentences[0].words
+    assert [word.text for word in words] == "I know you want my touch for life".split()
+    assert all(
+        left.start_seconds <= right.start_seconds
+        for left, right in zip(words, words[1:], strict=False)
+    )
+
+
+def test_fuzzy_match_still_rejects_unrelated_song() -> None:
+    original = [aligned_sentence()]
+
+    sentences, matched = reconcile_provided_lyrics(
+        "Dancing underneath a completely different moon tonight",
+        original,
+    )
+
+    assert matched is False
+    assert sentences == original
