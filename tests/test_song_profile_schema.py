@@ -18,6 +18,10 @@ from server.models.song import (
     SegmentTransformation,
     SongProfile,
     SongSentence,
+    VocalLane,
+    VocalPart,
+    VocalPartRole,
+    VocalPartSource,
     VocalRange,
     WordTiming,
 )
@@ -88,7 +92,7 @@ def make_profile() -> SongProfile:
 def test_song_profile_serializes_to_agreed_camel_case_contract() -> None:
     payload = make_profile().model_dump(mode="json", by_alias=True)
 
-    assert payload["schemaVersion"] == "1.2"
+    assert payload["schemaVersion"] == "1.3"
     assert payload["durationSeconds"] == 60.003
     assert payload["audio"]["vocalUrl"].endswith("vocals.wav")
     assert payload["vocalRange"]["lowestMidi"] == 48
@@ -104,6 +108,80 @@ def test_optional_future_features_have_honest_empty_defaults() -> None:
     assert sentence.vocal_features.vocal_register is None
     assert sentence.vocal_features.falsetto is None
     assert sentence.vocal_features.confidence is None
+    assert make_profile().vocal_parts == []
+
+
+def test_profile_supports_overlapping_primary_and_secondary_vocal_parts() -> None:
+    profile = make_profile().model_copy(
+        update={
+            "vocal_parts": [
+                VocalPart(
+                    id="part_lead",
+                    lane=VocalLane.primary,
+                    role=VocalPartRole.lead,
+                    start_seconds=0.852,
+                    end_seconds=4.2,
+                    lyrics="I know you want my touch for life",
+                    sentence_ids=["sentence_001"],
+                    source=VocalPartSource.human_curated,
+                    confidence=1,
+                ),
+                VocalPart(
+                    id="part_harmony",
+                    lane=VocalLane.secondary,
+                    role=VocalPartRole.harmony,
+                    start_seconds=3.7,
+                    end_seconds=5.1,
+                    lyrics="for life",
+                    sentence_ids=["sentence_001"],
+                    source=VocalPartSource.audio_model_candidate,
+                    confidence=0.72,
+                ),
+            ]
+        }
+    )
+
+    payload = profile.model_dump(mode="json", by_alias=True)
+
+    assert payload["vocalParts"][0]["lane"] == "primary"
+    assert payload["vocalParts"][1]["lane"] == "secondary"
+    assert payload["vocalParts"][1]["role"] == "harmony"
+    assert payload["vocalParts"][0]["endSeconds"] > payload["vocalParts"][1]["startSeconds"]
+
+
+def test_profile_rejects_vocal_part_outside_song_or_unknown_sentence() -> None:
+    outside_song = make_profile().model_dump()
+    outside_song["vocal_parts"] = [
+        {
+            "id": "part_too_long",
+            "lane": "secondary",
+            "role": "ad_lib",
+            "start_seconds": 59,
+            "end_seconds": 61,
+            "lyrics": "oh",
+            "source": "human_curated",
+            "confidence": 1,
+        }
+    ]
+    with pytest.raises(ValidationError, match="inside the song"):
+        SongProfile.model_validate(outside_song)
+
+    invalid = make_profile().model_dump()
+    invalid["vocal_parts"] = [
+        {
+            "id": "part_unknown_sentence",
+            "lane": "secondary",
+            "role": "response",
+            "start_seconds": 2,
+            "end_seconds": 3,
+            "lyrics": "who knows",
+            "sentence_ids": ["sentence_missing"],
+            "source": "human_curated",
+            "confidence": 1,
+        }
+    ]
+    with pytest.raises(ValidationError, match="sentence ids"):
+        SongProfile.model_validate(invalid)
 
 
 def test_phonetic_hint_separates_lyric_marks_from_chinese_detail() -> None:

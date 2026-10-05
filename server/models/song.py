@@ -191,6 +191,47 @@ class VocalFeatures(SongProfileModel):
     confidence: float | None = Field(default=None, ge=0, le=1)
 
 
+class VocalLane(StrEnum):
+    primary = "primary"
+    secondary = "secondary"
+
+
+class VocalPartRole(StrEnum):
+    lead = "lead"
+    harmony = "harmony"
+    backing_vocal = "backing_vocal"
+    response = "response"
+    ad_lib = "ad_lib"
+    double = "double"
+    overlap = "overlap"
+
+
+class VocalPartSource(StrEnum):
+    acoustic_candidate = "acoustic_candidate"
+    audio_model_candidate = "audio_model_candidate"
+    human_curated = "human_curated"
+
+
+class VocalPart(SongProfileModel):
+    """A singable vocal layer placed on the shared song timeline."""
+
+    id: str
+    lane: VocalLane
+    role: VocalPartRole
+    start_seconds: float = Field(ge=0)
+    end_seconds: float = Field(ge=0)
+    lyrics: str = Field(min_length=1)
+    sentence_ids: list[str] = Field(default_factory=list)
+    source: VocalPartSource
+    confidence: float = Field(ge=0, le=1)
+
+    @model_validator(mode="after")
+    def validate_interval(self) -> "VocalPart":
+        if self.end_seconds < self.start_seconds:
+            raise ValueError("end_seconds must be greater than or equal to start_seconds")
+        return self
+
+
 class SongSentence(SongProfileModel):
     id: str
     start_seconds: float = Field(ge=0)
@@ -261,7 +302,7 @@ class AnalysisMetadata(SongProfileModel):
 
 
 class SongProfile(SongProfileModel):
-    schema_version: str = "1.2"
+    schema_version: str = "1.3"
     song_id: str
     title: str
     duration_seconds: float = Field(gt=0)
@@ -269,4 +310,15 @@ class SongProfile(SongProfileModel):
     audio: AudioAssets
     vocal_range: VocalRange | None = None
     sentences: list[SongSentence] = Field(default_factory=list)
+    vocal_parts: list[VocalPart] = Field(default_factory=list)
     analysis: AnalysisMetadata
+
+    @model_validator(mode="after")
+    def validate_vocal_parts(self) -> "SongProfile":
+        sentence_ids = {sentence.id for sentence in self.sentences}
+        for part in self.vocal_parts:
+            if part.end_seconds > self.duration_seconds:
+                raise ValueError("vocal part timestamps must stay inside the song")
+            if not set(part.sentence_ids).issubset(sentence_ids):
+                raise ValueError("vocal part sentence ids must point to profile sentences")
+        return self
