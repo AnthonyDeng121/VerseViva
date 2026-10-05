@@ -5,12 +5,15 @@ import "./styles.css";
 type AnalysisJob = {
   job_id: string;
   song_id: string;
+  title: string;
+  artist?: string | null;
   status: "queued" | "processing" | "completed" | "failed";
   stage: string;
   progress: number;
   attempt_count?: number;
   error?: { stage: string; message: string; detail?: string } | null;
   warnings?: { stage: string; message: string; detail?: string }[];
+  updated_at?: string;
 };
 
 type CharacterMark = {
@@ -82,6 +85,8 @@ const STAGE_LABELS: Record<string, string> = {
   failed: "分析失败",
 };
 
+const ACTIVE_JOB_KEY = "verseviva.activeJobId";
+
 function App() {
   const [job, setJob] = useState<AnalysisJob | null>(null);
   const [profile, setProfile] = useState<SongProfile | null>(null);
@@ -89,6 +94,47 @@ function App() {
   const [submitting, setSubmitting] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [title, setTitle] = useState("");
+  const [artist, setArtist] = useState("");
+
+  useEffect(() => {
+    const jobId = window.localStorage.getItem(ACTIVE_JOB_KEY);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(
+          jobId ? `/api/v1/songs/jobs/${jobId}` : "/api/v1/songs/jobs/latest",
+        );
+        if (!response.ok) {
+          if (response.status === 404) window.localStorage.removeItem(ACTIVE_JOB_KEY);
+          if (response.status === 404 && !jobId) return;
+          throw new Error("恢复上次分析任务失败");
+        }
+        const restoredJob = (await response.json()) as AnalysisJob;
+        if (cancelled) return;
+        setJob(restoredJob);
+        setTitle(restoredJob.title ?? "");
+        setArtist(restoredJob.artist ?? "");
+        if (restoredJob.status === "completed") {
+          const profileResponse = await fetch(`/api/v1/songs/${restoredJob.song_id}`);
+          if (!profileResponse.ok) throw new Error("恢复上次分析结果失败");
+          const restoredProfile = (await profileResponse.json()) as SongProfile;
+          if (!cancelled) setProfile(restoredProfile);
+        }
+      } catch (restoreError) {
+        if (!cancelled) {
+          setError(restoreError instanceof Error ? restoreError.message : "恢复任务失败");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (job?.job_id) window.localStorage.setItem(ACTIVE_JOB_KEY, job.job_id);
+  }, [job?.job_id]);
 
   useEffect(() => {
     if (!job || job.status === "completed" || job.status === "failed") return;
@@ -125,7 +171,10 @@ function App() {
         const payload = (await response.json().catch(() => null)) as { detail?: string } | null;
         throw new Error(payload?.detail ?? "上传失败");
       }
-      setJob((await response.json()) as AnalysisJob);
+      const createdJob = (await response.json()) as AnalysisJob;
+      setJob(createdJob);
+      setTitle(createdJob.title ?? title);
+      setArtist(createdJob.artist ?? artist);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "上传失败");
     } finally {
@@ -170,11 +219,23 @@ function App() {
         </label>
         <label>
           <span>歌曲名</span>
-          <input name="title" type="text" placeholder="可选；文件名不清楚时填写" />
+          <input
+            name="title"
+            type="text"
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            placeholder="可选；文件名不清楚时填写"
+          />
         </label>
         <label>
           <span>歌手</span>
-          <input name="artist" type="text" placeholder="可选；填写后可降低同名歌误匹配" />
+          <input
+            name="artist"
+            type="text"
+            value={artist}
+            onChange={(event) => setArtist(event.target.value)}
+            placeholder="可选；填写后可降低同名歌误匹配"
+          />
         </label>
         <details>
           <summary>高级：手动提供歌词</summary>
@@ -202,6 +263,13 @@ function App() {
             <div className="progress-value" style={{ width: `${job.progress}%` }} />
           </div>
           <p>完整歌曲在 CPU 环境下可能需要较长时间，Hero Song 应优先使用缓存。</p>
+          {job.status === "processing" && job.updated_at &&
+            Date.now() - new Date(job.updated_at).getTime() > 120_000 && (
+              <p className="stale-note">
+                该阶段较长时间未更新，可能仍在请求模型，也可能正在等待后端重启。
+                任务编号已保存，刷新页面后会自动恢复。
+              </p>
+            )}
           {job.status === "failed" && job.error && (
             <div className="failure-detail">
               <strong>{job.error.message}</strong>

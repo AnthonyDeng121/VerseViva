@@ -111,6 +111,19 @@ def test_missing_or_malformed_job_id_returns_404(upload_client) -> None:
     assert client.get("/api/v1/songs/jobs/not-a-job-id").status_code == 404
 
 
+def test_latest_job_endpoint_restores_most_recent_upload(upload_client) -> None:
+    client, _ = upload_client
+    uploaded = client.post(
+        "/api/v1/songs/analyze",
+        files={"audio": ("demo.mp3", b"ID3-demo", "audio/mpeg")},
+    ).json()
+
+    response = client.get("/api/v1/songs/jobs/latest")
+
+    assert response.status_code == 200
+    assert response.json()["job_id"] == uploaded["job_id"]
+
+
 def test_upload_starts_automatic_pipeline(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

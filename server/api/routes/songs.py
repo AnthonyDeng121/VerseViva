@@ -117,6 +117,14 @@ def _infer_song_identity(
     return stem, clean_artist
 
 
+@router.get("/jobs/latest", response_model=AnalysisJob)
+async def get_latest_analysis_job() -> AnalysisJob:
+    job = JobStore(get_settings().data_dir).latest()
+    if job is None:
+        raise HTTPException(status_code=404, detail="No analysis jobs found")
+    return job
+
+
 @router.get("/jobs/{job_id}", response_model=AnalysisJob)
 async def get_analysis_job(job_id: str) -> AnalysisJob:
     job = JobStore(get_settings().data_dir).get(job_id)
