@@ -5,7 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Uploa
 from fastapi.responses import FileResponse
 
 from server.config import get_settings
-from server.models.song import AnalysisJob, AnalysisStatus, SongProfile
+from server.models.song import AnalysisJob, AnalysisStage, AnalysisStatus, SongProfile
 from server.pipelines.song_analysis import build_default_pipeline
 from server.storage.job_store import JobStore
 from server.storage.profile_store import ProfileStore
@@ -122,6 +122,42 @@ async def get_analysis_job(job_id: str) -> AnalysisJob:
     job = JobStore(get_settings().data_dir).get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Analysis job not found")
+    return job
+
+
+@router.post(
+    "/jobs/{job_id}/retry",
+    response_model=AnalysisJob,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def retry_analysis_job(job_id: str, background_tasks: BackgroundTasks) -> AnalysisJob:
+    settings = get_settings()
+    store = JobStore(settings.data_dir)
+    job = store.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Analysis job not found")
+    if job.status != AnalysisStatus.failed:
+        raise HTTPException(status_code=409, detail="Only failed analysis jobs can be retried")
+
+    input_dir = settings.data_dir / "jobs" / job_id / "input"
+    sources = [
+        path
+        for suffix in ALLOWED_CONTENT_TYPES
+        if (path := input_dir / f"source{suffix}").is_file()
+    ]
+    if len(sources) != 1:
+        raise HTTPException(status_code=409, detail="Original audio is missing or ambiguous")
+
+    previous_stage = job.error.stage if job.error else AnalysisStage.queued
+    job.status = AnalysisStatus.queued
+    job.stage = previous_stage
+    job.error = None
+    store.save(job)
+    background_tasks.add_task(
+        build_default_pipeline(settings).run,
+        job.job_id,
+        sources[0],
+    )
     return job
 
 

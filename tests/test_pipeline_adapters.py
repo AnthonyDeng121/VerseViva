@@ -97,3 +97,29 @@ def test_adapter_rejects_missing_expected_artifacts(tmp_path: Path) -> None:
                 vocal_audio, tmp_path / "pitch"
             )
         )
+
+
+def test_adapters_reuse_complete_artifacts_without_rerunning_models(tmp_path: Path) -> None:
+    source = tmp_path / "source.mp3"
+    source.write_bytes(b"audio")
+    separation_dir = tmp_path / "separation"
+    model_dir = separation_dir / "htdemucs" / "source"
+    model_dir.mkdir(parents=True)
+    (model_dir / "vocals.wav").write_bytes(b"vocals")
+    (model_dir / "no_vocals.wav").write_bytes(b"music")
+    runner = FakeCommandRunner()
+
+    separation = asyncio.run(
+        DemucsAdapter(runner=runner).separate(source, separation_dir)
+    )
+    pitch_dir = tmp_path / "pitch"
+    pitch_dir.mkdir()
+    for suffix in (".csv", ".mid", ".npz"):
+        (pitch_dir / f"vocals_basic_pitch{suffix}").write_bytes(b"result")
+    asyncio.run(BasicPitchAdapter(runner=runner).extract(separation.vocals, pitch_dir))
+    alignment_dir = tmp_path / "alignment"
+    alignment_dir.mkdir()
+    (alignment_dir / "vocals.json").write_text("{}", encoding="utf-8")
+    asyncio.run(WhisperXAdapter(runner=runner).align(separation.vocals, alignment_dir))
+
+    assert runner.commands == []

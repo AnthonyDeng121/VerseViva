@@ -77,6 +77,8 @@ VERSEVIVA_GEMINI_MODEL=gemini-3.8-flash
 
 LRCLIB 默认启用且不需要 API Key。可通过 `VERSEVIVA_LYRICS_PROVIDER=disabled` 关闭，或用 `VERSEVIVA_LRCLIB_MIN_MATCH_SCORE` 调整自动采用阈值。
 
+分析任务支持断点恢复。Demucs、Basic Pitch、WhisperX、LRCLIB 和语言模型的完整产物会保存在对应 job 目录；失败后可在前端查看真实阶段与错误详情，并点击“从失败处重试”。重试会校验已有产物的存在性和非空完整性，只重新执行缺失或未成功的阶段。Gemini 的 `429` / `5xx` / 超时等短暂错误会先自动退避重试，仍失败才转为可手动恢复状态。
+
 ## 启动
 
 后端（WSL，仓库根目录）：
@@ -126,6 +128,7 @@ ffprobe -version
 ```text
 POST /api/v1/songs/analyze
 GET  /api/v1/songs/jobs/{job_id}
+POST /api/v1/songs/jobs/{job_id}/retry
 GET  /api/v1/songs/{song_id}
 GET  /api/v1/songs/{song_id}/audio/source
 GET  /api/v1/songs/{song_id}/audio/vocals

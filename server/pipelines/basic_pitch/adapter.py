@@ -18,6 +18,21 @@ class BasicPitchAdapter:
         if not vocal_audio.is_file():
             raise FileNotFoundError(f"Vocal audio does not exist: {vocal_audio}")
         output_dir.mkdir(parents=True, exist_ok=True)
+        base_name = f"{vocal_audio.stem}_basic_pitch"
+        artifacts = PitchArtifacts(
+            note_events_csv=output_dir / f"{base_name}.csv",
+            midi=output_dir / f"{base_name}.mid",
+            model_output_npz=output_dir / f"{base_name}.npz",
+        )
+        if all(
+            path.is_file() and path.stat().st_size > 0
+            for path in (
+                artifacts.note_events_csv,
+                artifacts.midi,
+                artifacts.model_output_npz,
+            )
+        ):
+            return artifacts
         await self.runner.run(
             [
                 self.executable,
@@ -28,12 +43,6 @@ class BasicPitchAdapter:
             ]
         )
 
-        base_name = f"{vocal_audio.stem}_basic_pitch"
-        artifacts = PitchArtifacts(
-            note_events_csv=output_dir / f"{base_name}.csv",
-            midi=output_dir / f"{base_name}.mid",
-            model_output_npz=output_dir / f"{base_name}.npz",
-        )
         missing = [
             path.name
             for path in (

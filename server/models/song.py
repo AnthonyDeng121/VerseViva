@@ -15,6 +15,7 @@ class AnalysisStatus(StrEnum):
 
 class AnalysisStage(StrEnum):
     queued = "queued"
+    probing_audio = "probing_audio"
     separating_vocals = "separating_vocals"
     extracting_pitch = "extracting_pitch"
     fetching_lyrics = "fetching_lyrics"
@@ -32,6 +33,12 @@ class AnalysisError(BaseModel):
     detail: str | None = None
 
 
+class AnalysisWarning(BaseModel):
+    stage: AnalysisStage
+    message: str
+    detail: str | None = None
+
+
 class AnalysisJob(BaseModel):
     job_id: str
     song_id: str
@@ -41,7 +48,9 @@ class AnalysisJob(BaseModel):
     title: str
     artist: str | None = None
     has_lyrics: bool
+    attempt_count: int = Field(default=0, ge=0)
     error: AnalysisError | None = None
+    warnings: list[AnalysisWarning] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

@@ -1,3 +1,5 @@
+import json
+from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 from shutil import copy2
@@ -7,6 +9,7 @@ from server.models.song import (
     AnalysisError,
     AnalysisStage,
     AnalysisStatus,
+    AnalysisWarning,
     AudioAssets,
     LyricsSource,
 )
@@ -23,7 +26,9 @@ from server.pipelines.demucs import DemucsAdapter
 from server.pipelines.language_coach import DisabledLanguageCoach, GeminiLanguageCoach
 from server.pipelines.whisperx import WhisperXAdapter, convert_whisperx_json
 from server.services.language import apply_language_observations, generate_language_candidates
+from server.services.language.models import LanguageObservationBatch
 from server.services.lyrics import DisabledLyricsProvider, LrclibLyricsProvider
+from server.services.lyrics.models import LyricsLookupResult
 from server.services.lyrics_reconciliation import reconcile_provided_lyrics
 from server.services.song_profile_builder import build_song_profile
 from server.storage.job_store import JobStore
@@ -31,6 +36,7 @@ from server.storage.profile_store import ProfileStore
 
 PIPELINE_VERSION = "language-annotation-v1"
 STAGE_PROGRESS = {
+    AnalysisStage.probing_audio: 2,
     AnalysisStage.separating_vocals: 10,
     AnalysisStage.extracting_pitch: 40,
     AnalysisStage.fetching_lyrics: 55,
@@ -74,6 +80,8 @@ class SongAnalysisPipeline:
             return
         job_dir = source.parents[1]
         try:
+            job.attempt_count += 1
+            self._advance(job, AnalysisStage.probing_audio)
             duration = await self.duration_probe.duration_seconds(source)
             self._advance(job, AnalysisStage.separating_vocals)
             separation = await self.separator.separate(source, job_dir / "separation")
@@ -88,18 +96,30 @@ class SongAnalysisPipeline:
             )
 
             provided_lyrics_path = job_dir / "input" / "lyrics.txt"
-            lyrics_lookup = None
+            lyrics_lookup = _load_lyrics_lookup(job_dir / "lyrics" / "lookup.json")
             if not provided_lyrics_path.is_file():
                 self._advance(job, AnalysisStage.fetching_lyrics)
-                try:
-                    lyrics_lookup = await self.lyrics_provider.find(
-                        title=job.title,
-                        artist=job.artist,
-                        duration_seconds=duration,
-                    )
-                except Exception:
-                    # Lyrics lookup improves the result but must never make audio analysis fail.
-                    lyrics_lookup = None
+                if lyrics_lookup is None:
+                    try:
+                        lyrics_lookup = await self.lyrics_provider.find(
+                            title=job.title,
+                            artist=job.artist,
+                            duration_seconds=duration,
+                        )
+                        if lyrics_lookup is not None:
+                            _save_json(
+                                job_dir / "lyrics" / "lookup.json",
+                                asdict(lyrics_lookup),
+                            )
+                    except Exception as exc:
+                        job.warnings.append(
+                            AnalysisWarning(
+                                stage=AnalysisStage.fetching_lyrics,
+                                message="联网歌词查询失败，已回退到 WhisperX 转写。",
+                                detail=str(exc),
+                            )
+                        )
+                        self.job_store.save(job)
 
             self._advance(job, AnalysisStage.aligning_lyrics)
             alignment_artifacts = await self.lyrics_aligner.align(
@@ -128,9 +148,16 @@ class SongAnalysisPipeline:
                 else:
                     lyrics = "\n".join(sentence.lyrics for sentence in sentences)
             candidates = generate_language_candidates(sentences)
-            observations = await self.language_coach.analyze(
-                separation.vocals, lyrics, sentences, candidates
-            )
+            observations_path = job_dir / "language" / "observations.json"
+            observations = _load_observations(observations_path)
+            if observations is None:
+                observations = await self.language_coach.analyze(
+                    separation.vocals, lyrics, sentences, candidates
+                )
+                _save_json(
+                    observations_path,
+                    observations.model_dump(mode="json", by_alias=True),
+                )
             annotated_sentences = apply_language_observations(
                 sentences,
                 candidates,
@@ -183,7 +210,7 @@ class SongAnalysisPipeline:
             job.error = AnalysisError(
                 code=f"{failed_stage.value}_failed",
                 stage=failed_stage,
-                message="歌曲分析没有完成，请稍后重试。",
+                message=_stage_error_message(failed_stage),
                 detail=str(exc),
             )
             self.job_store.save(job)
@@ -256,3 +283,43 @@ def _publish_audio_assets(*, source: Path, vocals: Path, song_dir: Path) -> None
     audio_dir.mkdir(parents=True, exist_ok=True)
     copy2(source, audio_dir / f"source{source.suffix.lower()}")
     copy2(vocals, audio_dir / "vocals.wav")
+
+
+def _save_json(path: Path, payload: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.tmp")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    temporary.replace(path)
+
+
+def _load_lyrics_lookup(path: Path) -> LyricsLookupResult | None:
+    if not path.is_file():
+        return None
+    try:
+        return LyricsLookupResult(**json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def _load_observations(path: Path) -> LanguageObservationBatch | None:
+    if not path.is_file():
+        return None
+    try:
+        return LanguageObservationBatch.model_validate_json(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _stage_error_message(stage: AnalysisStage) -> str:
+    messages = {
+        AnalysisStage.probing_audio: "无法读取音频信息。",
+        AnalysisStage.separating_vocals: "人声分离失败。",
+        AnalysisStage.extracting_pitch: "音频辅助特征提取失败。",
+        AnalysisStage.fetching_lyrics: "联网歌词查询失败。",
+        AnalysisStage.aligning_lyrics: "歌词时间对齐失败。",
+        AnalysisStage.analyzing_language: "语言现象分析失败。",
+        AnalysisStage.building_profile: "教学标注生成失败。",
+    }
+    return messages.get(stage, "歌曲分析没有完成。")

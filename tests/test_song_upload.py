@@ -188,6 +188,44 @@ def test_api_exposes_model_failure_after_background_pipeline(
     assert "Demucs" in payload["error"]["detail"]
 
 
+def test_failed_job_can_retry_with_original_audio(
+    upload_client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, data_dir = upload_client
+    calls: list[tuple[str, Path]] = []
+
+    class StubPipeline:
+        async def run(self, job_id: str, source: Path) -> None:
+            calls.append((job_id, source))
+
+    upload = client.post(
+        "/api/v1/songs/analyze",
+        files={"audio": ("demo.mp3", b"ID3-demo", "audio/mpeg")},
+    ).json()
+    store = JobStore(data_dir)
+    job = store.get(upload["job_id"])
+    assert job is not None
+    job.status = AnalysisStatus.failed
+    job.stage = AnalysisStage.failed
+    job.progress = 82
+    job.error = AnalysisError(
+        code="analyzing_language_failed",
+        stage=AnalysisStage.analyzing_language,
+        message="语言现象分析失败。",
+        detail="503 high demand",
+    )
+    store.save(job)
+    monkeypatch.setattr(songs_route, "build_default_pipeline", lambda settings: StubPipeline())
+
+    response = client.post(f"/api/v1/songs/jobs/{job.job_id}/retry")
+
+    assert response.status_code == 202
+    assert calls == [
+        (job.job_id, data_dir / "jobs" / job.job_id / "input" / "source.mp3")
+    ]
+    assert response.json()["error"] is None
+
+
 def test_song_profile_query_returns_saved_profile(upload_client) -> None:
     client, data_dir = upload_client
     song_id = "song_0123456789abcdef0123456789abcdef"

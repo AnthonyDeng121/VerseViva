@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 from pathlib import Path
 
 from server.models.song import SongSentence
@@ -51,6 +52,24 @@ class GeminiLanguageCoach:
         sentences: list[SongSentence],
         candidates: list[LanguageCandidate],
     ) -> LanguageObservationBatch:
+        last_error: Exception | None = None
+        for attempt in range(4):
+            try:
+                return self._analyze_once(vocal_audio, lyrics, sentences, candidates)
+            except Exception as exc:
+                last_error = exc
+                if attempt == 3 or not _is_retryable_gemini_error(exc):
+                    raise
+                time.sleep(2 ** (attempt + 1))
+        raise RuntimeError("Gemini analysis failed without an error") from last_error
+
+    def _analyze_once(
+        self,
+        vocal_audio: Path,
+        lyrics: str,
+        sentences: list[SongSentence],
+        candidates: list[LanguageCandidate],
+    ) -> LanguageObservationBatch:
         try:
             from google import genai
         except ImportError as exc:
@@ -92,6 +111,25 @@ class GeminiLanguageCoach:
                     client.files.delete(name=name)
                 except Exception:
                     pass
+
+
+def _is_retryable_gemini_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(
+        marker in message
+        for marker in (
+            "429",
+            "500",
+            "502",
+            "503",
+            "504",
+            "service_unavailable",
+            "resource_exhausted",
+            "high demand",
+            "temporarily unavailable",
+            "timeout",
+        )
+    )
 
 
 def _build_prompt(

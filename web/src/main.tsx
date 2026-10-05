@@ -8,7 +8,9 @@ type AnalysisJob = {
   status: "queued" | "processing" | "completed" | "failed";
   stage: string;
   progress: number;
-  error?: { message: string; detail?: string } | null;
+  attempt_count?: number;
+  error?: { stage: string; message: string; detail?: string } | null;
+  warnings?: { stage: string; message: string; detail?: string }[];
 };
 
 type CharacterMark = {
@@ -56,6 +58,7 @@ type SongProfile = {
 
 const STAGE_LABELS: Record<string, string> = {
   queued: "等待开始",
+  probing_audio: "正在读取音频信息",
   separating_vocals: "正在分离人声",
   extracting_pitch: "正在提取对齐辅助特征",
   fetching_lyrics: "正在从 LRCLIB 匹配歌词",
@@ -71,6 +74,7 @@ function App() {
   const [profile, setProfile] = useState<SongProfile | null>(null);
   const [selectedHint, setSelectedHint] = useState<LanguageHint | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -116,6 +120,26 @@ function App() {
     }
   }
 
+  async function retry() {
+    if (!job) return;
+    setRetrying(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/v1/songs/jobs/${job.job_id}/retry`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(payload?.detail ?? "重试失败");
+      }
+      setJob((await response.json()) as AnalysisJob);
+    } catch (retryError) {
+      setError(retryError instanceof Error ? retryError.message : "重试失败");
+    } finally {
+      setRetrying(false);
+    }
+  }
+
   return (
     <main>
       <header className="hero">
@@ -154,17 +178,37 @@ function App() {
       {job && !profile && (
         <section className="status-card" aria-live="polite">
           <div className="status-line">
-            <strong>{STAGE_LABELS[job.stage] ?? job.stage}</strong>
+            <strong>
+              {job.status === "failed"
+                ? `失败：${STAGE_LABELS[job.error?.stage ?? job.stage] ?? job.error?.stage}`
+                : STAGE_LABELS[job.stage] ?? job.stage}
+            </strong>
             <span>{job.progress}%</span>
           </div>
           <div className="progress-track">
             <div className="progress-value" style={{ width: `${job.progress}%` }} />
           </div>
           <p>完整歌曲在 CPU 环境下可能需要较长时间，Hero Song 应优先使用缓存。</p>
+          {job.status === "failed" && job.error && (
+            <div className="failure-detail">
+              <strong>{job.error.message}</strong>
+              {job.error.detail && <code>{job.error.detail}</code>}
+              <p>已完成的阶段产物会保留，重试时不会重复计算。</p>
+              <button className="retry-button" onClick={retry} disabled={retrying}>
+                {retrying ? "正在重试…" : "从失败处重试"}
+              </button>
+            </div>
+          )}
+          {job.warnings?.map((warning, index) => (
+            <div className="warning-detail" key={`${warning.stage}-${index}`}>
+              <strong>{warning.message}</strong>
+              {warning.detail && <code>{warning.detail}</code>}
+            </div>
+          ))}
         </section>
       )}
 
-      {error && <p className="error-card">{error}</p>}
+      {error && !job?.error && <p className="error-card">{error}</p>}
 
       {profile && (
         <ProfileView profile={profile} selectedHint={selectedHint} onSelect={setSelectedHint} />

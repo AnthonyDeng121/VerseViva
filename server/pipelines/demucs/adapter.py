@@ -20,6 +20,11 @@ class DemucsAdapter:
         if not source.is_file():
             raise FileNotFoundError(f"Source audio does not exist: {source}")
         output_dir.mkdir(parents=True, exist_ok=True)
+        model_dir = output_dir / self.model_name / source.stem
+        vocals = model_dir / "vocals.wav"
+        accompaniment = model_dir / "no_vocals.wav"
+        if all(path.is_file() and path.stat().st_size > 0 for path in (vocals, accompaniment)):
+            return SeparationArtifacts(vocals=vocals, accompaniment=accompaniment)
         await self.runner.run(
             [
                 self.executable,
@@ -33,9 +38,6 @@ class DemucsAdapter:
             ]
         )
 
-        model_dir = output_dir / self.model_name / source.stem
-        vocals = model_dir / "vocals.wav"
-        accompaniment = model_dir / "no_vocals.wav"
         missing = [path.name for path in (vocals, accompaniment) if not path.is_file()]
         if missing:
             raise MissingModelArtifactError(

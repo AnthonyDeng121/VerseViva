@@ -29,6 +29,9 @@ class WhisperXAdapter:
         if not vocal_audio.is_file():
             raise FileNotFoundError(f"Vocal audio does not exist: {vocal_audio}")
         output_dir.mkdir(parents=True, exist_ok=True)
+        alignment_json = output_dir / f"{vocal_audio.stem}.json"
+        if alignment_json.is_file() and alignment_json.stat().st_size > 0:
+            return AlignmentArtifacts(alignment_json=alignment_json)
         command = [
             self.executable,
             str(vocal_audio),
@@ -47,7 +50,6 @@ class WhisperXAdapter:
             command.extend(["--language", language])
         await self.runner.run(command)
 
-        alignment_json = output_dir / f"{vocal_audio.stem}.json"
         if not alignment_json.is_file():
             raise MissingModelArtifactError(
                 f"WhisperX did not produce expected artifact: {alignment_json.name}"
