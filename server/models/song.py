@@ -90,13 +90,15 @@ class Note(SongProfileModel):
         return self
 
 
-class LanguageHintType(StrEnum):
-    consonant_elision = "consonant_elision"
-    unreleased_stop = "unreleased_stop"
-    identical_consonant_merging = "identical_consonant_merging"
-    coalescent_assimilation = "coalescent_assimilation"
-    resyllabification = "resyllabification"
-    vowel_linking = "vowel_linking"
+class SegmentOperation(StrEnum):
+    delete = "delete"
+    unreleased = "unreleased"
+    merge = "merge"
+    substitute = "substitute"
+    insert = "insert"
+    resegment = "resegment"
+    lengthen = "lengthen"
+    shorten = "shorten"
 
 
 class LanguageHintSource(StrEnum):
@@ -134,19 +136,41 @@ class LocalizedHintDetail(SongProfileModel):
     action: str = Field(min_length=1)
 
 
+class SegmentTransformation(SongProfileModel):
+    """A language-independent change from expected to observed sound segments."""
+
+    operation: SegmentOperation
+    input_segments: list[str] = Field(default_factory=list)
+    output_segments: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_operation_shape(self) -> "SegmentTransformation":
+        if self.operation == SegmentOperation.delete:
+            if not self.input_segments or self.output_segments:
+                raise ValueError("delete requires input segments and no output segments")
+        elif self.operation == SegmentOperation.insert:
+            if self.input_segments or not self.output_segments:
+                raise ValueError("insert requires output segments and no input segments")
+        elif not self.input_segments or not self.output_segments:
+            raise ValueError(f"{self.operation} requires both input and output segments")
+        if self.operation == SegmentOperation.merge and len(self.input_segments) < 2:
+            raise ValueError("merge requires at least two input segments")
+        return self
+
+
 class LanguageHint(SongProfileModel):
     """A reference-performance phonetic change with compact marks and expandable details."""
 
     id: str
-    type: LanguageHintType
+    language: str = Field(min_length=2)
+    phenomenon: str = Field(min_length=1)
+    transformations: list[SegmentTransformation] = Field(min_length=1)
     start_word_index: int = Field(ge=0)
     end_word_index: int = Field(ge=0)
     start_seconds: float = Field(ge=0)
     end_seconds: float = Field(ge=0)
     source: LanguageHintSource
     confidence: float = Field(ge=0, le=1)
-    underlying_phonemes: list[str] = Field(default_factory=list)
-    observed_phonemes: list[str] = Field(default_factory=list)
     marks: list[CharacterMark] = Field(min_length=1)
     details: list[LocalizedHintDetail] = Field(default_factory=list)
     evidence: dict[str, Any] = Field(default_factory=dict)
@@ -237,7 +261,7 @@ class AnalysisMetadata(SongProfileModel):
 
 
 class SongProfile(SongProfileModel):
-    schema_version: str = "1.1"
+    schema_version: str = "1.2"
     song_id: str
     title: str
     duration_seconds: float = Field(gt=0)

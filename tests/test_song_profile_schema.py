@@ -9,12 +9,13 @@ from server.models.song import (
     CharacterMark,
     LanguageHint,
     LanguageHintSource,
-    LanguageHintType,
     LocalizedHintDetail,
     LyricsSource,
     MarkPlacement,
     Note,
     PitchPoint,
+    SegmentOperation,
+    SegmentTransformation,
     SongProfile,
     SongSentence,
     VocalRange,
@@ -87,7 +88,7 @@ def make_profile() -> SongProfile:
 def test_song_profile_serializes_to_agreed_camel_case_contract() -> None:
     payload = make_profile().model_dump(mode="json", by_alias=True)
 
-    assert payload["schemaVersion"] == "1.1"
+    assert payload["schemaVersion"] == "1.2"
     assert payload["durationSeconds"] == 60.003
     assert payload["audio"]["vocalUrl"].endswith("vocals.wav")
     assert payload["vocalRange"]["lowestMidi"] == 48
@@ -118,15 +119,20 @@ def test_phonetic_hint_separates_lyric_marks_from_chinese_detail() -> None:
         language_hints=[
             LanguageHint(
                 id="hint_want_t",
-                type=LanguageHintType.consonant_elision,
+                language="en",
+                phenomenon="consonant_elision",
+                transformations=[
+                    SegmentTransformation(
+                        operation=SegmentOperation.delete,
+                        input_segments=["t"],
+                    )
+                ],
                 start_word_index=0,
                 end_word_index=1,
                 start_seconds=10.55,
                 end_seconds=10.95,
                 source=LanguageHintSource.human_curated,
                 confidence=0.95,
-                underlying_phonemes=["t"],
-                observed_phonemes=[],
                 marks=[
                     CharacterMark(
                         symbol="×",
@@ -149,6 +155,10 @@ def test_phonetic_hint_separates_lyric_marks_from_chinese_detail() -> None:
 
     payload = sentence.model_dump(mode="json", by_alias=True)
     hint = payload["languageHints"][0]
+    assert hint["phenomenon"] == "consonant_elision"
+    assert hint["transformations"] == [
+        {"operation": "delete", "inputSegments": ["t"], "outputSegments": []}
+    ]
     assert hint["marks"] == [
         {"symbol": "×", "startCharIndex": 3, "endCharIndex": 3, "placement": "below"}
     ]
@@ -167,7 +177,14 @@ def test_language_hint_rejects_marks_outside_the_lyric() -> None:
             language_hints=[
                 LanguageHint(
                     id="hint_bad",
-                    type=LanguageHintType.consonant_elision,
+                    language="en",
+                    phenomenon="consonant_elision",
+                    transformations=[
+                        SegmentTransformation(
+                            operation=SegmentOperation.delete,
+                            input_segments=["t"],
+                        )
+                    ],
                     start_word_index=0,
                     end_word_index=0,
                     start_seconds=0.5,
@@ -185,6 +202,22 @@ def test_language_hint_rejects_marks_outside_the_lyric() -> None:
                 )
             ],
         )
+
+
+@pytest.mark.parametrize(
+    "transformation",
+    [
+        {"operation": "delete", "input_segments": [], "output_segments": []},
+        {"operation": "insert", "input_segments": ["ə"], "output_segments": ["ə"]},
+        {"operation": "merge", "input_segments": ["d"], "output_segments": ["d"]},
+        {"operation": "substitute", "input_segments": ["t"], "output_segments": []},
+    ],
+)
+def test_segment_transformations_reject_impossible_operation_shapes(
+    transformation: dict,
+) -> None:
+    with pytest.raises(ValidationError):
+        SegmentTransformation(**transformation)
 
 
 @pytest.mark.parametrize(

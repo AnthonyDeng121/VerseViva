@@ -107,6 +107,20 @@ bad  bad‿do  you  want‿me
 
 用户展开某一句或点击标记后，才显示中文解释、发音动作和下一遍练习建议。标记层与解释层必须在 Schema 中分离，以便未来韩语等语言复用同一套交互，而不把中文写死在歌词渲染中。
 
+### 通用音素操作与语言现象分层
+
+核心 Schema 不按语言无限增加固定枚举。任何英语、韩语或其他语言现象，先表示为一个或多个通用音素操作：
+
+- `delete`：输入音消失
+- `unreleased`：音仍有构形或闭塞，但没有独立释放
+- `merge`：两个或多个输入音共享或融合成较少的输出音
+- `substitute`：输入音在本次演唱中实现为另一音
+- `insert`：出现歌词标准音素中没有的声音
+- `resegment`：声音跨词或音节边界重新组织
+- `lengthen` / `shorten`：音段相对延长或缩短
+
+`phenomenon` 保存语言层名称，例如英语 `coalescent_assimilation`、韩语 `nasalization`；`transformations` 保存跨语言可比较的实际操作。一个复杂现象可以由多个 transformation 组成。新增语言时优先增加规则和解释，不修改核心操作模型。
+
 ### 不同不等于错误
 
 原唱是参考演绎，不是唯一正确答案。必须区分：
@@ -358,15 +372,21 @@ LLM 负责：
       "languageHints": [
         {
           "id": "hint_want_t",
-          "type": "consonant_elision",
+          "language": "en",
+          "phenomenon": "consonant_elision",
+          "transformations": [
+            {
+              "operation": "delete",
+              "inputSegments": ["t"],
+              "outputSegments": []
+            }
+          ],
           "startWordIndex": 5,
           "endWordIndex": 6,
           "startSeconds": 14.1,
           "endSeconds": 14.5,
           "source": "human_curated",
           "confidence": 0.95,
-          "underlyingPhonemes": ["t"],
-          "observedPhonemes": [],
           "marks": [
             {
               "symbol": "×",
