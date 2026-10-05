@@ -86,6 +86,24 @@ def test_recognized_extension_accepts_generic_browser_content_type(upload_client
     assert response.status_code == 202
 
 
+def test_upload_infers_artist_and_title_from_filename(upload_client) -> None:
+    client, _ = upload_client
+    response = client.post(
+        "/api/v1/songs/analyze",
+        files={
+            "audio": (
+                "Sabrina Carpenter - Juno.mp3",
+                b"ID3-demo",
+                "audio/mpeg",
+            )
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["title"] == "Juno"
+    assert response.json()["artist"] == "Sabrina Carpenter"
+
+
 def test_missing_or_malformed_job_id_returns_404(upload_client) -> None:
     client, _ = upload_client
 
@@ -180,7 +198,7 @@ def test_song_profile_query_returns_saved_profile(upload_client) -> None:
 
     assert response.status_code == 200
     assert response.json()["songId"] == song_id
-    assert response.json()["schemaVersion"] == "1.4"
+    assert response.json()["schemaVersion"] == "1.5"
     assert response.json()["sentences"][0]["words"][0]["text"] == "I"
 
 

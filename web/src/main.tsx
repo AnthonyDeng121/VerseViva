@@ -46,6 +46,9 @@ type SongProfile = {
   audio: { sourceUrl: string; vocalUrl: string };
   sentences: SongSentence[];
   analysis: {
+    lyricsSource?: string;
+    lyricsProvider?: string | null;
+    lyricsMatchConfidence?: number | null;
     languageAnalysisProvider?: string | null;
     languageAnalysisModel?: string | null;
   };
@@ -55,6 +58,7 @@ const STAGE_LABELS: Record<string, string> = {
   queued: "等待开始",
   separating_vocals: "正在分离人声",
   extracting_pitch: "正在提取对齐辅助特征",
+  fetching_lyrics: "正在从 LRCLIB 匹配歌词",
   aligning_lyrics: "正在对齐歌词",
   analyzing_language: "正在核查跨词发音",
   building_profile: "正在生成教学标记",
@@ -118,7 +122,7 @@ function App() {
         <p className="eyebrow">VERSEVIVA · 声声不息</p>
         <h1>听见原唱怎么把词唱在一起</h1>
         <p className="intro">
-          上传英文歌曲和歌词，系统会分离人声、对齐每个词，并用字符标出可听见的省音、跨词承接与音素合并。
+          只需上传英文歌曲，系统会查找歌词、分离人声、对齐每个词，并用字符标出可听见的语言现象。
         </p>
       </header>
 
@@ -129,16 +133,19 @@ function App() {
         </label>
         <label>
           <span>歌曲名</span>
-          <input name="title" type="text" placeholder="例如：Wonder" />
+          <input name="title" type="text" placeholder="可选；文件名不清楚时填写" />
         </label>
         <label>
-          <span>歌词</span>
-          <textarea
-            name="lyrics"
-            rows={7}
-            placeholder="粘贴准确歌词；暂不提供时将使用 WhisperX 转写结果"
-          />
+          <span>歌手</span>
+          <input name="artist" type="text" placeholder="可选；填写后可降低同名歌误匹配" />
         </label>
+        <details>
+          <summary>高级：手动提供歌词</summary>
+          <label>
+            <span>歌词（会优先于 LRCLIB）</span>
+            <textarea name="lyrics" rows={7} placeholder="仅在自动查词不准时使用" />
+          </label>
+        </details>
         <button className="primary-button" disabled={submitting}>
           {submitting ? "正在上传…" : "上传并分析"}
         </button>
@@ -215,6 +222,8 @@ function ProfileView({
       {selectedHint && <HintDetail hint={selectedHint} />}
 
       <p className="model-note">
+        歌词来源：{profile.analysis.lyricsSource ?? "asr"}
+        {profile.analysis.lyricsProvider ? ` / ${profile.analysis.lyricsProvider}` : ""}。
         标注来源：{profile.analysis.languageAnalysisProvider ?? "未启用"}
         {profile.analysis.languageAnalysisModel ? ` / ${profile.analysis.languageAnalysisModel}` : ""}。
         LLM 标注属于候选，弱证据不会显示；比赛 Hero Song 仍需人工校对。

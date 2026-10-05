@@ -15,6 +15,7 @@ from server.services.language import (
     LanguageObservationBatch,
     ObservationResult,
 )
+from server.services.lyrics import LyricsLookupResult
 from server.storage.job_store import JobStore
 from server.storage.profile_store import ProfileStore
 
@@ -103,6 +104,23 @@ class FakeLanguageCoach:
         )
 
 
+class FakeLyricsProvider:
+    provider = "lrclib"
+
+    async def find(self, *, title, artist, duration_seconds):
+        return LyricsLookupResult(
+            provider="lrclib",
+            provider_track_id=123,
+            track_name=title,
+            artist_name=artist or "Demo Artist",
+            album_name="Demo Album",
+            duration_seconds=duration_seconds,
+            plain_lyrics="hello world",
+            synced_lyrics=None,
+            match_confidence=0.97,
+        )
+
+
 def make_job(data_dir: Path) -> tuple[AnalysisJob, Path, JobStore, ProfileStore]:
     job_id = "job_0123456789abcdef0123456789abcdef"
     song_id = "song_0123456789abcdef0123456789abcdef"
@@ -127,6 +145,7 @@ def make_pipeline(
     profile_store: ProfileStore,
     separator=None,
     language_coach=None,
+    lyrics_provider=None,
 ) -> SongAnalysisPipeline:
     return SongAnalysisPipeline(
         separator=separator or FakeSeparator(),
@@ -138,6 +157,7 @@ def make_pipeline(
         separation_model="fake-demucs",
         pitch_model="fake-pitch",
         alignment_model="fake-whisperx",
+        lyrics_provider=lyrics_provider,
         language_coach=language_coach,
     )
 
@@ -208,3 +228,22 @@ def test_pipeline_maps_audio_model_observation_into_profile_hint(tmp_path: Path)
     assert profile is not None
     assert profile.sentences[0].language_hints[0].marks[0].symbol == "‿"
     assert profile.analysis.language_analysis_provider == "fake-audio-llm"
+
+
+def test_pipeline_uses_lrclib_lyrics_and_records_provenance(tmp_path: Path) -> None:
+    job, source, job_store, profile_store = make_job(tmp_path)
+
+    asyncio.run(
+        make_pipeline(
+            job_store,
+            profile_store,
+            lyrics_provider=FakeLyricsProvider(),
+        ).run(job.job_id, source)
+    )
+
+    profile = profile_store.get(job.song_id)
+    assert profile is not None
+    assert profile.analysis.lyrics_source == "lrclib"
+    assert profile.analysis.lyrics_provider == "lrclib"
+    assert profile.analysis.lyrics_provider_track_id == 123
+    assert profile.analysis.lyrics_match_confidence == 0.97

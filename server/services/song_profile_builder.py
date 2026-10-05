@@ -31,6 +31,9 @@ def build_song_profile(
     language_analysis_provider: str | None = None,
     language_analysis_model: str | None = None,
     lyrics_source: LyricsSource,
+    lyrics_provider: str | None = None,
+    lyrics_provider_track_id: int | None = None,
+    lyrics_match_confidence: float | None = None,
     created_at: datetime,
 ) -> SongProfile:
     pitch_points = pitch_points or []
@@ -87,6 +90,9 @@ def build_song_profile(
             pitch_model=pitch_model,
             alignment_model=alignment_model,
             lyrics_source=lyrics_source,
+            lyrics_provider=lyrics_provider,
+            lyrics_provider_track_id=lyrics_provider_track_id,
+            lyrics_match_confidence=lyrics_match_confidence,
             created_at=created_at,
             pitch_processing=pitch_processing,
             language_analysis_provider=language_analysis_provider,

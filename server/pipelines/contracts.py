@@ -4,6 +4,7 @@ from typing import Protocol
 
 from server.models.song import SongSentence
 from server.services.language.models import LanguageCandidate, LanguageObservationBatch
+from server.services.lyrics.models import LyricsLookupResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +40,14 @@ class LyricsAligner(Protocol):
         output_dir: Path,
         language: str | None = None,
     ) -> AlignmentArtifacts: ...
+
+
+class LyricsProvider(Protocol):
+    provider: str
+
+    async def find(
+        self, *, title: str, artist: str | None, duration_seconds: float | None
+    ) -> LyricsLookupResult | None: ...
 
 
 class LanguageCoach(Protocol):

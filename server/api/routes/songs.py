@@ -36,6 +36,7 @@ async def analyze_song(
     background_tasks: BackgroundTasks,
     audio: UploadFile = File(...),  # noqa: B008
     title: str | None = Form(default=None),
+    artist: str | None = Form(default=None),
     lyrics: str | None = Form(default=None),
 ) -> AnalysisJob:
     suffix = Path(audio.filename or "").suffix.lower()
@@ -77,11 +78,17 @@ async def analyze_song(
         raise
 
     # The worker pipeline will update this persisted state in the next milestone.
+    inferred_title, inferred_artist = _infer_song_identity(
+        filename=audio.filename or "Untitled",
+        title=title,
+        artist=artist,
+    )
     job = AnalysisJob(
         job_id=job_id,
         song_id=song_id,
         status=AnalysisStatus.queued,
-        title=(title or Path(audio.filename or "Untitled").stem).strip() or "Untitled",
+        title=inferred_title,
+        artist=inferred_artist,
         has_lyrics=bool(lyrics and lyrics.strip()),
     )
     JobStore(settings.data_dir).save(job)
@@ -94,6 +101,20 @@ async def analyze_song(
             destination,
         )
     return job
+
+
+def _infer_song_identity(
+    *, filename: str, title: str | None, artist: str | None
+) -> tuple[str, str | None]:
+    clean_title = title.strip() if title and title.strip() else None
+    clean_artist = artist.strip() if artist and artist.strip() else None
+    stem = Path(filename).stem.strip() or "Untitled"
+    if clean_title:
+        return clean_title, clean_artist
+    if " - " in stem:
+        inferred_artist, inferred_title = stem.split(" - ", maxsplit=1)
+        return inferred_title.strip() or stem, clean_artist or inferred_artist.strip() or None
+    return stem, clean_artist
 
 
 @router.get("/jobs/{job_id}", response_model=AnalysisJob)

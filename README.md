@@ -10,7 +10,9 @@
 
 当前产品闭环是：看懂发音处理 → 分清 Vocal 层次 → 逐句跟唱和诊断 → 分轨录制重叠人声 → 同步回放 → 记住真实改善。VerseViva 不承诺把任意混合人声自动分离成独立主唱与和声，也不做完整 DAW；Hero Song 的声部边界首先采用人工校对，自动模型结果必须标明为候选。
 
-当前已接通的语言标注链路是：上传歌曲与歌词 → Demucs 人声分离 → WhisperX 词级对齐 → CMUdict/G2P 遍历全部相邻词边界 → Gemini 对候选逐项进行受限核查 → 程序映射为 `×`、`‿`、合并桥 → 点击标记查看中文证据与练习动作。它是“任意英文歌曲的候选标注流程”，不是母语级自动音素裁判；弱证据不会进入歌词主界面，Hero Song 仍需人工校对。
+当前已接通的语言标注链路是：上传歌曲 → LRCLIB 自动查找歌词 → Demucs 人声分离 → WhisperX 词级对齐 → CMUdict/G2P 遍历全部相邻词边界 → Gemini 对候选逐项进行受限核查 → 程序映射为 `×`、`‿`、合并桥 → 点击标记查看中文证据与练习动作。文件名使用 `歌手 - 歌名.mp3` 时可自动推断查词条件，也可在页面补充歌手和歌名。手动歌词优先级最高；LRCLIB 查询失败、匹配不足或与 WhisperX 时间轴无法对上时，会回退到 ASR 歌词，不会让整个任务失败。
+
+这是“任意英文歌曲的候选标注流程”，不是母语级自动音素裁判；弱证据不会进入歌词主界面，Hero Song 仍需人工校对。
 
 ## 环境要求
 
@@ -72,6 +74,8 @@ VERSEVIVA_GEMINI_MODEL=gemini-3.8-flash
 ```
 
 默认 provider 是 `disabled`，因此没有密钥时仍可运行 Demucs、Basic Pitch、WhisperX 和 Profile 流程，但不会自动生成语言标记。密钥不得写入 `.env.example` 或提交到 Git。
+
+LRCLIB 默认启用且不需要 API Key。可通过 `VERSEVIVA_LYRICS_PROVIDER=disabled` 关闭，或用 `VERSEVIVA_LRCLIB_MIN_MATCH_SCORE` 调整自动采用阈值。
 
 ## 启动
 

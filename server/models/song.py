@@ -17,6 +17,7 @@ class AnalysisStage(StrEnum):
     queued = "queued"
     separating_vocals = "separating_vocals"
     extracting_pitch = "extracting_pitch"
+    fetching_lyrics = "fetching_lyrics"
     aligning_lyrics = "aligning_lyrics"
     analyzing_language = "analyzing_language"
     building_profile = "building_profile"
@@ -38,6 +39,7 @@ class AnalysisJob(BaseModel):
     stage: AnalysisStage = AnalysisStage.queued
     progress: int = Field(default=0, ge=0, le=100)
     title: str
+    artist: str | None = None
     has_lyrics: bool
     error: AnalysisError | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -273,6 +275,7 @@ class VocalRange(SongProfileModel):
 
 class LyricsSource(StrEnum):
     provided = "provided"
+    lrclib = "lrclib"
     lrc = "lrc"
     asr = "asr"
     corrected = "corrected"
@@ -298,6 +301,9 @@ class AnalysisMetadata(SongProfileModel):
     pitch_model: str
     alignment_model: str
     lyrics_source: LyricsSource
+    lyrics_provider: str | None = None
+    lyrics_provider_track_id: int | None = None
+    lyrics_match_confidence: float | None = Field(default=None, ge=0, le=1)
     created_at: datetime
     pitch_processing: PitchProcessingSummary | None = None
     language_analysis_provider: str | None = None
@@ -305,7 +311,7 @@ class AnalysisMetadata(SongProfileModel):
 
 
 class SongProfile(SongProfileModel):
-    schema_version: str = "1.4"
+    schema_version: str = "1.5"
     song_id: str
     title: str
     duration_seconds: float = Field(gt=0)

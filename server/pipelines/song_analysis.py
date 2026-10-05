@@ -12,11 +12,18 @@ from server.models.song import (
 )
 from server.pipelines.audio_probe import AudioDurationProbe, FfprobeAudioDurationProbe
 from server.pipelines.basic_pitch import BasicPitchAdapter, convert_basic_pitch_contour
-from server.pipelines.contracts import LanguageCoach, LyricsAligner, PitchExtractor, VocalSeparator
+from server.pipelines.contracts import (
+    LanguageCoach,
+    LyricsAligner,
+    LyricsProvider,
+    PitchExtractor,
+    VocalSeparator,
+)
 from server.pipelines.demucs import DemucsAdapter
 from server.pipelines.language_coach import DisabledLanguageCoach, GeminiLanguageCoach
 from server.pipelines.whisperx import WhisperXAdapter, convert_whisperx_json
 from server.services.language import apply_language_observations, generate_language_candidates
+from server.services.lyrics import DisabledLyricsProvider, LrclibLyricsProvider
 from server.services.lyrics_reconciliation import reconcile_provided_lyrics
 from server.services.song_profile_builder import build_song_profile
 from server.storage.job_store import JobStore
@@ -26,6 +33,7 @@ PIPELINE_VERSION = "language-annotation-v1"
 STAGE_PROGRESS = {
     AnalysisStage.separating_vocals: 10,
     AnalysisStage.extracting_pitch: 40,
+    AnalysisStage.fetching_lyrics: 55,
     AnalysisStage.aligning_lyrics: 68,
     AnalysisStage.analyzing_language: 82,
     AnalysisStage.building_profile: 90,
@@ -45,6 +53,7 @@ class SongAnalysisPipeline:
         separation_model: str,
         pitch_model: str,
         alignment_model: str,
+        lyrics_provider: LyricsProvider | None = None,
         language_coach: LanguageCoach | None = None,
     ):
         self.separator = separator
@@ -56,6 +65,7 @@ class SongAnalysisPipeline:
         self.separation_model = separation_model
         self.pitch_model = pitch_model
         self.alignment_model = alignment_model
+        self.lyrics_provider = lyrics_provider or DisabledLyricsProvider()
         self.language_coach = language_coach or DisabledLanguageCoach()
 
     async def run(self, job_id: str, source: Path) -> None:
@@ -64,6 +74,7 @@ class SongAnalysisPipeline:
             return
         job_dir = source.parents[1]
         try:
+            duration = await self.duration_probe.duration_seconds(source)
             self._advance(job, AnalysisStage.separating_vocals)
             separation = await self.separator.separate(source, job_dir / "separation")
 
@@ -76,6 +87,20 @@ class SongAnalysisPipeline:
                 pitch_artifacts.model_output_npz,
             )
 
+            provided_lyrics_path = job_dir / "input" / "lyrics.txt"
+            lyrics_lookup = None
+            if not provided_lyrics_path.is_file():
+                self._advance(job, AnalysisStage.fetching_lyrics)
+                try:
+                    lyrics_lookup = await self.lyrics_provider.find(
+                        title=job.title,
+                        artist=job.artist,
+                        duration_seconds=duration,
+                    )
+                except Exception:
+                    # Lyrics lookup improves the result but must never make audio analysis fail.
+                    lyrics_lookup = None
+
             self._advance(job, AnalysisStage.aligning_lyrics)
             alignment_artifacts = await self.lyrics_aligner.align(
                 separation.vocals, job_dir / "alignment"
@@ -83,10 +108,11 @@ class SongAnalysisPipeline:
             alignment = convert_whisperx_json(alignment_artifacts.alignment_json)
 
             self._advance(job, AnalysisStage.analyzing_language)
-            provided_lyrics_path = job_dir / "input" / "lyrics.txt"
             lyrics = (
                 provided_lyrics_path.read_text(encoding="utf-8")
                 if provided_lyrics_path.is_file()
+                else lyrics_lookup.plain_lyrics
+                if lyrics_lookup is not None
                 else "\n".join(sentence.lyrics for sentence in alignment.sentences)
             )
             sentences = alignment.sentences
@@ -95,6 +121,12 @@ class SongAnalysisPipeline:
                 sentences, lyrics_matched = reconcile_provided_lyrics(lyrics, sentences)
                 if lyrics_matched:
                     lyrics_source = LyricsSource.provided
+            elif lyrics_lookup is not None:
+                sentences, lyrics_matched = reconcile_provided_lyrics(lyrics, sentences)
+                if lyrics_matched:
+                    lyrics_source = LyricsSource.lrclib
+                else:
+                    lyrics = "\n".join(sentence.lyrics for sentence in sentences)
             candidates = generate_language_candidates(sentences)
             observations = await self.language_coach.analyze(
                 separation.vocals, lyrics, sentences, candidates
@@ -108,7 +140,6 @@ class SongAnalysisPipeline:
             )
 
             self._advance(job, AnalysisStage.building_profile)
-            duration = await self.duration_probe.duration_seconds(source)
             _publish_audio_assets(
                 source=source,
                 vocals=separation.vocals,
@@ -134,6 +165,13 @@ class SongAnalysisPipeline:
                 language_analysis_provider=self.language_coach.provider,
                 language_analysis_model=self.language_coach.model,
                 lyrics_source=lyrics_source,
+                lyrics_provider=lyrics_lookup.provider if lyrics_lookup else None,
+                lyrics_provider_track_id=(
+                    lyrics_lookup.provider_track_id if lyrics_lookup else None
+                ),
+                lyrics_match_confidence=(
+                    lyrics_lookup.match_confidence if lyrics_lookup else None
+                ),
                 created_at=datetime.now(UTC),
             )
             self.profile_store.save(profile)
@@ -180,6 +218,14 @@ def build_default_pipeline(settings: Settings) -> SongAnalysisPipeline:
             model=settings.gemini_model,
         )
 
+    lyrics_provider: LyricsProvider = DisabledLyricsProvider()
+    if settings.lyrics_provider == "lrclib":
+        lyrics_provider = LrclibLyricsProvider(
+            base_url=settings.lrclib_base_url,
+            timeout_seconds=settings.lrclib_timeout_seconds,
+            min_match_score=settings.lrclib_min_match_score,
+        )
+
     return SongAnalysisPipeline(
         separator=DemucsAdapter(
             executable=executable(settings.demucs_executable),
@@ -200,6 +246,7 @@ def build_default_pipeline(settings: Settings) -> SongAnalysisPipeline:
         separation_model=settings.demucs_model,
         pitch_model="basic-pitch",
         alignment_model=f"whisperx-{settings.whisperx_model}",
+        lyrics_provider=lyrics_provider,
         language_coach=language_coach,
     )
 
