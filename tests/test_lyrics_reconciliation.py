@@ -32,3 +32,15 @@ def test_mismatched_lyrics_fall_back_to_whisperx_sentences() -> None:
 
     assert matched is False
     assert sentences == original
+
+
+def test_full_song_lyrics_can_be_reconciled_to_uploaded_excerpt() -> None:
+    sentences, matched = reconcile_provided_lyrics(
+        "Intro words\nWe're old\nup in\nOutro words",
+        [aligned_sentence()],
+    )
+
+    assert matched is True
+    assert [sentence.lyrics for sentence in sentences] == ["We're old", "up in"]
+    assert sentences[0].words[0].start_seconds == 1.0
+    assert sentences[-1].words[-1].end_seconds == 2.7
