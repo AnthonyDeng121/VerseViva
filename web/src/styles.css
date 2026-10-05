@@ -59,6 +59,19 @@ input:focus, textarea:focus { outline: 3px solid rgba(8, 126, 107, .14); border-
   cursor: pointer;
 }
 .primary-button:disabled { opacity: .55; cursor: wait; }
+.secondary-button {
+  min-height: 42px;
+  border: 1px solid #087e6b;
+  border-radius: 12px;
+  padding: 0 17px;
+  color: #087e6b;
+  background: white;
+  font-weight: 800;
+  cursor: pointer;
+}
+.hero-shortcut { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 18px 22px; border: 1px solid #d8e4de; border-radius: 16px; background: #edf6f2; }
+.hero-shortcut > div { display: grid; gap: 4px; }
+.hero-shortcut p { font-size: 13px; }
 
 .status-card { display: grid; gap: 12px; padding: 22px; }
 .status-line, .profile-heading, .detail-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
@@ -96,10 +109,12 @@ audio { width: 100%; }
 .vocal-layers-heading { display: flex; justify-content: space-between; align-items: end; gap: 20px; }
 .vocal-layers-heading > p { max-width: 310px; text-align: right; font-size: 13px; }
 .vocal-lane-scroll { overflow-x: auto; padding-bottom: 4px; }
-.vocal-lane-grid { display: grid; grid-template-columns: repeat(2, minmax(260px, 1fr)); gap: 12px; min-width: 540px; }
-.vocal-lane { display: grid; align-content: start; gap: 10px; padding: 14px; border: 1px solid #ded8ce; border-radius: 14px; background: rgba(255, 255, 255, .82); }
-.vocal-lane.secondary { border-color: #c9ddd8; background: rgba(240, 250, 247, .9); }
+.vocal-lane-grid { display: grid; grid-template-columns: repeat(2, minmax(260px, 1fr)); gap: 8px 12px; min-width: 540px; }
+.vocal-lane-cell { display: grid; align-content: start; gap: 8px; padding: 10px; border: 1px solid #ded8ce; border-radius: 14px; background: rgba(255, 255, 255, .82); }
+.vocal-lane-cell.secondary { border-color: #c9ddd8; background: rgba(240, 250, 247, .9); }
 .vocal-lane-title, .vocal-part-meta { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.vocal-lane-title { padding: 0 10px 4px; }
+.vocal-lane-title.secondary { color: #087e6b; }
 .vocal-lane-title span, .vocal-part-meta span, .vocal-part small { color: #738078; font-size: 11px; }
 .vocal-part { display: grid; gap: 7px; padding: 12px; border-radius: 11px; background: white; box-shadow: 0 7px 20px rgba(47, 57, 51, .05); }
 .vocal-part p { color: #26332d; font-size: 16px; line-height: 1.55; }
@@ -135,6 +150,7 @@ audio { width: 100%; }
   .upload-card, .profile-card { padding: 18px; border-radius: 18px; }
   .players { grid-template-columns: 1fr; }
   .profile-heading { align-items: flex-start; }
+  .hero-shortcut { align-items: stretch; flex-direction: column; }
   .vocal-layers { padding: 14px; }
   .vocal-layers-heading { align-items: flex-start; }
   .vocal-layers-heading > p { display: none; }

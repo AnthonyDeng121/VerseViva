@@ -1,0 +1,21 @@
+{
+  "source": {
+    "type": "lyrics_structure_candidate",
+    "url": "https://www.cifraclub.com.br/olivia-rodrigo/get-him-back/",
+    "retrievedAt": "2026-10-05",
+    "note": "Parentheses are candidate backing vocals, not confirmed audio facts."
+  },
+  "cues": [
+    {"id": "primary_01", "lane": "primary", "text": "I wanna key his car"},
+    {"id": "primary_02", "lane": "primary", "text": "I wanna make him lunch"},
+    {"id": "primary_03", "lane": "primary", "text": "I wanna break his heart"},
+    {"id": "primary_04", "lane": "primary", "text": "Then be the one to stitch it up"},
+    {"id": "primary_05", "lane": "primary", "text": "Wanna kiss his face"},
+    {"id": "primary_06", "lane": "primary", "text": "With an uppercut"},
+    {"id": "primary_07", "lane": "primary", "text": "I wanna meet his mom"},
+    {"id": "primary_08", "lane": "primary", "text": "Just to tell her, her son sucks"},
+    {"id": "secondary_short", "lane": "secondary", "text": "I want to get him back"},
+    {"id": "secondary_long", "lane": "secondary", "text": "And then I, I want to get him back"},
+    {"id": "secondary_long_alt", "lane": "secondary", "text": "Then I, I want to get him back"}
+  ]
+}

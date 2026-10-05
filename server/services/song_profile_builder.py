@@ -9,6 +9,7 @@ from server.models.song import (
     PitchProcessingSummary,
     SongProfile,
     SongSentence,
+    VocalPart,
     VocalRange,
 )
 
@@ -35,6 +36,7 @@ def build_song_profile(
     lyrics_provider_track_id: int | None = None,
     lyrics_match_confidence: float | None = None,
     created_at: datetime,
+    vocal_parts: list[VocalPart] | None = None,
 ) -> SongProfile:
     pitch_points = pitch_points or []
     sentences_with_notes = []
@@ -84,6 +86,7 @@ def build_song_profile(
         audio=audio,
         vocal_range=vocal_range,
         sentences=sentences_with_notes,
+        vocal_parts=vocal_parts or [],
         analysis=AnalysisMetadata(
             pipeline_version=pipeline_version,
             separation_model=separation_model,

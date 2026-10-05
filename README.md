@@ -87,6 +87,25 @@ LRCLIB 默认启用且不需要 API Key。可通过 `VERSEVIVA_LYRICS_PROVIDER=d
 .venv/bin/uvicorn server.main:app --reload
 ```
 
+### 叠唱 Hero 缓存
+
+`data/day3/input/get him back!.mp3` 是 Overdub Hero 短片段。先生成 WhisperX 转写，再构建可由 API 直接读取的 Vocal Part Profile：
+
+```bash
+.venv-whisperx/bin/whisperx "data/day3/input/get him back!.mp3" \
+  --model small --device cpu --compute_type int8 --language en \
+  --output_dir data/day3/output/whisperx --output_format json
+.venv/bin/python -m server.scripts.build_day3_vocal_profile
+```
+
+如需生成 Gemini 音频候选，在 API 额度可用时运行：
+
+```bash
+.venv/bin/python -m server.scripts.analyze_day3_vocal_parts
+```
+
+Gemini 输出、括号歌词和 WhisperX 都只是候选证据。未经听感复核的 Vocal Part 必须保留 `needsHumanReview=true`，不得标为 `human_curated`。
+
 - API 文档：http://127.0.0.1:8000/docs
 - 健康检查：http://127.0.0.1:8000/api/v1/health
 

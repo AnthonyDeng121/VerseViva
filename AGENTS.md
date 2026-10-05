@@ -656,6 +656,8 @@ Overdub 功能的目标产品形态是可迁移到 TME / 全民 K 歌的演唱�
 - Gemini Structured Output 受限核查 Adapter
 - Audio LLM 结果到 `×`、`‿`、合并桥的确定性映射
 - 上传、任务进度、原曲 / 人声播放与语言标记展开详情的前端骨架
+- 《get him back!》bridge 的 WhisperX 时间锚点、歌词结构候选、可追溯 Vocal Part 缓存和左右双轨展示
+- Gemini Vocal Part 严格 Structured Output 适配器（真实运行受 API 额度影响，候选不自动升级为人工事实）
 
 ## 尚未完成
 
@@ -666,7 +668,7 @@ Overdub 功能的目标产品形态是可迁移到 TME / 全民 K 歌的演唱�
 - Language Difference Engine
 - 单句重练 UI 与比较
 - Coach、Memory 与最终比赛 Demo
-- Vocal Part 人工标注、双轨歌词与 Overdub Take
+- Vocal Part 听感人工复核、动态高亮与 Overdub Take
 - 浏览器录音延迟校准和多 Take 同步回放
 - 真实 Gemini API 全曲成本、限流、超时与结果质量评测
 

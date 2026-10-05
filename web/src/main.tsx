@@ -55,12 +55,14 @@ type VocalPart = {
   sentenceIds: string[];
   source: "acoustic_candidate" | "audio_model_candidate" | "lyrics_structure_candidate" | "human_curated";
   confidence: number;
+  needsHumanReview: boolean;
+  evidence: Record<string, unknown>;
 };
 
 type SongProfile = {
   songId: string;
   title: string;
-  audio: { sourceUrl: string; vocalUrl: string };
+  audio: { sourceUrl: string; vocalUrl?: string | null };
   sentences: SongSentence[];
   vocalParts: VocalPart[];
   analysis: {
@@ -84,6 +86,8 @@ const STAGE_LABELS: Record<string, string> = {
   completed: "分析完成",
   failed: "分析失败",
 };
+
+const VOCAL_LAYERS_HERO_SONG_ID = "song_00000000000000000000000000000003";
 
 const ACTIVE_JOB_KEY = "verseviva.activeJobId";
 
@@ -202,6 +206,19 @@ function App() {
     }
   }
 
+  async function loadVocalLayersHero() {
+    setError(null);
+    setSelectedHint(null);
+    try {
+      const response = await fetch(`/api/v1/songs/${VOCAL_LAYERS_HERO_SONG_ID}`);
+      if (!response.ok) throw new Error("叠唱 Hero 缓存尚未生成");
+      setProfile((await response.json()) as SongProfile);
+      setJob(null);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "读取叠唱 Hero 失败");
+    }
+  }
+
   return (
     <main>
       <header className="hero">
@@ -248,6 +265,16 @@ function App() {
           {submitting ? "正在上传…" : "上传并分析"}
         </button>
       </form>
+
+      <section className="hero-shortcut">
+        <div>
+          <strong>叠唱 Hero · get him back! bridge</strong>
+          <p>打开已缓存的左右 Vocal Part 候选，无需重新分析。</p>
+        </div>
+        <button className="secondary-button" type="button" onClick={loadVocalLayersHero}>
+          打开叠唱 Hero
+        </button>
+      </section>
 
       {job && !profile && (
         <section className="status-card" aria-live="polite">
@@ -326,10 +353,12 @@ function ProfileView({
           <span>原曲</span>
           <audio controls preload="metadata" src={profile.audio.sourceUrl} />
         </label>
-        <label>
-          <span>人声</span>
-          <audio controls preload="metadata" src={profile.audio.vocalUrl} />
-        </label>
+        {profile.audio.vocalUrl && (
+          <label>
+            <span>人声</span>
+            <audio controls preload="metadata" src={profile.audio.vocalUrl} />
+          </label>
+        )}
       </div>
 
       {profile.vocalParts.length > 0 && <VocalLayers vocalParts={profile.vocalParts} />}
@@ -369,8 +398,34 @@ const ROLE_LABELS: Record<VocalPart["role"], string> = {
   overlap: "Overlap",
 };
 
+const SOURCE_LABELS: Record<VocalPart["source"], string> = {
+  acoustic_candidate: "声学 / ASR 候选",
+  audio_model_candidate: "音频模型候选",
+  lyrics_structure_candidate: "歌词结构候选",
+  human_curated: "人工校对",
+};
+
 function VocalLayers({ vocalParts }: { vocalParts: VocalPart[] }) {
-  const lanes: VocalPart["lane"][] = ["primary", "secondary"];
+  const primary = vocalParts
+    .filter((part) => part.lane === "primary")
+    .sort((left, right) => left.startSeconds - right.startSeconds);
+  const secondary = vocalParts
+    .filter((part) => part.lane === "secondary")
+    .sort((left, right) => left.startSeconds - right.startSeconds);
+  const assignedSecondary = new Set<string>();
+  const rows = primary.map((part) => {
+    const overlapping = secondary.filter((candidate) => {
+      const overlaps = candidate.startSeconds < part.endSeconds
+        && candidate.endSeconds > part.startSeconds;
+      if (overlaps) assignedSecondary.add(candidate.id);
+      return overlaps;
+    });
+    return { primary: [part], secondary: overlapping };
+  });
+  for (const part of secondary) {
+    if (!assignedSecondary.has(part.id)) rows.push({ primary: [], secondary: [part] });
+  }
+
   return (
     <section className="vocal-layers" aria-labelledby="vocal-layers-heading">
       <div className="vocal-layers-heading">
@@ -382,36 +437,47 @@ function VocalLayers({ vocalParts }: { vocalParts: VocalPart[] }) {
       </div>
       <div className="vocal-lane-scroll">
         <div className="vocal-lane-grid">
-          {lanes.map((lane) => (
-            <div className={`vocal-lane ${lane}`} key={lane}>
-              <div className="vocal-lane-title">
-                <strong>{lane === "primary" ? "主 Vocal" : "次 Vocal"}</strong>
-                <span>{lane === "primary" ? "PRIMARY" : "SECONDARY"}</span>
+          <div className="vocal-lane-title primary">
+            <strong>主 Vocal</strong><span>PRIMARY</span>
+          </div>
+          <div className="vocal-lane-title secondary">
+            <strong>次 Vocal</strong><span>SECONDARY</span>
+          </div>
+          {rows.map((row, rowIndex) => (
+            <React.Fragment key={`vocal-row-${rowIndex}`}>
+              <div className="vocal-lane-cell primary">
+                {row.primary.length > 0
+                  ? row.primary.map((part) => <VocalPartCard part={part} key={part.id} />)
+                  : <p className="empty-vocal-lane">此时无主 Vocal 标注</p>}
               </div>
-              {vocalParts
-                .filter((part) => part.lane === lane)
-                .sort((left, right) => left.startSeconds - right.startSeconds)
-                .map((part) => (
-                  <article className="vocal-part" key={part.id}>
-                    <div className="vocal-part-meta">
-                      <strong>{ROLE_LABELS[part.role]}</strong>
-                      <span>{formatPartTime(part.startSeconds)} – {formatPartTime(part.endSeconds)}</span>
-                    </div>
-                    <p>{part.lyrics}</p>
-                    <small>
-                      {part.source === "human_curated" ? "人工校对" : "候选，需复核"}
-                      {` · ${Math.round(part.confidence * 100)}%`}
-                    </small>
-                  </article>
-                ))}
-              {vocalParts.every((part) => part.lane !== lane) && (
-                <p className="empty-vocal-lane">暂无已标注声部</p>
-              )}
-            </div>
+              <div className="vocal-lane-cell secondary">
+                {row.secondary.length > 0
+                  ? row.secondary.map((part) => <VocalPartCard part={part} key={part.id} />)
+                  : <p className="empty-vocal-lane">此时无次 Vocal 标注</p>}
+              </div>
+            </React.Fragment>
           ))}
         </div>
       </div>
     </section>
+  );
+}
+
+function VocalPartCard({ part }: { part: VocalPart }) {
+  const sourceLabel = SOURCE_LABELS[part.source];
+  return (
+    <article className="vocal-part">
+      <div className="vocal-part-meta">
+        <strong>{ROLE_LABELS[part.role]}</strong>
+        <span>{formatPartTime(part.startSeconds)} – {formatPartTime(part.endSeconds)}</span>
+      </div>
+      <p>{part.lyrics}</p>
+      <small>
+        {sourceLabel}
+        {part.needsHumanReview ? " · 需复核" : ""}
+        {` · ${Math.round(part.confidence * 100)}%`}
+      </small>
+    </article>
   );
 }
 

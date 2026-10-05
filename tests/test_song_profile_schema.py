@@ -136,6 +136,7 @@ def test_profile_supports_overlapping_primary_and_secondary_vocal_parts() -> Non
                     sentence_ids=["sentence_001"],
                     source=VocalPartSource.audio_model_candidate,
                     confidence=0.72,
+                    needs_human_review=True,
                 ),
                 VocalPart(
                     id="part_response",
@@ -147,6 +148,7 @@ def test_profile_supports_overlapping_primary_and_secondary_vocal_parts() -> Non
                     sentence_ids=["sentence_001"],
                     source=VocalPartSource.lyrics_structure_candidate,
                     confidence=0.58,
+                    needs_human_review=True,
                 ),
             ]
         }
@@ -174,6 +176,7 @@ def test_profile_rejects_vocal_part_outside_song_or_unknown_sentence() -> None:
             "lyrics": "oh",
             "source": "human_curated",
             "confidence": 1,
+            "needs_human_review": True,
         }
     ]
     with pytest.raises(ValidationError, match="inside the song"):
@@ -191,6 +194,7 @@ def test_profile_rejects_vocal_part_outside_song_or_unknown_sentence() -> None:
             "sentence_ids": ["sentence_missing"],
             "source": "human_curated",
             "confidence": 1,
+            "needs_human_review": True,
         }
     ]
     with pytest.raises(ValidationError, match="sentence ids"):

@@ -63,7 +63,7 @@ class SongProfileModel(BaseModel):
 
 class AudioAssets(SongProfileModel):
     source_url: str
-    vocal_url: str
+    vocal_url: str | None = None
 
 
 class PitchPoint(SongProfileModel):
@@ -237,11 +237,15 @@ class VocalPart(SongProfileModel):
     sentence_ids: list[str] = Field(default_factory=list)
     source: VocalPartSource
     confidence: float = Field(ge=0, le=1)
+    needs_human_review: bool = False
+    evidence: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_interval(self) -> "VocalPart":
         if self.end_seconds < self.start_seconds:
             raise ValueError("end_seconds must be greater than or equal to start_seconds")
+        if self.source != VocalPartSource.human_curated and not self.needs_human_review:
+            raise ValueError("candidate vocal parts must require human review")
         return self
 
 
