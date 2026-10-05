@@ -42,11 +42,24 @@ type SongSentence = {
   languageHints: LanguageHint[];
 };
 
+type VocalPart = {
+  id: string;
+  lane: "primary" | "secondary";
+  role: "lead" | "harmony" | "backing_vocal" | "response" | "ad_lib" | "double" | "overlap";
+  startSeconds: number;
+  endSeconds: number;
+  lyrics: string;
+  sentenceIds: string[];
+  source: "acoustic_candidate" | "audio_model_candidate" | "lyrics_structure_candidate" | "human_curated";
+  confidence: number;
+};
+
 type SongProfile = {
   songId: string;
   title: string;
   audio: { sourceUrl: string; vocalUrl: string };
   sentences: SongSentence[];
+  vocalParts: VocalPart[];
   analysis: {
     lyricsSource?: string;
     lyricsProvider?: string | null;
@@ -251,6 +264,8 @@ function ProfileView({
         </label>
       </div>
 
+      {profile.vocalParts.length > 0 && <VocalLayers vocalParts={profile.vocalParts} />}
+
       <div className="legend" aria-label="标记说明">
         <span><b>×</b> 未清晰释放</span>
         <span><b>‿</b> 跨词承接</span>
@@ -274,6 +289,68 @@ function ProfileView({
       </p>
     </section>
   );
+}
+
+const ROLE_LABELS: Record<VocalPart["role"], string> = {
+  lead: "Lead",
+  harmony: "Harmony",
+  backing_vocal: "Backing vocal",
+  response: "Response",
+  ad_lib: "Ad-lib",
+  double: "Double",
+  overlap: "Overlap",
+};
+
+function VocalLayers({ vocalParts }: { vocalParts: VocalPart[] }) {
+  const lanes: VocalPart["lane"][] = ["primary", "secondary"];
+  return (
+    <section className="vocal-layers" aria-labelledby="vocal-layers-heading">
+      <div className="vocal-layers-heading">
+        <div>
+          <p className="eyebrow">VOCAL PARTS</p>
+          <h3 id="vocal-layers-heading">左右双轨歌词</h3>
+        </div>
+        <p>双轨是参考视图，不是叠录数量上限。</p>
+      </div>
+      <div className="vocal-lane-scroll">
+        <div className="vocal-lane-grid">
+          {lanes.map((lane) => (
+            <div className={`vocal-lane ${lane}`} key={lane}>
+              <div className="vocal-lane-title">
+                <strong>{lane === "primary" ? "主 Vocal" : "次 Vocal"}</strong>
+                <span>{lane === "primary" ? "PRIMARY" : "SECONDARY"}</span>
+              </div>
+              {vocalParts
+                .filter((part) => part.lane === lane)
+                .sort((left, right) => left.startSeconds - right.startSeconds)
+                .map((part) => (
+                  <article className="vocal-part" key={part.id}>
+                    <div className="vocal-part-meta">
+                      <strong>{ROLE_LABELS[part.role]}</strong>
+                      <span>{formatPartTime(part.startSeconds)} – {formatPartTime(part.endSeconds)}</span>
+                    </div>
+                    <p>{part.lyrics}</p>
+                    <small>
+                      {part.source === "human_curated" ? "人工校对" : "候选，需复核"}
+                      {` · ${Math.round(part.confidence * 100)}%`}
+                    </small>
+                  </article>
+                ))}
+              {vocalParts.every((part) => part.lane !== lane) && (
+                <p className="empty-vocal-lane">暂无已标注声部</p>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function formatPartTime(seconds: number) {
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds - minutes * 60;
+  return `${minutes}:${remainder.toFixed(1).padStart(4, "0")}`;
 }
 
 function AnnotatedLine({

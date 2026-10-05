@@ -221,11 +221,12 @@ class VocalPartRole(StrEnum):
 class VocalPartSource(StrEnum):
     acoustic_candidate = "acoustic_candidate"
     audio_model_candidate = "audio_model_candidate"
+    lyrics_structure_candidate = "lyrics_structure_candidate"
     human_curated = "human_curated"
 
 
 class VocalPart(SongProfileModel):
-    """A singable vocal layer placed on the shared song timeline."""
+    """One reference vocal layer; the two-lane UI may contain many such parts."""
 
     id: str
     lane: VocalLane

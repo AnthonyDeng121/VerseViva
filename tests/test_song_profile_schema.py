@@ -137,6 +137,17 @@ def test_profile_supports_overlapping_primary_and_secondary_vocal_parts() -> Non
                     source=VocalPartSource.audio_model_candidate,
                     confidence=0.72,
                 ),
+                VocalPart(
+                    id="part_response",
+                    lane=VocalLane.secondary,
+                    role=VocalPartRole.response,
+                    start_seconds=3.9,
+                    end_seconds=4.9,
+                    lyrics="get him back",
+                    sentence_ids=["sentence_001"],
+                    source=VocalPartSource.lyrics_structure_candidate,
+                    confidence=0.58,
+                ),
             ]
         }
     )
@@ -147,6 +158,8 @@ def test_profile_supports_overlapping_primary_and_secondary_vocal_parts() -> Non
     assert payload["vocalParts"][1]["lane"] == "secondary"
     assert payload["vocalParts"][1]["role"] == "harmony"
     assert payload["vocalParts"][0]["endSeconds"] > payload["vocalParts"][1]["startSeconds"]
+    assert len(payload["vocalParts"]) == 3
+    assert payload["vocalParts"][2]["source"] == "lyrics_structure_candidate"
 
 
 def test_profile_rejects_vocal_part_outside_song_or_unknown_sentence() -> None:

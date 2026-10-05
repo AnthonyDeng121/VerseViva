@@ -120,14 +120,16 @@ bad  bad‿do  you  want‿me
 
 ### Vocal 编排也是可学习结构
 
-歌曲里同时发生的主唱、和声、背景句、回应、ad-lib、叠唱和跨句重叠，不应被压成一条无法实际演唱的歌词。系统使用共享时间轴上的两条教学轨：
+歌曲里同时发生的主唱、和声、背景句、回应、ad-lib、叠唱和跨句重叠，不应被压成一条无法实际演唱的歌词。主 / 次双轨是面向用户的默认教学视图，能覆盖大部分学习场景；底层模型必须允许同一时间轴上存在多个 Vocal Part，且同一 Vocal Part 可以保留多个非破坏性 Overdub Take。双轨界面不等于把工程限制为两条音轨。系统使用共享时间轴上的两条教学 lane：
 
 - `primary`：当前主要演唱线，通常是 lead vocal
 - `secondary`：与主线不能同时完成，或适合单独补录的 harmony / backing vocal / response / ad-lib / double / overlap
 
-桌面端可以左右并列，移动端必须按时间上下排列，不能机械坚持双栏导致歌词过窄。每一段必须显示角色和进入时机，用户可单独练习、录制、静音和回放，再将多次 Take 按同一时间轴叠加。
+双轨歌词默认左右并列：左侧 primary，右侧 secondary。移动端仍保留左右语义，必要时通过紧凑字号、水平滚动或聚焦某一轨保证可读性，不自动改成上下布局。每一段必须显示角色和进入时机，用户可单独练习、录制、静音和回放，再将多次 Take 按同一时间轴叠加。每条 Take 都必须可独立调节前后偏移和音量。
 
-第一版不假装拥有完美的自动声部分离：Demucs 的 vocals stem 通常仍包含所有人声层。Hero Song 的 Vocal Part 由人工校对；音频模型、能量、Pitch 或重叠转写只能提出候选，并明确标记来源与置信度。
+用户不只能录制系统检测到的重叠声部：他们可以在任意歌曲区间自行选择叠录片段并追加多个 Take。人工或模型标注的重叠 Vocal Part 是高质量的练习入口和时机参考，不是录音权限边界。
+
+第一版不假装拥有完美的自动声部分离：Demucs 的 vocals stem 通常仍包含所有人声层。Gemini 等音频理解模型可以提出和声、主副声轨重叠的时间候选；联网歌词中的括号内容可以提供 secondary / response / ad-lib 的结构候选。括号不自动等于独立声部，模型判断也不等于已分离音轨；两者都必须标记来源、置信度和是否需要人工复核。Hero Song 的最终 Vocal Part 由人工校对。
 
 ### 通用音素操作与语言现象分层
 
@@ -406,6 +408,7 @@ Vocal Part 另外使用：
 
 - `acoustic_candidate`：由重叠区间、能量、Pitch 或时间轴等特征提出的候选
 - `audio_model_candidate`：音频理解模型提出但尚未人工确认的候选
+- `lyrics_structure_candidate`：联网歌词的括号、重复行或排版结构提出的候选，不能单独证明独立声部
 - `human_curated`：Hero Song 人工确认的声部、歌词与时间范围
 
 `candidate` 只能用于快速标注和人工复核。没有独立 stem 时，不能声称系统已经从参考歌曲中提取了可单独播放的和声音轨。
@@ -534,7 +537,11 @@ Vocal Part 另外使用：
 - gain / mute 等最小回放状态
 - 创建时间与是否为当前采用版本
 
+同一 Vocal Part 可以有多个 Take，同一 Session 也可以包含超过两个同时回放的 Take。主 / 次双轨只是歌词教学视图，不是录音数量上限。每条 Take 的 `timelineOffset` / latency compensation / manual offset 和 `gain` 必须独立保存，以支持类似全民 K 歌的前后对齐与音量调节。
+
 Vocal Part 是参考歌曲的编排事实或候选；Overdub Take 是用户的实际录音，两者不得混为一类数据。
+
+Overdub 功能的目标产品形态是可迁移到 TME / 全民 K 歌的演唱流程中；比赛 Demo 保持独立、简单的实现，但数据语义和交互不应锁死为仅支持两轨或固定片段。
 
 ---
 
@@ -588,7 +595,7 @@ Vocal Part 是参考歌曲的编排事实或候选；Overdub Take 是用户的�
 - 前后两遍使用同一指标比较
 - 基于事实的 Coach 文案
 - Hero Song 人工校对的 primary / secondary Vocal Part
-- 主 / 次 Vocal 双轨歌词（移动端上下排列）
+- 主 / 次 Vocal 左右双轨歌词（移动端保留左右语义）
 - 至少两次分轨录音、延迟补偿、静音 / 重录与同步叠加回放
 
 ## P1 — 强化差异化
@@ -722,7 +729,7 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
 - `×`、`‿`、合并桥等纯字符标记的视觉表达，歌词主界面不直接显示中文标签
 - 原速、0.75×、只听人声、按句循环
 - 点击标记或展开句子后才显示中文解释与发音动作
-- 同时出现的 Vocal Part 使用双轨歌词；桌面可并列，手机按时间上下排列
+- 同时出现的 Vocal Part 使用左右双轨歌词；手机通过紧凑布局、水平滚动或单轨聚焦保持左右语义
 - 不制作面向用户的 Pitch 曲线或音高评分界面
 
 验收：
@@ -797,10 +804,12 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
 目标：让一个人通过多次录制完成原歌中无法同时唱出的 Vocal 层。
 
 - 展示 Hero Song 人工校对的 primary / secondary 双轨歌词
+- Overdub Hero 片段使用 Olivia Rodrigo 的《get him back!》bridge，原始短片段位于 `data/day3/input/get him back!.mp3`
 - 先录 primary take，再按同一歌曲时间轴录 secondary take
 - 使用共享 AudioContext 时钟和 latency offset 同步回放
 - 支持分轨静音、保留、重录和最小音量平衡
 - 没有独立和声 stem 时，只提供混合参考与进入提示，不伪造 solo harmony
+- 允许用户选择任意歌曲区间叠录，并对每个 Take 独立调节前后偏移与音量
 
 验收：
 
