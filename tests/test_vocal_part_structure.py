@@ -2,7 +2,7 @@ from server.models.song import SongSentence, VocalLane, VocalPartSource
 from server.services.vocal_parts.structure import derive_structural_vocal_parts
 
 
-def test_parenthetical_lyrics_create_reviewable_dual_lane_candidates() -> None:
+def test_parenthetical_lyrics_create_provider_backed_dual_lanes() -> None:
     sentence = SongSentence(
         id="sentence_001",
         start_seconds=2.0,
@@ -15,8 +15,9 @@ def test_parenthetical_lyrics_create_reviewable_dual_lane_candidates() -> None:
     assert [part.lane for part in parts] == [VocalLane.primary, VocalLane.secondary]
     assert parts[0].lyrics == "Tell me  I'm the only"
     assert parts[1].lyrics == "Ah-ah"
-    assert parts[1].source == VocalPartSource.lyrics_structure_candidate
-    assert all(part.needs_human_review for part in parts)
+    assert parts[1].source == VocalPartSource.lyrics_provider
+    assert parts[0].needs_human_review is True
+    assert parts[1].needs_human_review is False
 
 
 def test_plain_lyrics_do_not_pretend_to_have_multiple_vocal_parts() -> None:

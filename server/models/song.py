@@ -222,6 +222,7 @@ class VocalPartSource(StrEnum):
     acoustic_candidate = "acoustic_candidate"
     audio_model_candidate = "audio_model_candidate"
     lyrics_structure_candidate = "lyrics_structure_candidate"
+    lyrics_provider = "lyrics_provider"
     human_curated = "human_curated"
 
 
@@ -244,7 +245,10 @@ class VocalPart(SongProfileModel):
     def validate_interval(self) -> "VocalPart":
         if self.end_seconds < self.start_seconds:
             raise ValueError("end_seconds must be greater than or equal to start_seconds")
-        if self.source != VocalPartSource.human_curated and not self.needs_human_review:
+        if self.source not in {
+            VocalPartSource.human_curated,
+            VocalPartSource.lyrics_provider,
+        } and not self.needs_human_review:
             raise ValueError("candidate vocal parts must require human review")
         return self
 

@@ -411,7 +411,7 @@ Vocal Part 另外使用：
 - `lyrics_structure_candidate`：联网歌词的括号、重复行或排版结构提出的候选，不能单独证明独立声部
 - `human_curated`：Hero Song 人工确认的声部、歌词与时间范围
 
-`candidate` 只能用于快速标注和人工复核。没有独立 stem 时，不能声称系统已经从参考歌曲中提取了可单独播放的和声音轨。
+`candidate` 只能用于快速标注和人工复核。比赛 Demo 例外：选定歌词网站的括号内容直接作为 secondary 歌词文本，保留 `lyrics_provider` 来源；Gemini 只绑定 cue ID 判断该句是否可听见叠唱并返回起止时间，不得改写或生成歌词。WhisperX 仍负责 primary 及可对齐文本的单词级时间戳。没有独立 stem 时，不能声称系统已经从参考歌曲中提取了可单独播放的和声音轨。
 
 ---
 

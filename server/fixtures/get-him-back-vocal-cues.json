@@ -1,9 +1,9 @@
 {
   "source": {
-    "type": "lyrics_structure_candidate",
+    "type": "lyrics_provider",
     "url": "https://www.cifraclub.com.br/olivia-rodrigo/get-him-back/",
     "retrievedAt": "2026-10-05",
-    "note": "Parentheses are candidate backing vocals, not confirmed audio facts."
+    "note": "For the Demo, parenthesized text is the accepted secondary lyric; audio analysis only locates its timing."
   },
   "cues": [
     {"id": "primary_01", "lane": "primary", "text": "I wanna key his car"},
@@ -14,8 +14,17 @@
     {"id": "primary_06", "lane": "primary", "text": "With an uppercut"},
     {"id": "primary_07", "lane": "primary", "text": "I wanna meet his mom"},
     {"id": "primary_08", "lane": "primary", "text": "Just to tell her, her son sucks"},
-    {"id": "secondary_short", "lane": "secondary", "text": "I want to get him back"},
-    {"id": "secondary_long", "lane": "secondary", "text": "And then I, I want to get him back"},
-    {"id": "secondary_long_alt", "lane": "secondary", "text": "Then I, I want to get him back"}
+    {"id": "secondary_01", "lane": "secondary", "text": "I want to get him back"},
+    {"id": "secondary_02", "lane": "secondary", "text": "And then I, I want to get him back"},
+    {"id": "secondary_03", "lane": "secondary", "text": "Then I, I want to get him back"},
+    {"id": "secondary_04", "lane": "secondary", "text": "And then I, I want to get him back"},
+    {"id": "secondary_05", "lane": "secondary", "text": "And then I, I want to get him back"},
+    {"id": "secondary_06", "lane": "secondary", "text": "Then I, I want to get him back"},
+    {"id": "secondary_07", "lane": "secondary", "text": "And then I, I want to get him back"},
+    {"id": "secondary_08", "lane": "secondary", "text": "Then I, I want to get him back"},
+    {"id": "secondary_09", "lane": "secondary", "text": "Then I, I want to get him back"},
+    {"id": "secondary_10", "lane": "secondary", "text": "Then I, I want to get him back"},
+    {"id": "secondary_11", "lane": "secondary", "text": "I want to get him back"},
+    {"id": "secondary_12", "lane": "secondary", "text": "Then I, I want to get him back"}
   ]
 }

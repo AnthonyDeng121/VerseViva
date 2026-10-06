@@ -12,7 +12,7 @@ PARENTHETICAL = re.compile(r"\(([^()]+)\)")
 
 
 def derive_structural_vocal_parts(sentences: list[SongSentence]) -> list[VocalPart]:
-    """Create review-only lane candidates when lyrics contain parenthetical vocals."""
+    """Use provider parentheses as Demo secondary text; timing remains traceable."""
 
     secondary: list[VocalPart] = []
     for sentence_index, sentence in enumerate(sentences, start=1):
@@ -29,10 +29,14 @@ def derive_structural_vocal_parts(sentences: list[SongSentence]) -> list[VocalPa
                     end_seconds=sentence.end_seconds,
                     lyrics=cue,
                     sentence_ids=[sentence.id],
-                    source=VocalPartSource.lyrics_structure_candidate,
-                    confidence=0.55,
-                    needs_human_review=True,
-                    evidence={"parentheticalText": match.group(0)},
+                    source=VocalPartSource.lyrics_provider,
+                    confidence=0.95,
+                    needs_human_review=False,
+                    evidence={
+                        "parentheticalText": match.group(0),
+                        "textSource": "lyricsProvider",
+                        "timingSource": "alignedSentenceFallback",
+                    },
                 )
             )
     if not secondary:

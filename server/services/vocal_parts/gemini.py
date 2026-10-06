@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from server.services.vocal_parts.models import VocalPartCandidateBatch
+from server.services.vocal_parts.models import VocalCueTimingBatch
 
 
 class GeminiVocalPartAnalyzer:
@@ -19,7 +19,7 @@ class GeminiVocalPartAnalyzer:
         duration_seconds: float,
         transcript: dict[str, Any],
         lyric_cues: list[dict[str, Any]],
-    ) -> VocalPartCandidateBatch:
+    ) -> VocalCueTimingBatch:
         try:
             from google import genai
             from google.genai import types
@@ -37,21 +37,23 @@ class GeminiVocalPartAnalyzer:
                 contents=[uploaded, _build_prompt(duration_seconds, transcript, lyric_cues)],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
-                    response_schema=_gemini_schema(VocalPartCandidateBatch.model_json_schema()),
+                    response_schema=_gemini_schema(VocalCueTimingBatch.model_json_schema()),
                 ),
             )
             if not response.text:
                 raise RuntimeError("Gemini returned an empty Vocal Part response")
-            batch = VocalPartCandidateBatch.model_validate_json(response.text)
-            candidates = [
-                candidate
-                for candidate in batch.candidates
-                if candidate.end_seconds <= duration_seconds + 0.05
+            batch = VocalCueTimingBatch.model_validate_json(response.text)
+            known_ids = {str(cue["id"]) for cue in lyric_cues}
+            timings = [
+                timing
+                for timing in batch.timings
+                if timing.cue_id in known_ids
+                and (not timing.detected or timing.end_seconds <= duration_seconds + 0.05)
             ]
             return batch.model_copy(
                 update={
                     "audio_duration_seconds": duration_seconds,
-                    "candidates": candidates,
+                    "timings": timings,
                 }
             )
         finally:
@@ -77,17 +79,17 @@ def _build_prompt(
         for segment in transcript.get("segments", [])
     ]
     return f"""
-你正在为 VerseViva 标注一段歌曲中的 Vocal Parts。请直接听音频，识别 primary 主唱和与其同时出现的
-secondary harmony / backing vocal / response / ad-lib / double / overlap。
+你正在为 VerseViva 定位已知的叠唱歌词。LYRIC_CUES 已经由歌词网站确定为 secondary 文本；
+你只负责直接听音频，确定每个 cueId 对应的声音是否出现，以及出现时的起止时间。
 
 规则：
 - 时间必须相对于当前 {duration_seconds:.3f} 秒音频片段，从 0 秒开始。
-- primary 和 secondary 应拆成可练习的短乐句；同一时刻允许超过两个候选。
-- LYRIC_CUES 是歌词排版候选，不是音频事实。只有确实听到时才能采用，并在 matchedCueIds 中引用。
+- 对 LYRIC_CUES 中每个 cueId 恰好返回一条 timing，不得新增、遗漏或改写 cue。
+- 不返回歌词文本、lane 或 role；这些由结构化歌词决定。
+- 听到叠唱时 detected=true，并返回该句 secondary 的开始和结束。
+- 无法可靠定位时 detected=false，startSeconds 和 endSeconds 都返回 0，不得猜测。
 - ASR_TRANSCRIPT 只用于粗定位，可能漏掉较弱声部或听错单词。
-- audibleEvidence 只描述实际听到的声部进入、重叠、重复或音色位置，不得虚构频谱数值。
-- 所有输出都仍需人工复核，所以 needsHumanReview 必须为 true。
-- 无法可靠听清的歌词不要猜；可以缩短区间或降低 confidence。
+- audibleEvidence 只描述实际听到的叠唱进入、退出或重叠听感，不得虚构频谱数值。
 - 不要声称已经得到独立 stem。
 
 ASR_TRANSCRIPT:

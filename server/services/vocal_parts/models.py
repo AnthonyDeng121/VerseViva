@@ -37,3 +37,35 @@ class VocalPartCandidateBatch(VocalPartCandidateModel):
         if self.audio_duration_seconds <= 0:
             raise ValueError("audio_duration_seconds must be greater than zero")
         return self
+
+
+class VocalCueTiming(VocalPartCandidateModel):
+    cue_id: str = Field(min_length=1)
+    detected: bool
+    start_seconds: float = Field(ge=0)
+    end_seconds: float = Field(ge=0)
+    confidence: float = Field(ge=0, le=1)
+    audible_evidence: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_detected_interval(self) -> "VocalCueTiming":
+        if self.detected and self.end_seconds <= self.start_seconds:
+            raise ValueError("detected cue must have a positive interval")
+        if not self.detected and (self.start_seconds != 0 or self.end_seconds != 0):
+            raise ValueError("undetected cue must use zero timestamps")
+        return self
+
+
+class VocalCueTimingBatch(VocalPartCandidateModel):
+    audio_duration_seconds: float = Field(ge=0)
+    timings: list[VocalCueTiming] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_batch(self) -> "VocalCueTimingBatch":
+        if self.audio_duration_seconds <= 0:
+            raise ValueError("audio_duration_seconds must be greater than zero")
+        cue_ids = [timing.cue_id for timing in self.timings]
+        if len(cue_ids) != len(set(cue_ids)):
+            raise ValueError("cue timing IDs must be unique")
+        return self

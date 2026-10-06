@@ -2,7 +2,12 @@ import pytest
 from pydantic import ValidationError
 
 from server.services.vocal_parts.gemini import _gemini_schema
-from server.services.vocal_parts.models import VocalPartCandidate, VocalPartCandidateBatch
+from server.services.vocal_parts.models import (
+    VocalCueTiming,
+    VocalCueTimingBatch,
+    VocalPartCandidate,
+    VocalPartCandidateBatch,
+)
 
 
 def test_vocal_part_candidate_batch_uses_camel_case_contract() -> None:
@@ -54,8 +59,32 @@ def test_vocal_part_candidate_rejects_invalid_ranges_and_extra_fields() -> None:
 
 
 def test_gemini_schema_omits_unsupported_additional_properties() -> None:
-    schema = _gemini_schema(VocalPartCandidateBatch.model_json_schema())
+    schema = _gemini_schema(VocalCueTimingBatch.model_json_schema())
 
     assert "additionalProperties" not in schema
     assert "title" not in schema
     assert "additionalProperties" not in str(schema)
+
+
+def test_cue_timing_requires_zeroes_when_not_detected() -> None:
+    timing = VocalCueTiming(
+        cue_id="secondary_01",
+        detected=True,
+        start_seconds=1.2,
+        end_seconds=2.8,
+        confidence=0.9,
+        audible_evidence="A backing response overlaps the lead.",
+    )
+    batch = VocalCueTimingBatch(audio_duration_seconds=5, timings=[timing])
+
+    assert batch.timings[0].cue_id == "secondary_01"
+
+    with pytest.raises(ValidationError):
+        VocalCueTiming(
+            cue_id="secondary_02",
+            detected=False,
+            start_seconds=1,
+            end_seconds=2,
+            confidence=0.2,
+            audible_evidence="Could not locate the cue.",
+        )

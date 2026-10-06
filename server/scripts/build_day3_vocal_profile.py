@@ -13,6 +13,8 @@ from server.models.song import (
     VocalPartRole,
     VocalPartSource,
 )
+from server.pipelines.whisperx.converter import convert_whisperx_json
+from server.services.lyrics_reconciliation import reconcile_provided_lyrics
 from server.storage.profile_store import ProfileStore, write_profile_json
 
 DAY3_VOCAL_SONG_ID = "song_00000000000000000000000000000003"
@@ -49,6 +51,17 @@ def build_day3_vocal_profile(project_root: Path) -> tuple[SongProfile, Path]:
 
     cue_payload = json.loads(cues_path.read_text(encoding="utf-8"))
     cues = {cue["id"]: cue["text"] for cue in cue_payload["cues"]}
+    primary_lines = [cues[cue_id] for cue_id, _, _ in PRIMARY_WINDOWS]
+    primary_lines.extend(
+        ", ".join(cues[cue_id] for cue_id in cue_ids)
+        for cue_ids, _, _ in REPEATED_PRIMARY_WINDOWS
+    )
+    alignment = convert_whisperx_json(transcript_path)
+    sentences, reconciled = reconcile_provided_lyrics(
+        "\n".join(primary_lines), alignment.sentences
+    )
+    if not reconciled or len(sentences) != len(primary_lines):
+        sentences = alignment.sentences
     primary_parts = [
         _candidate_part(
             part_id=f"part_{cue_id}",
@@ -83,20 +96,22 @@ def build_day3_vocal_profile(project_root: Path) -> tuple[SongProfile, Path]:
     all_windows = [
         (part.start_seconds, part.end_seconds) for part in primary_parts
     ]
+    timing_path = day3_dir / "output" / "vocal-parts" / "gemini-cue-timings.json"
+    gemini_timings = _load_gemini_timings(timing_path)
     secondary_parts = [
         _candidate_part(
             part_id=f"part_secondary_response_{index:02d}",
             lane=VocalLane.secondary,
             role=VocalPartRole.response,
-            start=start,
-            end=end,
-            lyrics=cues["secondary_short" if index in {1, 11} else "secondary_long"],
-            source=VocalPartSource.lyrics_structure_candidate,
-            confidence=0.64,
-            cue_ids=["secondary_short" if index in {1, 11} else "secondary_long"],
+            start=gemini_timings.get(f"secondary_{index:02d}", (start, end, 0.0))[0],
+            end=gemini_timings.get(f"secondary_{index:02d}", (start, end, 0.0))[1],
+            lyrics=cues[f"secondary_{index:02d}"],
+            source=VocalPartSource.lyrics_provider,
+            confidence=gemini_timings.get(f"secondary_{index:02d}", (start, end, 0.72))[2],
+            cue_ids=[f"secondary_{index:02d}"],
             evidence_note=(
-                "Parenthesized lyric structure overlaps this lead window; "
-                "audio review pending."
+                "Parenthesized provider lyric is fixed; timing comes from Gemini when "
+                "available, otherwise the overlapping WhisperX phrase window is used."
             ),
         )
         for index, (start, end) in enumerate(all_windows, start=1)
@@ -115,7 +130,7 @@ def build_day3_vocal_profile(project_root: Path) -> tuple[SongProfile, Path]:
             source_url=f"/api/v1/songs/{DAY3_VOCAL_SONG_ID}/audio/source",
             vocal_url=None,
         ),
-        sentences=[],
+        sentences=sentences,
         vocal_parts=[*primary_parts, *secondary_parts],
         analysis=AnalysisMetadata(
             pipeline_version="day3-vocal-parts-v1",
@@ -123,10 +138,12 @@ def build_day3_vocal_profile(project_root: Path) -> tuple[SongProfile, Path]:
             pitch_model="not_run",
             alignment_model="whisperx-small-plus-lyric-cues",
             lyrics_source=LyricsSource.corrected,
-            lyrics_provider="cifraclub-structure-candidate",
+            lyrics_provider="cifraclub-parenthetical-demo-truth",
             lyrics_match_confidence=0.9,
             created_at=created_at,
-            language_analysis_provider="gemini-quota-blocked",
+            language_analysis_provider=(
+                "gemini-cue-timing" if gemini_timings else "whisperx-window-fallback"
+            ),
             language_analysis_model="gemini-3.8-flash",
         ),
     )
@@ -158,7 +175,7 @@ def _candidate_part(
         lyrics=lyrics,
         source=source,
         confidence=confidence,
-        needs_human_review=True,
+        needs_human_review=source != VocalPartSource.lyrics_provider,
         evidence={
             "audioRef": "data/day3/input/get him back!.mp3",
             "transcriptRef": "data/day3/output/whisperx/get him back!.json",
@@ -166,6 +183,21 @@ def _candidate_part(
             "note": evidence_note,
         },
     )
+
+
+def _load_gemini_timings(path: Path) -> dict[str, tuple[float, float, float]]:
+    if not path.is_file():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        item["cueId"]: (
+            float(item["startSeconds"]),
+            float(item["endSeconds"]),
+            float(item["confidence"]),
+        )
+        for item in payload.get("timings", [])
+        if item.get("detected")
+    }
 
 
 def main() -> None:

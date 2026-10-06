@@ -59,7 +59,7 @@ type VocalPart = {
   endSeconds: number;
   lyrics: string;
   sentenceIds: string[];
-  source: "acoustic_candidate" | "audio_model_candidate" | "lyrics_structure_candidate" | "human_curated";
+  source: "acoustic_candidate" | "audio_model_candidate" | "lyrics_structure_candidate" | "lyrics_provider" | "human_curated";
   confidence: number;
   needsHumanReview: boolean;
   evidence: Record<string, unknown>;
@@ -93,7 +93,10 @@ const STAGE_LABELS: Record<string, string> = {
   failed: "分析失败",
 };
 
-const VOCAL_LAYERS_HERO_SONG_ID = "song_00000000000000000000000000000003";
+const HERO_SONGS = [
+  { id: "song_00000000000000000000000000000002", label: "Juno" },
+  { id: "song_00000000000000000000000000000003", label: "get him back! bridge" },
+] as const;
 
 const ACTIVE_JOB_KEY = "verseviva.activeJobId";
 
@@ -212,12 +215,12 @@ function App() {
     }
   }
 
-  async function loadVocalLayersHero() {
+  async function loadHero(songId: string) {
     setError(null);
     setSelectedHint(null);
     try {
-      const response = await fetch(`/api/v1/songs/${VOCAL_LAYERS_HERO_SONG_ID}`);
-      if (!response.ok) throw new Error("叠唱 Hero 缓存尚未生成");
+      const response = await fetch(`/api/v1/songs/${songId}`);
+      if (!response.ok) throw new Error("Hero 歌曲缓存尚未生成");
       setProfile((await response.json()) as SongProfile);
       setJob(null);
     } catch (loadError) {
@@ -274,12 +277,14 @@ function App() {
 
       <section className="hero-shortcut">
         <div>
-          <strong>叠唱 Hero · get him back! bridge</strong>
-          <p>打开已缓存的左右 Vocal Part 候选，无需重新分析。</p>
+          <strong>已缓存 Hero Songs</strong>
+          <p>语音标记与左右 Vocal Part 在同一界面展示。</p>
         </div>
-        <button className="secondary-button" type="button" onClick={loadVocalLayersHero}>
-          打开叠唱 Hero
-        </button>
+        {HERO_SONGS.map((song) => (
+          <button className="secondary-button" type="button" key={song.id} onClick={() => loadHero(song.id)}>
+            打开 {song.label}
+          </button>
+        ))}
       </section>
 
       {job && !profile && (
@@ -507,6 +512,7 @@ const SOURCE_LABELS: Record<VocalPart["source"], string> = {
   acoustic_candidate: "声学 / ASR 候选",
   audio_model_candidate: "音频模型候选",
   lyrics_structure_candidate: "歌词结构候选",
+  lyrics_provider: "歌词网站",
   human_curated: "人工校对",
 };
 

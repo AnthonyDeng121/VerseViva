@@ -19,7 +19,10 @@ def test_day3_profile_builds_traceable_multi_part_hero() -> None:
     assert fixture_path.is_file()
     assert len(primary) == 12
     assert len(secondary) == 12
-    assert all(part.needs_human_review for part in profile.vocal_parts)
+    assert all(part.needs_human_review for part in primary)
+    assert all(not part.needs_human_review for part in secondary)
+    assert profile.sentences
+    assert any(sentence.words for sentence in profile.sentences)
     assert all(part.evidence["audioRef"] for part in profile.vocal_parts)
     assert any(
         left.start_seconds < right.end_seconds and right.start_seconds < left.end_seconds
