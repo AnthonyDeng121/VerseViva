@@ -243,9 +243,9 @@ function App() {
     <main>
       <header className="hero">
         <p className="eyebrow">VERSEVIVA · 声声不息</p>
-        <h1>听见原唱怎么把词唱在一起</h1>
+        <h1>教你学唱英文歌，并支持叠唱音轨</h1>
         <p className="intro">
-          只需上传英文歌曲，系统会查找歌词、分离人声、对齐每个词，并用字符标出可听见的语言现象。
+          点击上传歌曲文件，输入歌曲名 + 人名，系统自动解析歌词教学并支持多轨叠唱
         </p>
       </header>
 
@@ -369,7 +369,7 @@ function ProfileView({
   return (
     <section className="profile-card">
       <div className="profile-heading">
-        <div>
+        <div className="profile-title-line">
           <p className="eyebrow">分析结果</p>
           <h2>{profile.title}</h2>
         </div>
@@ -390,9 +390,9 @@ function ProfileView({
       </div>
 
       <div className="legend" aria-label="标记说明">
-        <span><b>×</b> 未清晰释放</span>
-        <span><b>‿</b> 跨词承接</span>
-        <span><b>└─┘</b> 合并或融合</span>
+        <span><b>×</b>：吞音（不发该音）</span>
+        <span><b>‿</b>：连读（读音二合一）</span>
+        <span><b>└─┘</b>：连读（读音改变）</span>
       </div>
 
       <div className="lyrics-stage-heading">
@@ -440,6 +440,7 @@ function ProfileView({
         sentences={profile.sentences}
         vocalParts={profile.vocalParts}
         accompanimentUrl={profile.audio.accompanimentUrl}
+        onTimelineChange={setCurrentTime}
       />
 
       <p className="model-note">
@@ -545,6 +546,7 @@ function VocalLayers({
   currentTime: number;
   onSelect: (hint: LanguageHint) => void;
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const sentencesById = new Map(sentences.map((sentence) => [sentence.id, sentence]));
   const primary = vocalParts
     .filter((part) => part.lane === "primary")
@@ -565,10 +567,18 @@ function VocalLayers({
   for (const part of secondary) {
     if (!assignedSecondary.has(part.id)) rows.push({ primary: [], secondary: [part] });
   }
+  const activeRow = rows.findIndex((row) => [...row.primary, ...row.secondary].some(
+    (part) => currentTime >= part.startSeconds && currentTime < part.endSeconds,
+  ));
+  useEffect(() => {
+    if (activeRow < 0 || !containerRef.current) return;
+    containerRef.current.querySelector(`[data-vocal-row="${activeRow}"]`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+  }, [activeRow]);
 
   return (
     <section className="vocal-layers" aria-label="左右双轨歌词">
-      <div className="vocal-lane-scroll">
+      <div className="vocal-lane-scroll" ref={containerRef}>
         <div className="vocal-lane-grid">
           <div className="vocal-lane-title primary">
             <strong>主 Vocal</strong><span>PRIMARY</span>
@@ -578,7 +588,7 @@ function VocalLayers({
           </div>
           {rows.map((row, rowIndex) => (
             <React.Fragment key={`vocal-row-${rowIndex}`}>
-              <div className="vocal-lane-cell primary">
+              <div className="vocal-lane-cell primary" data-vocal-row={rowIndex}>
                 {row.primary.length > 0
                   ? row.primary.map((part) => <VocalPartCard
                       part={part}
@@ -635,7 +645,7 @@ function VocalPartCard({
             onSelect={onSelect}
             compact
           />
-        : <p>{part.lyrics}</p>}
+        : <ProgressivePartLyrics part={part} currentTime={currentTime} />}
       <small>
         {sourceLabel}
         {part.needsHumanReview ? " · 声部身份需复核" : ""}
@@ -644,6 +654,17 @@ function VocalPartCard({
       </small>
     </article>
   );
+}
+
+function ProgressivePartLyrics({ part, currentTime }: { part: VocalPart; currentTime: number }) {
+  const characters = Array.from(part.lyrics);
+  const progress = Math.max(0, Math.min(1,
+    (currentTime - part.startSeconds) / Math.max(part.endSeconds - part.startSeconds, 0.01),
+  ));
+  const highlighted = Math.floor(characters.length * progress);
+  return <p className="progressive-part-lyrics">{characters.map((character, index) => (
+    <span className={index < highlighted ? "sung" : ""} key={`${index}-${character}`}>{character}</span>
+  ))}</p>;
 }
 
 function formatPartTime(seconds: number) {
@@ -695,7 +716,9 @@ function AnnotatedLine({
               .map(({ mark, hint }) => (
                 <button
                   key={`${hint.id}-${mark.symbol}`}
-                  className="character-mark below"
+                  className={`character-mark below ${
+                    mark.symbol === "×" ? "elision" : mark.symbol === "‿" ? "boundary link" : "boundary merge"
+                  }`}
                   onClick={() => onSelect(hint)}
                   title="查看解释"
                 >

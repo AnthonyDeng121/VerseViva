@@ -12,20 +12,20 @@ button, input, textarea { font: inherit; }
 main {
   min-height: 100vh;
   display: grid;
-  gap: 24px;
+  gap: 16px;
   max-width: 900px;
-  padding: 56px 24px 96px;
+  padding: 34px 24px 72px;
   margin: 0 auto;
 }
 
-.hero { display: grid; gap: 14px; }
+.hero { display: grid; gap: 8px; }
 .eyebrow { color: #087e6b; font-weight: 800; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; }
 h1, h2, p { margin: 0; }
-h1 { max-width: 760px; font-size: clamp(38px, 8vw, 68px); line-height: 1.04; letter-spacing: -.04em; }
-h2 { font-size: 28px; }
+h1 { max-width: 760px; font-size: clamp(18px, 3vw, 25px); line-height: 1.25; letter-spacing: -.015em; }
+h2 { font-size: 21px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 h3 { margin: 0; font-size: 21px; }
 p { line-height: 1.7; color: #526067; }
-.intro { max-width: 720px; font-size: 17px; }
+.intro { max-width: 760px; font-size: clamp(15px, 2.2vw, 18px); line-height: 1.5; }
 
 .upload-card, .status-card, .profile-card, .error-card {
   border: 1px solid #dce5df;
@@ -34,7 +34,9 @@ p { line-height: 1.7; color: #526067; }
   box-shadow: 0 20px 55px rgba(28, 57, 45, .07);
 }
 
-.upload-card { display: grid; gap: 18px; padding: 24px; }
+.upload-card { display: grid; grid-template-columns: 1.2fr 1fr 1fr auto; align-items: end; gap: 12px; padding: 16px 18px; }
+.upload-card details { grid-column: 1 / -1; font-size: 13px; }
+.upload-card .primary-button { min-height: 42px; }
 label { display: grid; gap: 8px; color: #33413b; font-weight: 700; }
 input, textarea {
   width: 100%;
@@ -69,7 +71,7 @@ input:focus, textarea:focus { outline: 3px solid rgba(8, 126, 107, .14); border-
   font-weight: 800;
   cursor: pointer;
 }
-.hero-shortcut { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 18px 22px; border: 1px solid #d8e4de; border-radius: 16px; background: #edf6f2; }
+.hero-shortcut { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 16px; border: 1px solid #d8e4de; border-radius: 14px; background: #edf6f2; }
 .hero-shortcut > div { display: grid; gap: 4px; }
 .hero-shortcut p { font-size: 13px; }
 
@@ -100,7 +102,9 @@ input:focus, textarea:focus { outline: 3px solid rgba(8, 126, 107, .14); border-
 }
 .retry-button:disabled { opacity: .55; cursor: wait; }
 
-.profile-card { display: grid; gap: 24px; padding: 26px; }
+.profile-card { display: grid; gap: 16px; padding: 20px; }
+.profile-title-line { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.profile-title-line .eyebrow { flex: none; }
 .profile-heading > span { color: #087e6b; font-weight: 800; }
 .players { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .players label { padding: 14px; border-radius: 14px; background: #f3f7f4; }
@@ -108,17 +112,19 @@ audio { width: 100%; }
 .vocal-layers { display: grid; gap: 16px; padding: 18px; border-radius: 18px; background: #f7f3ed; }
 .vocal-layers-heading { display: flex; justify-content: space-between; align-items: end; gap: 20px; }
 .vocal-layers-heading > p { max-width: 310px; text-align: right; font-size: 13px; }
-.vocal-lane-scroll { overflow-x: auto; padding-bottom: 4px; }
+.vocal-lane-scroll { max-height: min(48vh, 440px); overflow: auto; padding-bottom: 4px; scroll-behavior: smooth; }
 .vocal-lane-grid { display: grid; grid-template-columns: repeat(2, minmax(260px, 1fr)); gap: 8px 12px; min-width: 540px; }
-.vocal-lane-cell { display: grid; align-content: start; gap: 8px; padding: 10px; border: 1px solid #ded8ce; border-radius: 14px; background: rgba(255, 255, 255, .82); }
+.vocal-lane-cell { display: grid; align-content: start; gap: 6px; padding: 7px; border: 1px solid #ded8ce; border-radius: 11px; background: rgba(255, 255, 255, .82); }
 .vocal-lane-cell.secondary { border-color: #c9ddd8; background: rgba(240, 250, 247, .9); }
 .vocal-lane-title, .vocal-part-meta { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .vocal-lane-title { padding: 0 10px 4px; }
 .vocal-lane-title.secondary { color: #087e6b; }
 .vocal-lane-title span, .vocal-part-meta span, .vocal-part small { color: #738078; font-size: 11px; }
-.vocal-part { display: grid; gap: 7px; padding: 12px; border-radius: 11px; background: white; box-shadow: 0 7px 20px rgba(47, 57, 51, .05); }
+.vocal-part { display: grid; gap: 5px; padding: 9px; border-radius: 9px; background: white; box-shadow: 0 5px 14px rgba(47, 57, 51, .04); }
 .vocal-part.active { outline: 2px solid #0e9f86; background: #effaf6; }
-.vocal-part p { color: #26332d; font-size: 16px; line-height: 1.55; }
+.vocal-part p { color: #26332d; font-size: 14px; line-height: 1.45; }
+.progressive-part-lyrics span { color: #718078; transition: color .15s ease; }
+.progressive-part-lyrics span.sung { color: #0b9b81; }
 .empty-vocal-lane { padding: 16px 4px; font-size: 13px; }
 .legend { display: flex; flex-wrap: wrap; gap: 10px; }
 .legend span { padding: 7px 11px; border-radius: 99px; color: #56635d; background: #f0f3f1; font-size: 13px; }
@@ -128,13 +134,13 @@ audio { width: 100%; }
 .lyrics-mode-switch { display: flex; padding: 3px; border-radius: 12px; background: #e9efeb; }
 .lyrics-mode-switch button { border: 0; border-radius: 9px; padding: 8px 12px; color: #59665f; background: transparent; cursor: pointer; }
 .lyrics-mode-switch button.active { color: white; background: #087e6b; font-weight: 800; }
-.lyrics-viewport { max-height: min(58vh, 560px); overflow-y: auto; scroll-behavior: smooth; padding: 16px 8px; border-block: 1px solid #e5ebe7; }
-.lyrics-list { display: grid; gap: 2px; padding: 34vh 0; }
+.lyrics-viewport { max-height: min(46vh, 420px); overflow-y: auto; scroll-behavior: smooth; padding: 8px 6px; border-block: 1px solid #e5ebe7; }
+.lyrics-list { display: grid; gap: 0; padding: 20vh 0; }
 .lyrics-empty { margin: 24px 0; padding: 32px; color: #66736d; text-align: center; background: #f2f7f5; border-radius: 16px; }
 .lyric-line {
   padding: 8px 0 17px;
   color: #718078;
-  font-size: clamp(20px, 4vw, 30px);
+  font-size: clamp(16px, 3vw, 22px);
   line-height: 1.75;
   overflow-wrap: anywhere;
   transition: color .2s ease, opacity .2s ease, transform .2s ease;
@@ -154,9 +160,12 @@ audio { width: 100%; }
   font-weight: 900;
   cursor: pointer;
 }
-.character-mark { position: absolute; left: 50%; transform: translateX(-50%); font-size: 14px; line-height: 1; }
+.character-mark { position: absolute; left: 50%; transform: translateX(-50%); font-size: 12px; line-height: 1; }
 .character-mark.below { bottom: -.58em; white-space: nowrap; }
 .character-mark.above { top: -.25em; }
+.character-mark.boundary { left: 100%; transform: translateX(-.08em); text-align: left; }
+.character-mark.boundary.link { width: .9em; }
+.character-mark.boundary.merge { width: 1.45em; overflow: hidden; font-size: 10px; letter-spacing: -.2em; }
 
 .hint-detail { display: grid; gap: 10px; padding: 18px; border-left: 4px solid #087e6b; border-radius: 12px; background: #f0f7f4; }
 .detail-heading span { color: #6b7771; font-size: 12px; text-transform: uppercase; }
@@ -165,33 +174,39 @@ audio { width: 100%; }
 .model-note { padding-top: 16px; border-top: 1px solid #e0e7e2; font-size: 13px; }
 
 @media (max-width: 640px) {
-  main { padding: 34px 16px 70px; }
-  .upload-card, .profile-card { padding: 18px; border-radius: 18px; }
+  main { padding: 22px 12px 54px; gap: 12px; }
+  .upload-card { grid-template-columns: 1fr; padding: 14px; }
+  .upload-card details { grid-column: auto; }
+  .profile-card { padding: 14px; border-radius: 16px; }
   .players { grid-template-columns: 1fr; }
   .profile-heading { align-items: flex-start; }
   .lyrics-stage-heading { align-items: stretch; flex-direction: column; }
   .lyrics-mode-switch { align-self: flex-start; }
-  .hero-shortcut { align-items: stretch; flex-direction: column; }
+  .hero-shortcut { display: grid; grid-template-columns: 1fr 1fr; align-items: stretch; }
+  .hero-shortcut > div { grid-column: 1 / -1; }
+  .hero-shortcut .secondary-button { padding: 5px 9px; font-size: 12px; }
   .vocal-layers { padding: 14px; }
   .vocal-layers-heading { align-items: flex-start; }
   .vocal-layers-heading > p { display: none; }
 }
 
-.recording-studio { margin-top: 28px; padding: 22px; border: 1px solid rgba(74,54,43,.16); border-radius: 20px; background: linear-gradient(145deg, #fffaf4, #f6ede4); }
+.recording-studio { margin-top: 12px; padding: 16px; border: 1px solid rgba(74,54,43,.16); border-radius: 16px; background: linear-gradient(145deg, #fffaf4, #f6ede4); font-size: 14px; }
 .recording-heading, .recording-actions, .volume-controls, .take-row { display: flex; align-items: center; gap: 12px; }
 .recording-heading, .take-row { justify-content: space-between; }
-.recording-heading h3, .mix-preview h4, .take-history h4 { margin: 4px 0 0; }
+.recording-heading h3, .mix-preview h4, .take-history h4 { margin: 2px 0 0; }
+.recording-heading h3 { font-size: 18px; }
 .secure-ok, .secure-warning { padding: 6px 10px; border-radius: 999px; font-size: 12px; white-space: nowrap; }
 .secure-ok { color: #246044; background: #dff2e7; }
 .secure-warning { color: #8d3c31; background: #f8ddd8; }
-.recording-mode-switch { display: inline-flex; margin: 18px 0 12px; padding: 4px; border-radius: 12px; background: rgba(82,62,49,.08); }
+.recording-mode-switch { display: inline-flex; margin: 12px 0 9px; padding: 3px; border-radius: 10px; background: rgba(82,62,49,.08); }
 .recording-mode-switch button { min-width: 76px; padding: 8px 14px; border: 0; border-radius: 9px; color: #5e5148; background: transparent; }
 .recording-mode-switch button.active { color: #fff; background: #9f4e3d; }
 .recording-selectors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .recording-selectors label, .volume-controls label { display: grid; gap: 7px; }
 .recording-selectors select { width: 100%; min-height: 42px; padding: 8px 10px; border: 1px solid rgba(70,49,37,.2); border-radius: 10px; background: #fff; }
 .take-save-mode { display: grid; gap: 8px; margin: 16px 0 10px; }
-.take-save-mode label { display: flex; align-items: flex-start; gap: 8px; }
+.take-save-mode label { display: grid; grid-template-columns: 18px 1fr; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+.take-save-mode input { width: 16px; height: 16px; margin: 0; padding: 0; }
 .recording-selection-summary, .headphone-note, .recording-error, .recording-live, .recording-warning { margin: 10px 0; }
 .headphone-note, .recording-selection-summary { color: #75665d; font-size: 14px; }
 .recording-error, .recording-warning { color: #9c3f32; }
@@ -204,6 +219,7 @@ audio { width: 100%; }
 .take-row { margin-top: 10px; padding: 12px; border-radius: 12px; background: rgba(255,255,255,.72); }
 .take-row.history { opacity: .66; }
 .take-row div { display: grid; gap: 4px; }
+.mix-preview audio { display: block; margin-top: 10px; }
 
 @media (max-width: 680px) {
   .recording-studio { padding: 16px; }

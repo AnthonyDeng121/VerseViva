@@ -21,7 +21,13 @@ def take_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     get_settings.cache_clear()
 
 
-def _webm_upload(client: TestClient, song_id: str, **overrides):
+def _webm_upload(
+    client: TestClient,
+    song_id: str,
+    *,
+    media_type: str = "audio/webm",
+    **overrides,
+):
     data = {
         "session_id": "session_mobile_01",
         "track_slot_id": "practice_sentence_001",
@@ -37,7 +43,7 @@ def _webm_upload(client: TestClient, song_id: str, **overrides):
     return client.post(
         f"/api/v1/songs/{song_id}/takes",
         data=data,
-        files={"audio": ("recording.webm", b"\x1aE\xdf\xa3mobile-audio", "audio/webm")},
+        files={"audio": ("recording.webm", b"\x1aE\xdf\xa3mobile-audio", media_type)},
     )
 
 
@@ -56,6 +62,15 @@ def test_mobile_webm_sentence_take_uploads_and_restores(take_client) -> None:
     restored = client.get(f"/api/v1/songs/{song_id}/takes?session_id=session_mobile_01")
     assert restored.status_code == 200
     assert [item["takeId"] for item in restored.json()] == [payload["takeId"]]
+
+
+def test_mobile_webm_accepts_browser_codec_parameter(take_client) -> None:
+    client, _, song_id = take_client
+
+    response = _webm_upload(client, song_id, media_type="audio/webm;codecs=opus")
+
+    assert response.status_code == 201
+    assert response.json()["mimeType"] == "audio/webm"
 
 
 def test_practice_replace_only_supersedes_current_session_track(take_client) -> None:

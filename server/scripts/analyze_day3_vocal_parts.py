@@ -12,12 +12,16 @@ def analyze_day3_vocal_parts(project_root: Path) -> Path:
         raise RuntimeError("VERSEVIVA_GEMINI_API_KEY is required")
 
     day3_dir = project_root / "data" / "day3"
-    audio_path = day3_dir / "input" / "get him back!.mp3"
+    audio_path = (
+        day3_dir / "output" / "demucs" / "htdemucs" / "get him back!" / "vocals.wav"
+    )
     transcript_path = day3_dir / "output" / "whisperx" / "get him back!.json"
     cues_path = project_root / "server" / "fixtures" / "get-him-back-vocal-cues.json"
     missing = [path for path in (audio_path, transcript_path, cues_path) if not path.is_file()]
     if missing:
-        raise FileNotFoundError(f"Missing Day 3 inputs: {', '.join(map(str, missing))}")
+        raise FileNotFoundError(
+            "Missing Day 3 Demucs vocals/transcript/cues: " + ", ".join(map(str, missing))
+        )
 
     transcript = json.loads(transcript_path.read_text(encoding="utf-8"))
     lyric_cues = [

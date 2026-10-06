@@ -164,7 +164,7 @@ class SongAnalysisPipeline:
             vocal_parts: list[VocalPart] = []
             if arrangement_mode == VocalArrangementMode.dual_track:
                 self._advance(job, AnalysisStage.analyzing_vocal_parts)
-                vocal_parts_path = job_dir / "vocal-parts" / "parts-v2.json"
+                vocal_parts_path = job_dir / "vocal-parts" / "parts-v3.json"
                 cached_vocal_parts = _load_vocal_parts(vocal_parts_path)
                 if cached_vocal_parts is not None:
                     vocal_parts = cached_vocal_parts
@@ -209,7 +209,7 @@ class SongAnalysisPipeline:
 
             candidates = generate_language_candidates(sentences)
             self._advance(job, AnalysisStage.analyzing_language)
-            observations_path = job_dir / "language" / "observations-v2.json"
+            observations_path = job_dir / "language" / "observations-v3.json"
             observations = _load_observations(observations_path)
             if observations is None:
                 observations = await self.language_coach.analyze(

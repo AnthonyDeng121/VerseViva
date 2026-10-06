@@ -46,6 +46,39 @@ def test_full_song_lyrics_can_be_reconciled_to_uploaded_excerpt() -> None:
     assert sentences[-1].words[-1].end_seconds == 2.7
 
 
+def test_parenthetical_vocal_is_restored_but_not_required_for_excerpt_match() -> None:
+    asr_words = "I wanna key his car I wanna make him lunch I wanna break his heart".split()
+    asr = SongSentence(
+        id="sentence_001",
+        start_seconds=0,
+        end_seconds=4,
+        lyrics=" ".join(asr_words),
+        words=[
+            WordTiming(
+                id=f"w{index}",
+                text=word,
+                start_seconds=index * 0.25,
+                end_seconds=(index + 1) * 0.25,
+            )
+            for index, word in enumerate(asr_words)
+        ],
+    )
+
+    sentences, matched = reconcile_provided_lyrics(
+        "Unrelated intro line\n"
+        "I wanna key his car (I want to get him back)\n"
+        "I wanna make him lunch (But then I, I want to get him back)\n"
+        "I wanna break his heart (But then I, I want to get him back)\n"
+        "Unrelated outro line",
+        [asr],
+    )
+
+    assert matched is True
+    assert len(sentences) == 3
+    assert sentences[0].lyrics.endswith("(I want to get him back)")
+    assert "(But then I, I want to get him back)" in sentences[-1].lyrics
+
+
 def test_online_lyrics_win_when_whisperx_has_wrong_words() -> None:
     asr = SongSentence(
         id="sentence_001",

@@ -8,6 +8,7 @@ from server.models.song import (
     AudioAssets,
     LyricsSource,
     SongProfile,
+    VocalArrangementMode,
     VocalLane,
     VocalPart,
     VocalPartIdentityStatus,
@@ -41,12 +42,17 @@ REPEATED_PRIMARY_WINDOWS = (
 )
 
 
-def build_day3_vocal_profile(project_root: Path) -> tuple[SongProfile, Path]:
+def build_day3_vocal_profile(
+    project_root: Path, *, persist_profile: bool = True
+) -> tuple[SongProfile, Path]:
     day3_dir = project_root / "data" / "day3"
     source_audio = day3_dir / "input" / "get him back!.mp3"
+    demucs_dir = day3_dir / "output" / "demucs" / "htdemucs" / "get him back!"
+    vocals_audio = demucs_dir / "vocals.wav"
+    accompaniment_audio = demucs_dir / "no_vocals.wav"
     transcript_path = day3_dir / "output" / "whisperx" / "get him back!.json"
     cues_path = project_root / "server" / "fixtures" / "get-him-back-vocal-cues.json"
-    required = (source_audio, transcript_path, cues_path)
+    required = (source_audio, vocals_audio, accompaniment_audio, transcript_path, cues_path)
     missing = [str(path) for path in required if not path.is_file()]
     if missing:
         raise FileNotFoundError(f"Missing Day 3 artifacts: {', '.join(missing)}")
@@ -122,6 +128,8 @@ def build_day3_vocal_profile(project_root: Path) -> tuple[SongProfile, Path]:
     audio_dir = project_root / "data" / "songs" / DAY3_VOCAL_SONG_ID / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source_audio, audio_dir / "source.mp3")
+    shutil.copy2(vocals_audio, audio_dir / "vocals.wav")
+    shutil.copy2(accompaniment_audio, audio_dir / "accompaniment.wav")
     created_at = datetime.fromtimestamp(source_audio.stat().st_mtime, tz=UTC)
     profile = SongProfile(
         song_id=DAY3_VOCAL_SONG_ID,
@@ -130,13 +138,16 @@ def build_day3_vocal_profile(project_root: Path) -> tuple[SongProfile, Path]:
         language="en",
         audio=AudioAssets(
             source_url=f"/api/v1/songs/{DAY3_VOCAL_SONG_ID}/audio/source",
-            vocal_url=None,
+            vocal_url=f"/api/v1/songs/{DAY3_VOCAL_SONG_ID}/audio/vocals",
+            accompaniment_url=(
+                f"/api/v1/songs/{DAY3_VOCAL_SONG_ID}/audio/accompaniment"
+            ),
         ),
         sentences=sentences,
         vocal_parts=[*primary_parts, *secondary_parts],
         analysis=AnalysisMetadata(
-            pipeline_version="day3-vocal-parts-v1",
-            separation_model="not_run_mixed_reference_only",
+            pipeline_version="day3-vocal-parts-v2",
+            separation_model="htdemucs",
             pitch_model="not_run",
             alignment_model="whisperx-small-plus-lyric-cues",
             lyrics_source=LyricsSource.corrected,
@@ -147,11 +158,13 @@ def build_day3_vocal_profile(project_root: Path) -> tuple[SongProfile, Path]:
                 "gemini-cue-timing" if gemini_timings else "whisperx-window-fallback"
             ),
             language_analysis_model="gemini-3.8-flash",
+            vocal_arrangement_mode=VocalArrangementMode.dual_track,
         ),
     )
     fixture_path = day3_dir / "output" / "vocal-parts" / "song-profile.json"
     write_profile_json(profile, fixture_path)
-    ProfileStore(project_root / "data").save(profile)
+    if persist_profile:
+        ProfileStore(project_root / "data").save(profile)
     return profile, fixture_path
 
 
@@ -191,7 +204,7 @@ def _candidate_part(
         timing_confidence=confidence if source == VocalPartSource.lyrics_provider else None,
         timing_needs_human_review=source == VocalPartSource.lyrics_provider,
         evidence={
-            "audioRef": "data/day3/input/get him back!.mp3",
+            "audioRef": "data/day3/output/demucs/htdemucs/get him back!/vocals.wav",
             "transcriptRef": "data/day3/output/whisperx/get him back!.json",
             "cueIds": cue_ids,
             "note": evidence_note,

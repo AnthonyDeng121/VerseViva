@@ -5,6 +5,7 @@ from difflib import SequenceMatcher
 from server.models.song import SongSentence, WordTiming
 
 WORD_PATTERN = re.compile(r"[A-Za-z]+(?:['’][A-Za-z]+)*")
+PARENTHETICAL = re.compile(r"\([^()]*\)")
 MIN_FUZZY_SCORE = 0.68
 MIN_ASR_COVERAGE = 0.60
 
@@ -35,21 +36,27 @@ def reconcile_provided_lyrics(
         for line_index, tokens in enumerate(line_tokens)
         for token in tokens
     ]
+    # Overlapping response/ad-lib text is provider truth, but a single WhisperX
+    # transcript often follows only the dominant lead. Ignore parentheses only
+    # while locating the excerpt; restore every token from the matched lines.
+    matching_tokens = [
+        _LyricsToken(text=token, line_index=line_index)
+        for line_index, line in enumerate(lines)
+        for token in WORD_PATTERN.findall(PARENTHETICAL.sub("", line))
+    ]
     match = _find_best_window(
-        [_normalize(token.text) for token in lyrics_tokens],
+        [_normalize(token.text) for token in matching_tokens],
         [_normalize(word.text) for word in aligned_words],
     )
     if match is None:
         return aligned_sentences, False
 
     match_start, match_end = match
-    first_line = lyrics_tokens[match_start].line_index
-    last_line = lyrics_tokens[match_end - 1].line_index
-    while match_start > 0 and lyrics_tokens[match_start - 1].line_index == first_line:
-        match_start -= 1
-    while match_end < len(lyrics_tokens) and lyrics_tokens[match_end].line_index == last_line:
-        match_end += 1
-    selected_tokens = lyrics_tokens[match_start:match_end]
+    first_line = matching_tokens[match_start].line_index
+    last_line = matching_tokens[match_end - 1].line_index
+    selected_tokens = [
+        token for token in lyrics_tokens if first_line <= token.line_index <= last_line
+    ]
     timed_words = _transfer_timings(selected_tokens, aligned_words)
     reconciled = _build_sentences(lines, line_tokens, selected_tokens, timed_words)
     return (reconciled, True) if reconciled else (aligned_sentences, False)

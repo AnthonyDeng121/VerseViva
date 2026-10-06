@@ -996,3 +996,111 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
 最终判断标准：
 
 > **它有没有证明：VerseViva 不只教“单词怎么念”，还教“声音如何成为歌、一个人如何唱完整首歌里的多层 Vocal”？**
+
+---
+
+# 14. 2026-10-06 最新接力状态
+
+本节覆盖前文中已经过时的“尚未完成”描述。进入下一轮开发前，以本节和实际测试为准。
+
+## 14.1 本轮已经完成
+
+### 括号歌词与双轨语义
+
+- 括号文本现在直接建立为 `lyrics_provider`、`identityStatus=confirmed` 的 secondary。
+- `needsHumanReview` 不再错误表示括号歌词身份待确认；模型时间证据使用独立的
+  `timingStatus`、`timingConfidence`、`timingNeedsHumanReview`。
+- Gemini 只能绑定确定 cue 并核查可听性和时间，不得改写、删除或否定括号文本。
+- Gemini Vocal Part 失败时保留确定文本，使用句级时间回退并记录 Warning。
+- Vocal Part 缓存已提升到 `parts-v3.json`；语言观察缓存已提升到
+  `observations-v3.json`，不得读取旧语义缓存冒充新结果。
+
+### 完整上传 Pipeline 的真实验收
+
+- 新增 `server/scripts/run_analysis_job.py`，用于从 WSL 运行一个已经持久化的上传任务。
+- Windows 公网预览进程目前不能直接启动 `.venv-demucs/bin/demucs`；完整模型任务应从
+  WSL 运行，或后续将 API 与模型 Worker 一并部署到 Linux。
+- get him back bridge 已通过通用上传 Pipeline 真实执行：
+  - job：`job_b242e9e7e4434526a877e26b35d23b41`
+  - 原始分析 song：`song_7318687f4b964552a661ad614b07b983`
+  - 固定 Hero song：`song_00000000000000000000000000000003`
+  - Demucs、Basic Pitch、LRCLIB、新 WhisperX、双轨 Gemini、语言 Gemini、Profile 构建均真实运行。
+- 第一次语言 Gemini 请求因 `TLS/SSL connection has been closed (EOF)` 在 84% 失败；重试复用了
+  Demucs、Pitch、歌词和 WhisperX 产物并成功完成，证明失败信息与任务缓存可恢复。
+- 短片段与 LRCLIB 整首歌词的匹配已修正：括号内容不参与 WhisperX 主线窗口定位，但恢复时保留
+  完整括号歌词。修复前最佳覆盖率约 45.8%，修复后约 87.95%。
+- 当前 get him back Hero Profile 的真实结果：
+  - 16 个歌词句、188 个词级时间点
+  - 78 条 Gemini 语言提示
+  - 27 个 Vocal Part：16 primary、11 secondary
+  - `vocalArrangementMode=dual_track`
+  - `lyricsSource=lrclib`、`languageAnalysisProvider=gemini`
+  - 11 个 secondary 均为 `lyrics_provider + confirmed + audio_model_observed`
+  - Demucs `vocals.wav` 与 `accompaniment.wav` 均已发布
+- 新增 `server/scripts/promote_song_profile.py`，可将完整随机上传结果提升为稳定 Hero ID，避免手工拼 JSON。
+- 早期 Day 3 Profile 测试曾在运行测试时覆盖正式 Hero；构建器现支持 `persist_profile=False`，测试不再
+  写回正式 Profile。完整回归后已重新提升并通过 API 核对为 16 句、78 提示、27 Vocal Part。
+- Juno Hero 已按新 Schema 重建，能够和 get him back 来回切换，并补充 Demucs 伴奏资产。
+
+### 用户录音与 H5
+
+- 已实现浏览器 MediaRecorder 录音，支持选择单句或连续一段。
+- Take 绑定 song、session、sentence IDs、可选 Vocal Part 和时间区间。
+- `practice_replace` 只替换同一 session / track slot 的当前采用版本，旧文件仍保留；
+  `overdub_append` 永不覆盖之前 Take。
+- 已支持 WebM、MP4/M4A、OGG、WAV；后端会去除 MIME 的 codec 参数，因此手机浏览器的
+  `audio/webm;codecs=opus` 可以上传。
+- 录唱时播放 Demucs 伴奏，并将伴奏时间回填到共享歌词时间轴以驱动滚动和高亮。
+- 回听具有原生进度条；伴奏和用户人声可分别调节音量。
+- 当前是基础双播放器同步，尚未实现最终 Overdub 所需的共享 AudioContext、latency calibration、
+  manual offset、每 Take gain/mute 持久化。
+- 麦克风需要 HTTPS；已提供 `scripts/start_public_preview.ps1`，Quick Tunnel 仅用于开发验收，
+  PowerShell 关闭后临时域名会失效。比赛提交必须使用固定云端 HTTPS 部署。
+- 已准备同源 FastAPI 静态 H5、Docker/Caddy/Compose 部署骨架；Gemini 后续应迁移到独立云端 Worker，
+  密钥不得进入前端。
+
+### 当前 UI 状态
+
+- 首页文案改为“教你学唱英文歌，并支持叠唱音轨”。
+- 上传卡片、Hero 卡片、分析标题、歌词框、双轨卡片和 Practice Take 均已压缩。
+- 标记说明为：`×：吞音（不发该音）`、`‿：连读（读音二合一）`、
+  `└─┘：连读（读音改变）`。
+- `‿` 和 `└─┘` 仅锚定前词末字符与后词首字符的边界，不再横跨整段单词。
+- 普通歌词继续逐词高亮和自动滚动；双轨歌词增加当前行自动滚动，缺少 secondary 词级时间时按
+  Vocal Part 区间做渐进高亮，不伪装成真实词级对齐。
+- Juno 与 get him back Hero API 均能返回 `dual_track` 且包含伴奏 URL。
+
+## 14.2 本轮验证基线
+
+- 后端完整回归：92 passed（另有 1 条第三方 Starlette/httpx 弃用 Warning）。
+- Ruff、ESLint、TypeScript 和 Vite 生产构建均通过。
+- get him back 本轮实际阶段耗时可由文件时间近似观察：Demucs 约 2 分 20 秒、Basic Pitch 约
+  3 分 40 秒、WhisperX 约 7 分 7 秒、双轨 Gemini 约 1 分 14 秒、语言 Gemini 约 3 分 44 秒。
+  这些是单次 WSL2 + CPU 观测，不是数据库级性能指标。
+- 主要阶段结构化耗时尚未写入任务元数据；这是稳定化任务中仍未完成的一项，不能宣称已经实现。
+
+## 14.3 下一阶段优先顺序
+
+1. 用真实手机对最新 HTTPS H5 做完整验收：Hero 切换、麦克风授权、伴奏录唱、歌词同步、上传、
+   刷新恢复、录音进度条和音量调节。
+2. 修复手机验收发现的 UI/音频时钟问题；将开发 Quick Tunnel 与比赛固定云部署明确分开。
+3. 完成原速 / 0.75×、按句循环和点击歌词跳转，并保持普通/双轨共享时间轴。
+4. 人工校对 Juno 的语言提示和 get him back bridge 的 primary / secondary 时间。
+5. 对用户录音运行 WhisperX；低质量、伴奏串音或证据不足必须返回 `insufficient_data`。
+6. 实现最小 Language Difference Engine：优先 `expected_elision_realized`，再选择一个可靠的
+   相同辅音合并或 `/t/ + /j/` 融合差异。
+7. 保存 PracticeAttempt，实现同一指标的 improved / unchanged / regressed / insufficient_data。
+8. 将录音回放升级为共享 AudioContext 时钟，增加 latency compensation、manual offset、每 Take
+   gain/mute 和多 Take 非破坏性同步叠放。
+9. 用 SQLite 持久化 session / attempt / issue / take；从真实 Attempt 聚合 Memory。
+10. 为每个 Pipeline 阶段写入结构化耗时与 API 调用次数，并完成至少三首英文歌的泛化测试。
+
+## 14.4 接力注意事项
+
+- 不要再运行旧的 `build_day3_vocal_profile.py` 覆盖当前完整 get him back Hero；它是早期固定 cue
+  构建器。需要更新 Hero 时，应运行通用上传 Pipeline 后使用 `promote_song_profile.py`。
+- `data/` 中模型产物通常不进入 Git，但比赛机器或云端必须单独预置 Hero 产物。
+- 当前 Windows FastAPI + WSL 模型虚拟环境是开发组合，不是比赛部署方案。最终 H5 应同源访问云端
+  API；Gemini 放独立 Worker，CPU 模型 Pipeline 放 Linux Worker 或预缓存 Hero。
+- 不要把 Quick Tunnel 临时 URL 写入产品配置或提交材料。
+- 不要提交、推送或覆盖用户无关修改。

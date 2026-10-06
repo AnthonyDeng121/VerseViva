@@ -1,7 +1,9 @@
 import shutil
 from pathlib import Path
 
-from server.models.song import AudioAssets
+from pydantic import ValidationError
+
+from server.models.song import AudioAssets, VocalArrangementMode
 from server.services.vocal_parts.structure import derive_structural_vocal_parts
 from server.storage.profile_store import ProfileStore
 
@@ -12,7 +14,10 @@ def build_juno_hero_profile(project_root: Path):
     store = ProfileStore(project_root / "data")
     source = None
     for song_dir in store.songs_dir.iterdir():
-        candidate = store.get(song_dir.name) if song_dir.is_dir() else None
+        try:
+            candidate = store.get(song_dir.name) if song_dir.is_dir() else None
+        except ValidationError:
+            continue
         if candidate and candidate.title.casefold() == "juno":
             source = candidate
             break
@@ -37,8 +42,16 @@ def build_juno_hero_profile(project_root: Path):
                     if source.audio.vocal_url
                     else None
                 ),
+                accompaniment_url=(
+                    f"/api/v1/songs/{JUNO_HERO_SONG_ID}/audio/accompaniment"
+                    if (target_audio / "accompaniment.wav").is_file()
+                    else None
+                ),
             ),
             "vocal_parts": derive_structural_vocal_parts(source.sentences),
+            "analysis": source.analysis.model_copy(
+                update={"vocal_arrangement_mode": VocalArrangementMode.dual_track}
+            ),
         }
     )
     store.save(profile)

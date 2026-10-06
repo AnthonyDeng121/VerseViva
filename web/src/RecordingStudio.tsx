@@ -72,11 +72,13 @@ export function RecordingStudio({
   sentences,
   vocalParts,
   accompanimentUrl,
+  onTimelineChange,
 }: {
   songId: string;
   sentences: RecordingSentence[];
   vocalParts: RecordingVocalPart[];
   accompanimentUrl?: string | null;
+  onTimelineChange?: (time: number) => void;
 }) {
   const [selectionType, setSelectionType] = useState<"sentence" | "segment">("sentence");
   const [startIndex, setStartIndex] = useState(0);
@@ -403,11 +405,23 @@ export function RecordingStudio({
           <button type="button" className="secondary-button" onClick={() => void playMix()}>混合试听</button>
           <button type="button" className="secondary-button" onClick={stopMix}>停止试听</button>
         </div>
-        <audio ref={voiceRef} src={activePreviewUrl} onEnded={() => accompanimentRef.current?.pause()} />
+        <audio controls ref={voiceRef} src={activePreviewUrl}
+          onPlay={() => {
+            if (accompanimentRef.current && accompanimentUrl) {
+              accompanimentRef.current.currentTime = activePreviewStart + (voiceRef.current?.currentTime ?? 0);
+              void accompanimentRef.current.play().catch(() => undefined);
+            }
+          }}
+          onPause={() => accompanimentRef.current?.pause()}
+          onTimeUpdate={(event) => onTimelineChange?.(activePreviewStart + event.currentTarget.currentTime)}
+          onEnded={() => accompanimentRef.current?.pause()} />
       </div>}
 
       {accompanimentUrl
-        ? <audio ref={accompanimentRef} src={accompanimentUrl} preload="metadata" />
+        ? <audio ref={accompanimentRef} src={accompanimentUrl} preload="metadata"
+            onTimeUpdate={(event) => {
+              if (state === "recording") onTimelineChange?.(event.currentTarget.currentTime);
+            }} />
         : <p className="recording-warning">当前 Profile 没有 Demucs 伴奏资产，可录音但无法混合伴奏。</p>}
 
       {takes.length > 0 && <div className="take-history">

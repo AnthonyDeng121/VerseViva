@@ -104,7 +104,10 @@ async def upload_take(
 
     suffix = Path(audio.filename or "").suffix.lower()
     expected_content_types = ALLOWED_RECORDING_TYPES.get(suffix)
-    if expected_content_types is None or audio.content_type not in expected_content_types:
+    content_type = (
+        (audio.content_type or "application/octet-stream").split(";", 1)[0].strip().lower()
+    )
+    if expected_content_types is None or content_type not in expected_content_types:
         raise HTTPException(
             status_code=415,
             detail="Recordings must be WebM, MP4/M4A, OGG, or WAV audio",
@@ -147,7 +150,7 @@ async def upload_take(
             save_mode=save_mode,
             audio_url=f"/api/v1/takes/{take_id}/audio",
             stored_filename=destination.name,
-            mime_type=audio.content_type or "application/octet-stream",
+            mime_type=content_type,
             size_bytes=size,
             client_duration_seconds=client_duration_seconds,
             latency_compensation_ms=latency_compensation_ms,
