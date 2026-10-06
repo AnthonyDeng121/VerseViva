@@ -129,7 +129,7 @@ bad  bad‿do  you  want‿me
 
 用户不只能录制系统检测到的重叠声部：他们可以在任意歌曲区间自行选择叠录片段并追加多个 Take。人工或模型标注的重叠 Vocal Part 是高质量的练习入口和时机参考，不是录音权限边界。
 
-第一版不假装拥有完美的自动声部分离：Demucs 的 vocals stem 通常仍包含所有人声层。Gemini 等音频理解模型可以提出和声、主副声轨重叠的时间候选；联网歌词中的括号内容可以提供 secondary / response / ad-lib 的结构候选。括号不自动等于独立声部，模型判断也不等于已分离音轨；两者都必须标记来源、置信度和是否需要人工复核。Hero Song 的最终 Vocal Part 由人工校对。
+第一版不假装拥有完美的自动声部分离：Demucs 的 vocals stem 通常仍包含所有人声层。Gemini 等音频理解模型可以提出和声、主副声轨重叠的时间候选。当前比赛 Demo 所采用歌词来源中的括号内容已经过产品负责人/人工验证，可直接作为确定的 secondary / response / ad-lib 声部文本，并保留 `lyrics_provider` 来源；Gemini 只负责核查该确定文本在音频中的出现与时间，不负责重新判断它是不是声部。确定声部文本不等于已经获得独立音轨；没有独立 stem 时仍不得提供或声称“只听和声”。
 
 ### 通用音素操作与语言现象分层
 
@@ -411,7 +411,7 @@ Vocal Part 另外使用：
 - `lyrics_structure_candidate`：联网歌词的括号、重复行或排版结构提出的候选，不能单独证明独立声部
 - `human_curated`：Hero Song 人工确认的声部、歌词与时间范围
 
-`candidate` 只能用于快速标注和人工复核。比赛 Demo 例外：选定歌词网站的括号内容直接作为 secondary 歌词文本，保留 `lyrics_provider` 来源；Gemini 只绑定 cue ID 判断该句是否可听见叠唱并返回起止时间，不得改写或生成歌词。WhisperX 仍负责 primary 及可对齐文本的单词级时间戳。没有独立 stem 时，不能声称系统已经从参考歌曲中提取了可单独播放的和声音轨。
+`candidate` 只能用于快速标注和人工复核。比赛 Demo 有一条例外：当前选定歌词来源的括号内容已经过人工验证，可直接作为确定的 secondary 文本，来源为 `lyrics_provider`，不需要再次把“是否属于次 Vocal”标成待人工复核。Gemini 只绑定 cue ID，使用 Demucs 输出的整体人声 stem 核查该确定文本是否在本次音频中可听见，并返回起止时间，不得改写、生成或否定歌词文本。Gemini 给出的时间和听感证据仍属于模型结果，可以保留置信度和时间复核状态。WhisperX 负责 primary 及可对齐文本的单词级时间戳。确定歌词声部不等于取得独立 stem；没有独立 stem 时，不能声称系统已经从参考歌曲中提取了可单独播放的和声音轨。
 
 ---
 
@@ -658,19 +658,59 @@ Overdub 功能的目标产品形态是可迁移到 TME / 全民 K 歌的演唱�
 - 上传、任务进度、原曲 / 人声播放与语言标记展开详情的前端骨架
 - 《get him back!》bridge 的 WhisperX 时间锚点、歌词结构候选、可追溯 Vocal Part 缓存和左右双轨展示
 - Gemini Vocal Part 严格 Structured Output 适配器（真实运行受 API 额度影响，候选不自动升级为人工事实）
+- LRCLIB 无 Key 歌词检索，支持歌名 + 歌手精确检索、来源记录和匹配置信度
+- 联网歌词优先、WhisperX 时间轴辅助的模糊歌词对齐；匹配窗口会扩展到完整歌词行，避免末句被截断
+- 上传任务的真实阶段、错误详情、Warning、失败产物保留和原任务重试
+- 页面刷新后从服务端恢复最近任务、进度、错误或已完成 Profile
+- Gemini 语言分析 Prompt 已针对 `If you`、`Let you`、`want you`、`did you` 等高歧义边界加强声学证据约束
+- `×`、`‿`、`└─┘` 均使用字符下方标记；中文解释只在详情层展示
+- 音乐软件式歌词视图：句级自动滚动、词级时间高亮，不再按句使用独立卡片
+- 原曲与人声播放器默认音量 30%
+- 普通歌词 / 叠唱歌词已融合在同一个歌曲学习页面，共享播放时间轴与语言标注
+- 上传歌曲支持明确的 `single_track` / `dual_track` 编排模式：联网歌词含括号走双轨，否则走单轨
+- 两条编排 Pipeline 均先经过 Demucs；双轨 Gemini 核查显式使用 `vocals.wav`，而不是带伴奏原曲
+- 双轨失败时保留歌词结构候选并记录 Warning；Vocal Part 产物支持任务内缓存
+- Song Profile 记录 `vocalArrangementMode`，任务增加 `analyzing_vocal_parts` 阶段
+- 当前回归基线：除本机 Windows 缺少 `ffprobe` 的 Day 1 真实媒体测试外，82 项后端测试通过；Ruff 与前端生产构建通过
 
 ## 尚未完成
 
-- 完整可用并经过手机验证的前端产品流程
+- 完整可用并经过手机验证的前端产品流程；当前桌面骨架已可用，慢速、句循环和手机交互仍需补齐
 - G2P 未登录词、缩写和多发音词的消歧
 - 参考演唱语言特征提取
 - 用户演唱上传与对齐
 - Language Difference Engine
 - 单句重练 UI 与比较
 - Coach、Memory 与最终比赛 Demo
-- Vocal Part 听感人工复核、动态高亮与 Overdub Take
+- Hero Song Vocal Part 听感人工复核与精确时间校正；自动候选已有，尚不能替代人工真值
 - 浏览器录音延迟校准和多 Take 同步回放
 - 真实 Gemini API 全曲成本、限流、超时与结果质量评测
+- Demucs 当前只分离“整体人声 / 伴奏”，不会自动得到可独立播放的 lead / harmony stem
+- 当前通用上传代码仍把括号声部保存为 `lyrics_structure_candidate` 并要求人工复核，与上述已确认产品规则不一致；下一轮代码任务必须优先改回 `lyrics_provider` 确定文本，同时只让 Gemini 的时间定位保持模型置信度
+
+## 当前上传解析流程（2026-10-06）
+
+```text
+上传歌曲
+→ 校验并创建独立 song_id / job_id
+→ ffprobe 读取时长
+→ Demucs 分离整体 vocals.wav 与伴奏
+→ Basic Pitch 提取内部辅助特征
+→ LRCLIB 按歌名 + 歌手检索歌词
+→ WhisperX 对分离后整体人声进行句级、词级对齐
+→ 以联网歌词为文本真值进行模糊对齐和完整行恢复
+→ 检查联网歌词是否含括号
+   ├─ 无括号：single_track 编排 Pipeline，不伪造 Vocal Part
+   └─ 有括号：dual_track 编排 Pipeline
+      → 将已人工验证的括号文本建立为 lyrics_provider 确定 secondary
+      → Gemini 使用 Demucs vocals.wav 核查 secondary 在本次音频中是否可听见及其时间
+      → 失败时保留确定的 secondary 文本，时间使用歌词对齐回退值并记录 Warning
+→ 无论单轨或双轨，都执行 G2P 候选 + Gemini 语言现象核查
+→ 生成包含 LanguageHint、VocalPart 和来源证据的 Song Profile
+→ 前端在同一页面提供普通歌词 / 叠唱歌词切换和时间高亮
+```
+
+这里的 `vocals.wav` 仍包含主唱、和声、回应和 ad-lib 等所有人声层。双轨 Pipeline 当前解决的是“编排识别与教学分 lane”，不是高质量声源级主唱 / 和声分离。
 
 ## 已知性能事实
 
@@ -686,6 +726,62 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
 # 11. 重新规划的十天开发计划
 
 本计划从 VerseViva 转向之日重新计时。每一天必须产出可验收结果，不按“写了多少代码”判断完成。
+
+## 当前接力顺序（下一轮开发按此执行）
+
+### 第一步：上传链路真实验收与稳定化
+
+- 使用至少一首无括号歌曲和一首含括号歌曲重新上传，确认分别生成 `single_track` 与 `dual_track`
+- 先修正当前实现：括号内确定声部必须使用 `lyrics_provider`，不得继续保存为 `lyrics_structure_candidate` 或要求重新确认其声部身份
+- 检查 LRCLIB 完整歌词、WhisperX 时间轴、Gemini 语言标注和 Vocal Part 缓存
+- 验证刷新恢复、失败详情、Warning 和重试按钮
+- 记录 Demucs、WhisperX、Gemini 各阶段实际耗时与 API 调用次数
+- 对 Gemini 429 / 503、超时和非法 JSON 增加有限重试与明确降级，不无限等待在 82% 或新阶段
+
+验收：两首真实歌曲都能走完全链路；双轨歌曲使用整体人声 stem 进行核查；任何失败都有具体阶段、真实原因和可恢复入口。
+
+### 第二步：完成“理解原唱”P0 交互
+
+- 补齐原速 / 0.75×、按句循环、点击某句跳转和只听整体人声
+- 校准普通歌词与双轨歌词的滚动、高亮及移动端左右语义
+- 为候选 Vocal Part 提供来源、置信度和“需人工复核”状态，不伪装为已分离和声
+- 人工校对《Juno》的语言提示，并为《get him back!》bridge 校对 primary / secondary 时间
+
+验收：手机和桌面均可在同一页面理解一处语言现象，并区分需要分次演唱的两个 Vocal lane。
+
+### 第三步：用户单句录音与对齐
+
+- 实现 AudioRecorder、权限与静音检测、录音上传
+- 录音绑定 sentence ID、vocal part ID 和 take ID
+- WhisperX 对齐用户录音；低质量时返回 `insufficient_data`
+- 保存原始录音和对齐产物，刷新后可恢复
+
+验收：用户可选择一句录制并获得可追溯的词级时间依据，失败不会覆盖旧录音。
+
+### 第四步：最小语言差异检测与重练闭环
+
+- 优先实现 `expected_elision_realized`
+- 再选择一个可靠的相同辅音合并或 `/t/ + /j/` 融合差异
+- 保存 PracticeAttempt，并用同一指标比较前后两遍
+- Coach 只解释结构化事实，规则模板作为 LLM 失败降级
+
+验收：真实完成一次“第一遍独立释放目标音，第二遍不再释放”的可重复改善展示。
+
+### 第五步：Overdub 叠唱闭环
+
+- 在同一歌曲学习页选择 primary / secondary 或任意时间区间
+- 使用共享 AudioContext 时钟录制多个非破坏性 Take
+- 保存 latency compensation、manual offset、gain、mute 和采用状态
+- 支持两层真实录音同步回放、静音、重录和独立偏移
+
+验收：两个真实 Take 在 Hero 片段的正确进入时间同步播放；没有独立 harmony stem 时只提供混合参考和进入提示。
+
+### 第六步：泛化、Memory 与比赛冻结
+
+- SQLite 持久化 session / attempt / issue / take
+- 测试至少三首英文歌并记录准确性、性能和失败原因
+- 从真实 PracticeAttempt 聚合长期弱点，不虚构改善
+- 预缓存 Hero Song，完成手机验收和 2–3 分钟比赛流程
 
 ## Day 1 — Product Reset & Language Spike
 
