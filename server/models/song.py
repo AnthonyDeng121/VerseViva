@@ -20,6 +20,7 @@ class AnalysisStage(StrEnum):
     extracting_pitch = "extracting_pitch"
     fetching_lyrics = "fetching_lyrics"
     aligning_lyrics = "aligning_lyrics"
+    analyzing_vocal_parts = "analyzing_vocal_parts"
     analyzing_language = "analyzing_language"
     building_profile = "building_profile"
     completed = "completed"
@@ -299,6 +300,11 @@ class LyricsSource(StrEnum):
     corrected = "corrected"
 
 
+class VocalArrangementMode(StrEnum):
+    single_track = "single_track"
+    dual_track = "dual_track"
+
+
 class PitchProcessingSummary(SongProfileModel):
     source: str
     fallback_used: bool = False
@@ -326,6 +332,7 @@ class AnalysisMetadata(SongProfileModel):
     pitch_processing: PitchProcessingSummary | None = None
     language_analysis_provider: str | None = None
     language_analysis_model: str | None = None
+    vocal_arrangement_mode: VocalArrangementMode = VocalArrangementMode.single_track
 
 
 class SongProfile(SongProfileModel):

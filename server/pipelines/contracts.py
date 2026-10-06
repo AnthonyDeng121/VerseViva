@@ -5,6 +5,7 @@ from typing import Protocol
 from server.models.song import SongSentence
 from server.services.language.models import LanguageCandidate, LanguageObservationBatch
 from server.services.lyrics.models import LyricsLookupResult
+from server.services.vocal_parts.models import VocalCueTimingBatch
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,3 +62,17 @@ class LanguageCoach(Protocol):
         sentences: list[SongSentence],
         candidates: list[LanguageCandidate],
     ) -> LanguageObservationBatch: ...
+
+
+class VocalPartAnalyzer(Protocol):
+    provider: str
+    model: str
+
+    async def analyze(
+        self,
+        vocal_audio: Path,
+        *,
+        duration_seconds: float,
+        transcript: dict,
+        lyric_cues: list[dict],
+    ) -> VocalCueTimingBatch: ...

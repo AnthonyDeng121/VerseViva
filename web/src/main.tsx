@@ -77,10 +77,12 @@ type SongProfile = {
     lyricsMatchConfidence?: number | null;
     languageAnalysisProvider?: string | null;
     languageAnalysisModel?: string | null;
+    vocalArrangementMode?: "single_track" | "dual_track";
   };
 };
 
 const STAGE_LABELS: Record<string, string> = {
+  analyzing_vocal_parts: "正在解析主唱与次 Vocal",
   queued: "等待开始",
   probing_audio: "正在读取音频信息",
   separating_vocals: "正在分离人声",

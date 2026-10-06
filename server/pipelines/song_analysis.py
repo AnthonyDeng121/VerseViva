@@ -12,6 +12,8 @@ from server.models.song import (
     AnalysisWarning,
     AudioAssets,
     LyricsSource,
+    VocalArrangementMode,
+    VocalPart,
 )
 from server.pipelines.audio_probe import AudioDurationProbe, FfprobeAudioDurationProbe
 from server.pipelines.basic_pitch import BasicPitchAdapter, convert_basic_pitch_contour
@@ -20,6 +22,7 @@ from server.pipelines.contracts import (
     LyricsAligner,
     LyricsProvider,
     PitchExtractor,
+    VocalPartAnalyzer,
     VocalSeparator,
 )
 from server.pipelines.demucs import DemucsAdapter
@@ -31,18 +34,24 @@ from server.services.lyrics import DisabledLyricsProvider, LrclibLyricsProvider
 from server.services.lyrics.models import LyricsLookupResult
 from server.services.lyrics_reconciliation import reconcile_provided_lyrics
 from server.services.song_profile_builder import build_song_profile
-from server.services.vocal_parts.structure import derive_structural_vocal_parts
+from server.services.vocal_parts import GeminiVocalPartAnalyzer
+from server.services.vocal_parts.arrangement import (
+    DualTrackArrangementPipeline,
+    SingleTrackArrangementPipeline,
+    select_arrangement_mode,
+)
 from server.storage.job_store import JobStore
 from server.storage.profile_store import ProfileStore
 
-PIPELINE_VERSION = "language-annotation-v1"
+PIPELINE_VERSION = "language-and-arrangement-v2"
 STAGE_PROGRESS = {
     AnalysisStage.probing_audio: 2,
     AnalysisStage.separating_vocals: 10,
     AnalysisStage.extracting_pitch: 40,
     AnalysisStage.fetching_lyrics: 55,
     AnalysisStage.aligning_lyrics: 68,
-    AnalysisStage.analyzing_language: 82,
+    AnalysisStage.analyzing_vocal_parts: 76,
+    AnalysisStage.analyzing_language: 84,
     AnalysisStage.building_profile: 90,
     AnalysisStage.completed: 100,
 }
@@ -62,6 +71,7 @@ class SongAnalysisPipeline:
         alignment_model: str,
         lyrics_provider: LyricsProvider | None = None,
         language_coach: LanguageCoach | None = None,
+        vocal_part_analyzer: VocalPartAnalyzer | None = None,
     ):
         self.separator = separator
         self.pitch_extractor = pitch_extractor
@@ -74,6 +84,7 @@ class SongAnalysisPipeline:
         self.alignment_model = alignment_model
         self.lyrics_provider = lyrics_provider or DisabledLyricsProvider()
         self.language_coach = language_coach or DisabledLanguageCoach()
+        self.vocal_part_analyzer = vocal_part_analyzer
 
     async def run(self, job_id: str, source: Path) -> None:
         job = self.job_store.get(job_id)
@@ -128,7 +139,6 @@ class SongAnalysisPipeline:
             )
             alignment = convert_whisperx_json(alignment_artifacts.alignment_json)
 
-            self._advance(job, AnalysisStage.analyzing_language)
             lyrics = (
                 provided_lyrics_path.read_text(encoding="utf-8")
                 if provided_lyrics_path.is_file()
@@ -136,6 +146,7 @@ class SongAnalysisPipeline:
                 if lyrics_lookup is not None
                 else "\n".join(sentence.lyrics for sentence in alignment.sentences)
             )
+            arrangement_source_lyrics = lyrics
             sentences = alignment.sentences
             lyrics_source = LyricsSource.asr
             if provided_lyrics_path.is_file():
@@ -148,7 +159,56 @@ class SongAnalysisPipeline:
                     lyrics_source = LyricsSource.lrclib
                 else:
                     lyrics = "\n".join(sentence.lyrics for sentence in sentences)
+
+            arrangement_mode = select_arrangement_mode(arrangement_source_lyrics)
+            vocal_parts: list[VocalPart] = []
+            if arrangement_mode == VocalArrangementMode.dual_track:
+                self._advance(job, AnalysisStage.analyzing_vocal_parts)
+                vocal_parts_path = job_dir / "vocal-parts" / "parts-v1.json"
+                cached_vocal_parts = _load_vocal_parts(vocal_parts_path)
+                if cached_vocal_parts is not None:
+                    vocal_parts = cached_vocal_parts
+                else:
+                    transcript = json.loads(
+                        alignment_artifacts.alignment_json.read_text(encoding="utf-8")
+                    )
+                    dual_pipeline = DualTrackArrangementPipeline(self.vocal_part_analyzer)
+                    try:
+                        vocal_parts = await dual_pipeline.analyze(
+                            vocal_audio=separation.vocals,
+                            duration_seconds=duration,
+                            transcript=transcript,
+                            sentences=sentences,
+                        )
+                    except Exception as exc:
+                        job.warnings.append(
+                            AnalysisWarning(
+                                stage=AnalysisStage.analyzing_vocal_parts,
+                                message="双轨声部听感复核失败，已保留歌词结构候选。",
+                                detail=str(exc),
+                            )
+                        )
+                        self.job_store.save(job)
+                        vocal_parts = await DualTrackArrangementPipeline().analyze(
+                            vocal_audio=separation.vocals,
+                            duration_seconds=duration,
+                            transcript=transcript,
+                            sentences=sentences,
+                        )
+                    _save_json(
+                        vocal_parts_path,
+                        [part.model_dump(mode="json", by_alias=True) for part in vocal_parts],
+                    )
+            else:
+                vocal_parts = await SingleTrackArrangementPipeline().analyze(
+                    vocal_audio=separation.vocals,
+                    duration_seconds=duration,
+                    transcript={},
+                    sentences=sentences,
+                )
+
             candidates = generate_language_candidates(sentences)
+            self._advance(job, AnalysisStage.analyzing_language)
             observations_path = job_dir / "language" / "observations-v2.json"
             observations = _load_observations(observations_path)
             if observations is None:
@@ -200,7 +260,8 @@ class SongAnalysisPipeline:
                 lyrics_match_confidence=(
                     lyrics_lookup.match_confidence if lyrics_lookup else None
                 ),
-                vocal_parts=derive_structural_vocal_parts(annotated_sentences),
+                vocal_parts=vocal_parts,
+                vocal_arrangement_mode=arrangement_mode,
                 created_at=datetime.now(UTC),
             )
             self.profile_store.save(profile)
@@ -237,12 +298,17 @@ def build_default_pipeline(settings: Settings) -> SongAnalysisPipeline:
         return str(path if path.is_absolute() else project_root / path)
 
     language_coach: LanguageCoach = DisabledLanguageCoach()
+    vocal_part_analyzer: VocalPartAnalyzer | None = None
     if settings.language_analysis_provider == "gemini":
         if settings.gemini_api_key is None:
             raise ValueError(
                 "VERSEVIVA_GEMINI_API_KEY is required when language analysis provider is gemini"
             )
         language_coach = GeminiLanguageCoach(
+            api_key=settings.gemini_api_key.get_secret_value(),
+            model=settings.gemini_model,
+        )
+        vocal_part_analyzer = GeminiVocalPartAnalyzer(
             api_key=settings.gemini_api_key.get_secret_value(),
             model=settings.gemini_model,
         )
@@ -277,6 +343,7 @@ def build_default_pipeline(settings: Settings) -> SongAnalysisPipeline:
         alignment_model=f"whisperx-{settings.whisperx_model}",
         lyrics_provider=lyrics_provider,
         language_coach=language_coach,
+        vocal_part_analyzer=vocal_part_analyzer,
     )
 
 
@@ -308,6 +375,16 @@ def _load_lyrics_lookup(path: Path) -> LyricsLookupResult | None:
 def _load_observations(path: Path) -> LanguageObservationBatch | None:
     if not path.is_file():
         return None
+
+
+def _load_vocal_parts(path: Path) -> list[VocalPart] | None:
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return [VocalPart.model_validate(item) for item in payload]
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return None
     try:
         return LanguageObservationBatch.model_validate_json(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -321,6 +398,7 @@ def _stage_error_message(stage: AnalysisStage) -> str:
         AnalysisStage.extracting_pitch: "音频辅助特征提取失败。",
         AnalysisStage.fetching_lyrics: "联网歌词查询失败。",
         AnalysisStage.aligning_lyrics: "歌词时间对齐失败。",
+        AnalysisStage.analyzing_vocal_parts: "双轨 Vocal 解析失败。",
         AnalysisStage.analyzing_language: "语言现象分析失败。",
         AnalysisStage.building_profile: "教学标注生成失败。",
     }

@@ -1,3 +1,4 @@
+import asyncio
 import json
 from pathlib import Path
 from typing import Any
@@ -6,13 +7,31 @@ from server.services.vocal_parts.models import VocalCueTimingBatch
 
 
 class GeminiVocalPartAnalyzer:
+    provider = "gemini"
+
     def __init__(self, api_key: str, model: str) -> None:
         if not api_key:
             raise ValueError("Gemini API key is required")
         self.api_key = api_key
         self.model = model
 
-    def analyze(
+    async def analyze(
+        self,
+        audio_path: Path,
+        *,
+        duration_seconds: float,
+        transcript: dict[str, Any],
+        lyric_cues: list[dict[str, Any]],
+    ) -> VocalCueTimingBatch:
+        return await asyncio.to_thread(
+            self._analyze_sync,
+            audio_path,
+            duration_seconds=duration_seconds,
+            transcript=transcript,
+            lyric_cues=lyric_cues,
+        )
+
+    def _analyze_sync(
         self,
         audio_path: Path,
         *,

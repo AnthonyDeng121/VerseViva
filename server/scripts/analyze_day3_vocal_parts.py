@@ -1,3 +1,4 @@
+import asyncio
 import json
 from pathlib import Path
 
@@ -28,11 +29,13 @@ def analyze_day3_vocal_parts(project_root: Path) -> Path:
         api_key=settings.gemini_api_key.get_secret_value(),
         model=settings.gemini_model,
     )
-    result = analyzer.analyze(
-        audio_path,
-        duration_seconds=36.340893,
-        transcript=transcript,
-        lyric_cues=lyric_cues,
+    result = asyncio.run(
+        analyzer.analyze(
+            audio_path,
+            duration_seconds=36.340893,
+            transcript=transcript,
+            lyric_cues=lyric_cues,
+        )
     )
     destination = day3_dir / "output" / "vocal-parts" / "gemini-cue-timings.json"
     destination.parent.mkdir(parents=True, exist_ok=True)

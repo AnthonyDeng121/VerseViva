@@ -1,5 +1,6 @@
 import asyncio
 import json
+from dataclasses import replace
 from pathlib import Path
 
 from server.models.song import AnalysisJob, AnalysisStage, AnalysisStatus
@@ -16,6 +17,7 @@ from server.services.language import (
     ObservationResult,
 )
 from server.services.lyrics import LyricsLookupResult
+from server.services.vocal_parts.models import VocalCueTiming, VocalCueTimingBatch
 from server.storage.job_store import JobStore
 from server.storage.profile_store import ProfileStore
 
@@ -121,6 +123,41 @@ class FakeLyricsProvider:
         )
 
 
+class FakeDualTrackLyricsProvider(FakeLyricsProvider):
+    async def find(self, *, title, artist, duration_seconds):
+        result = await super().find(
+            title=title, artist=artist, duration_seconds=duration_seconds
+        )
+        return replace(result, plain_lyrics="hello world (yeah)")
+
+
+class FakeVocalPartAnalyzer:
+    provider = "fake-audio-model"
+    model = "fake-vocal-part-model"
+
+    def __init__(self) -> None:
+        self.audio_path: Path | None = None
+
+    async def analyze(
+        self, vocal_audio, *, duration_seconds, transcript, lyric_cues
+    ):
+        self.audio_path = vocal_audio
+        cue = lyric_cues[0]
+        return VocalCueTimingBatch(
+            audio_duration_seconds=duration_seconds,
+            timings=[
+                VocalCueTiming(
+                    cue_id=cue["id"],
+                    detected=True,
+                    start_seconds=1.2,
+                    end_seconds=1.8,
+                    confidence=0.88,
+                    audible_evidence="A secondary response is audible.",
+                )
+            ],
+        )
+
+
 def make_job(data_dir: Path) -> tuple[AnalysisJob, Path, JobStore, ProfileStore]:
     job_id = "job_0123456789abcdef0123456789abcdef"
     song_id = "song_0123456789abcdef0123456789abcdef"
@@ -146,6 +183,7 @@ def make_pipeline(
     separator=None,
     language_coach=None,
     lyrics_provider=None,
+    vocal_part_analyzer=None,
 ) -> SongAnalysisPipeline:
     return SongAnalysisPipeline(
         separator=separator or FakeSeparator(),
@@ -159,6 +197,7 @@ def make_pipeline(
         alignment_model="fake-whisperx",
         lyrics_provider=lyrics_provider,
         language_coach=language_coach,
+        vocal_part_analyzer=vocal_part_analyzer,
     )
 
 
@@ -185,7 +224,7 @@ def test_pipeline_builds_and_persists_song_profile(tmp_path: Path) -> None:
     assert profile.analysis.pitch_processing is not None
     assert profile.analysis.pitch_processing.output_pitch_point_count == 4
     assert profile.analysis.pitch_processing.fallback_used is True
-    assert profile.analysis.pipeline_version == "language-annotation-v1"
+    assert profile.analysis.pipeline_version == "language-and-arrangement-v2"
     assert profile.analysis.pitch_model == "fake-pitch"
     assert profile.analysis.language_analysis_provider == "disabled"
     assert (
@@ -247,3 +286,30 @@ def test_pipeline_uses_lrclib_lyrics_and_records_provenance(tmp_path: Path) -> N
     assert profile.analysis.lyrics_provider == "lrclib"
     assert profile.analysis.lyrics_provider_track_id == 123
     assert profile.analysis.lyrics_match_confidence == 0.97
+    assert profile.analysis.vocal_arrangement_mode == "single_track"
+
+
+def test_parentheses_select_dual_pipeline_using_demucs_vocal_stem(tmp_path: Path) -> None:
+    job, source, job_store, profile_store = make_job(tmp_path)
+    analyzer = FakeVocalPartAnalyzer()
+
+    asyncio.run(
+        make_pipeline(
+            job_store,
+            profile_store,
+            lyrics_provider=FakeDualTrackLyricsProvider(),
+            language_coach=FakeLanguageCoach(),
+            vocal_part_analyzer=analyzer,
+        ).run(job.job_id, source)
+    )
+
+    profile = profile_store.get(job.song_id)
+    assert profile is not None
+    assert profile.analysis.vocal_arrangement_mode == "dual_track"
+    assert analyzer.audio_path is not None
+    assert analyzer.audio_path.name == "vocals.wav"
+    assert {part.lane for part in profile.vocal_parts} == {"primary", "secondary"}
+    secondary = next(part for part in profile.vocal_parts if part.lane == "secondary")
+    assert secondary.start_seconds == 1.2
+    assert secondary.source == "audio_model_candidate"
+    assert profile.sentences[0].language_hints
