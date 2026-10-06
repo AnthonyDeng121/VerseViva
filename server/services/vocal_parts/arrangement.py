@@ -7,7 +7,7 @@ from server.models.song import (
     VocalArrangementMode,
     VocalLane,
     VocalPart,
-    VocalPartSource,
+    VocalPartTimingStatus,
 )
 from server.pipelines.contracts import VocalPartAnalyzer
 from server.services.vocal_parts.structure import derive_structural_vocal_parts
@@ -83,9 +83,9 @@ class DualTrackArrangementPipeline:
                     update={
                         "start_seconds": timing.start_seconds,
                         "end_seconds": timing.end_seconds,
-                        "source": VocalPartSource.audio_model_candidate,
-                        "confidence": timing.confidence,
-                        "needs_human_review": True,
+                        "timing_status": VocalPartTimingStatus.audio_model_observed,
+                        "timing_confidence": timing.confidence,
+                        "timing_needs_human_review": True,
                         "evidence": {
                             **part.evidence,
                             "audioInput": "demucsVocalsStem",

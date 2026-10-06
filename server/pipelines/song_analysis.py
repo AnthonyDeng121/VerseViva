@@ -43,7 +43,7 @@ from server.services.vocal_parts.arrangement import (
 from server.storage.job_store import JobStore
 from server.storage.profile_store import ProfileStore
 
-PIPELINE_VERSION = "language-and-arrangement-v2"
+PIPELINE_VERSION = "language-and-arrangement-v3"
 STAGE_PROGRESS = {
     AnalysisStage.probing_audio: 2,
     AnalysisStage.separating_vocals: 10,
@@ -164,7 +164,7 @@ class SongAnalysisPipeline:
             vocal_parts: list[VocalPart] = []
             if arrangement_mode == VocalArrangementMode.dual_track:
                 self._advance(job, AnalysisStage.analyzing_vocal_parts)
-                vocal_parts_path = job_dir / "vocal-parts" / "parts-v1.json"
+                vocal_parts_path = job_dir / "vocal-parts" / "parts-v2.json"
                 cached_vocal_parts = _load_vocal_parts(vocal_parts_path)
                 if cached_vocal_parts is not None:
                     vocal_parts = cached_vocal_parts
@@ -184,7 +184,7 @@ class SongAnalysisPipeline:
                         job.warnings.append(
                             AnalysisWarning(
                                 stage=AnalysisStage.analyzing_vocal_parts,
-                                message="双轨声部听感复核失败，已保留歌词结构候选。",
+                                message="双轨声部时间核查失败，已保留确定歌词并使用句级时间。",
                                 detail=str(exc),
                             )
                         )

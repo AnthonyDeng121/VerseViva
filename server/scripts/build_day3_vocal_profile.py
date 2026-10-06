@@ -10,8 +10,10 @@ from server.models.song import (
     SongProfile,
     VocalLane,
     VocalPart,
+    VocalPartIdentityStatus,
     VocalPartRole,
     VocalPartSource,
+    VocalPartTimingStatus,
 )
 from server.pipelines.whisperx.converter import convert_whisperx_json
 from server.services.lyrics_reconciliation import reconcile_provided_lyrics
@@ -176,6 +178,18 @@ def _candidate_part(
         source=source,
         confidence=confidence,
         needs_human_review=source != VocalPartSource.lyrics_provider,
+        identity_status=(
+            VocalPartIdentityStatus.confirmed
+            if source == VocalPartSource.lyrics_provider
+            else VocalPartIdentityStatus.candidate
+        ),
+        timing_status=(
+            VocalPartTimingStatus.audio_model_observed
+            if source == VocalPartSource.lyrics_provider and confidence > 0
+            else VocalPartTimingStatus.aligned_sentence_fallback
+        ),
+        timing_confidence=confidence if source == VocalPartSource.lyrics_provider else None,
+        timing_needs_human_review=source == VocalPartSource.lyrics_provider,
         evidence={
             "audioRef": "data/day3/input/get him back!.mp3",
             "transcriptRef": "data/day3/output/whisperx/get him back!.json",

@@ -24,6 +24,10 @@ class JobStore:
         payload = job.model_dump(mode="json")
         temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         temporary.replace(destination)
+        latest_pointer = self.jobs_dir / "latest-job-id"
+        latest_temporary = self.jobs_dir / ".latest-job-id.tmp"
+        latest_temporary.write_text(job.job_id, encoding="utf-8")
+        latest_temporary.replace(latest_pointer)
 
     def get(self, job_id: str) -> AnalysisJob | None:
         if JOB_ID_PATTERN.fullmatch(job_id) is None:
@@ -34,6 +38,14 @@ class JobStore:
         return AnalysisJob.model_validate_json(source.read_text(encoding="utf-8"))
 
     def latest(self) -> AnalysisJob | None:
+        latest_pointer = self.jobs_dir / "latest-job-id"
+        if latest_pointer.is_file():
+            try:
+                pointed = self.get(latest_pointer.read_text(encoding="utf-8").strip())
+            except OSError:
+                pointed = None
+            if pointed is not None:
+                return pointed
         jobs: list[AnalysisJob] = []
         for source in self.jobs_dir.glob("job_*/job.json"):
             try:

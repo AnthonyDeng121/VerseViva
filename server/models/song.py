@@ -227,6 +227,17 @@ class VocalPartSource(StrEnum):
     human_curated = "human_curated"
 
 
+class VocalPartIdentityStatus(StrEnum):
+    confirmed = "confirmed"
+    candidate = "candidate"
+
+
+class VocalPartTimingStatus(StrEnum):
+    aligned_sentence_fallback = "aligned_sentence_fallback"
+    audio_model_observed = "audio_model_observed"
+    human_curated = "human_curated"
+
+
 class VocalPart(SongProfileModel):
     """One reference vocal layer; the two-lane UI may contain many such parts."""
 
@@ -240,6 +251,10 @@ class VocalPart(SongProfileModel):
     source: VocalPartSource
     confidence: float = Field(ge=0, le=1)
     needs_human_review: bool = False
+    identity_status: VocalPartIdentityStatus = VocalPartIdentityStatus.candidate
+    timing_status: VocalPartTimingStatus = VocalPartTimingStatus.aligned_sentence_fallback
+    timing_confidence: float | None = Field(default=None, ge=0, le=1)
+    timing_needs_human_review: bool = False
     evidence: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -251,6 +266,11 @@ class VocalPart(SongProfileModel):
             VocalPartSource.lyrics_provider,
         } and not self.needs_human_review:
             raise ValueError("candidate vocal parts must require human review")
+        if self.source == VocalPartSource.lyrics_provider:
+            if self.identity_status != VocalPartIdentityStatus.confirmed:
+                raise ValueError("provider-backed vocal part identity must be confirmed")
+            if self.needs_human_review:
+                raise ValueError("provider-backed vocal part identity must not require review")
         return self
 
 

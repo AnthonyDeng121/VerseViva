@@ -62,6 +62,10 @@ type VocalPart = {
   source: "acoustic_candidate" | "audio_model_candidate" | "lyrics_structure_candidate" | "lyrics_provider" | "human_curated";
   confidence: number;
   needsHumanReview: boolean;
+  identityStatus: "confirmed" | "candidate";
+  timingStatus: "aligned_sentence_fallback" | "audio_model_observed" | "human_curated";
+  timingConfidence?: number | null;
+  timingNeedsHumanReview: boolean;
   evidence: Record<string, unknown>;
 };
 
@@ -622,7 +626,8 @@ function VocalPartCard({
         : <p>{part.lyrics}</p>}
       <small>
         {sourceLabel}
-        {part.needsHumanReview ? " · 需复核" : ""}
+        {part.needsHumanReview ? " · 声部身份需复核" : ""}
+        {part.timingNeedsHumanReview ? " · 时间需复核" : ""}
         {` · ${Math.round(part.confidence * 100)}%`}
       </small>
     </article>

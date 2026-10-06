@@ -1,0 +1,196 @@
+import json
+from pathlib import Path
+from uuid import uuid4
+
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
+
+from server.config import get_settings
+from server.models.recording import (
+    RecordingSelectionType,
+    RecordingTake,
+    TakeSaveMode,
+)
+from server.storage.profile_store import ProfileStore
+from server.storage.take_store import TakeStore
+
+router = APIRouter()
+CHUNK_SIZE = 1024 * 1024
+ALLOWED_RECORDING_TYPES = {
+    ".webm": {"audio/webm", "video/webm", "application/octet-stream"},
+    ".mp4": {"audio/mp4", "video/mp4", "application/octet-stream"},
+    ".m4a": {"audio/mp4", "audio/x-m4a", "application/octet-stream"},
+    ".ogg": {"audio/ogg", "application/ogg", "application/octet-stream"},
+    ".wav": {"audio/wav", "audio/x-wav", "application/octet-stream"},
+}
+
+
+def _has_recording_signature(suffix: str, header: bytes) -> bool:
+    if suffix == ".webm":
+        return header.startswith(b"\x1aE\xdf\xa3")
+    if suffix in {".mp4", ".m4a"}:
+        return len(header) >= 12 and header[4:8] == b"ftyp"
+    if suffix == ".ogg":
+        return header.startswith(b"OggS")
+    if suffix == ".wav":
+        return len(header) >= 12 and header[:4] == b"RIFF" and header[8:12] == b"WAVE"
+    return False
+
+
+def _parse_sentence_ids(value: str) -> list[str]:
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=422, detail="sentenceIds must be a JSON array") from exc
+    if (
+        not isinstance(parsed, list)
+        or not parsed
+        or not all(isinstance(item, str) for item in parsed)
+    ):
+        raise HTTPException(status_code=422, detail="sentenceIds must be a non-empty string array")
+    if len(parsed) != len(set(parsed)):
+        raise HTTPException(status_code=422, detail="sentenceIds must not contain duplicates")
+    return parsed
+
+
+@router.post(
+    "/songs/{song_id}/takes",
+    response_model=RecordingTake,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_take(
+    song_id: str,
+    audio: UploadFile = File(...),  # noqa: B008
+    session_id: str = Form(...),
+    track_slot_id: str = Form(...),
+    selection_type: RecordingSelectionType = Form(...),  # noqa: B008
+    sentence_ids: str = Form(...),
+    selection_start_seconds: float = Form(...),
+    selection_end_seconds: float = Form(...),
+    timeline_start_seconds: float = Form(...),
+    save_mode: TakeSaveMode = Form(...),  # noqa: B008
+    vocal_part_id: str | None = Form(default=None),
+    client_duration_seconds: float | None = Form(default=None),
+    latency_compensation_ms: float = Form(default=0),
+) -> RecordingTake:
+    settings = get_settings()
+    profile = ProfileStore(settings.data_dir).get(song_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Song profile not found")
+
+    selected_sentence_ids = _parse_sentence_ids(sentence_ids)
+    known_sentence_ids = {sentence.id for sentence in profile.sentences}
+    if not set(selected_sentence_ids).issubset(known_sentence_ids):
+        raise HTTPException(
+            status_code=422,
+            detail="Recording selection contains unknown sentences",
+        )
+    if selection_type == RecordingSelectionType.sentence and len(selected_sentence_ids) != 1:
+        raise HTTPException(
+            status_code=422,
+            detail="Single-sentence recording requires one sentence",
+        )
+    if selection_end_seconds <= selection_start_seconds:
+        raise HTTPException(
+            status_code=422,
+            detail="Recording selection must have a positive interval",
+        )
+    if selection_end_seconds > profile.duration_seconds + 0.05:
+        raise HTTPException(status_code=422, detail="Recording selection exceeds song duration")
+    if timeline_start_seconds > profile.duration_seconds:
+        raise HTTPException(status_code=422, detail="Timeline start exceeds song duration")
+    if vocal_part_id is not None and vocal_part_id not in {part.id for part in profile.vocal_parts}:
+        raise HTTPException(status_code=422, detail="Vocal Part does not belong to this song")
+
+    suffix = Path(audio.filename or "").suffix.lower()
+    expected_content_types = ALLOWED_RECORDING_TYPES.get(suffix)
+    if expected_content_types is None or audio.content_type not in expected_content_types:
+        raise HTTPException(
+            status_code=415,
+            detail="Recordings must be WebM, MP4/M4A, OGG, or WAV audio",
+        )
+
+    take_id = f"take_{uuid4().hex}"
+    take_dir = settings.data_dir / "takes" / take_id
+    take_dir.mkdir(parents=True, exist_ok=False)
+    destination = take_dir / f"original{suffix}"
+    size = 0
+    header = b""
+    try:
+        with destination.open("wb") as output:
+            while chunk := await audio.read(CHUNK_SIZE):
+                if len(header) < 12:
+                    header = (header + chunk)[:12]
+                size += len(chunk)
+                if size > settings.max_recording_size_bytes:
+                    raise HTTPException(status_code=413, detail="Recording is too large")
+                output.write(chunk)
+        if size == 0:
+            raise HTTPException(status_code=400, detail="Recording is empty")
+        if not _has_recording_signature(suffix, header):
+            raise HTTPException(
+                status_code=415,
+                detail="Recording content does not match its extension",
+            )
+
+        take = RecordingTake(
+            take_id=take_id,
+            session_id=session_id,
+            song_id=song_id,
+            track_slot_id=track_slot_id,
+            selection_type=selection_type,
+            sentence_ids=selected_sentence_ids,
+            vocal_part_id=vocal_part_id,
+            selection_start_seconds=selection_start_seconds,
+            selection_end_seconds=selection_end_seconds,
+            timeline_start_seconds=timeline_start_seconds,
+            save_mode=save_mode,
+            audio_url=f"/api/v1/takes/{take_id}/audio",
+            stored_filename=destination.name,
+            mime_type=audio.content_type or "application/octet-stream",
+            size_bytes=size,
+            client_duration_seconds=client_duration_seconds,
+            latency_compensation_ms=latency_compensation_ms,
+        )
+        TakeStore(settings.data_dir).add(take)
+        return take
+    except Exception:
+        destination.unlink(missing_ok=True)
+        metadata = take_dir / "take.json"
+        metadata.unlink(missing_ok=True)
+        try:
+            take_dir.rmdir()
+        except OSError:
+            pass
+        raise
+
+
+@router.get("/songs/{song_id}/takes", response_model=list[RecordingTake])
+async def list_song_takes(
+    song_id: str,
+    session_id: str | None = Query(default=None),
+) -> list[RecordingTake]:
+    settings = get_settings()
+    if ProfileStore(settings.data_dir).get(song_id) is None:
+        raise HTTPException(status_code=404, detail="Song profile not found")
+    return TakeStore(settings.data_dir).list_for_song(song_id, session_id=session_id)
+
+
+@router.get("/takes/{take_id}", response_model=RecordingTake)
+async def get_take(take_id: str) -> RecordingTake:
+    take = TakeStore(get_settings().data_dir).get(take_id)
+    if take is None:
+        raise HTTPException(status_code=404, detail="Recording Take not found")
+    return take
+
+
+@router.get("/takes/{take_id}/audio", response_class=FileResponse)
+async def get_take_audio(take_id: str) -> FileResponse:
+    settings = get_settings()
+    take = TakeStore(settings.data_dir).get(take_id)
+    if take is None:
+        raise HTTPException(status_code=404, detail="Recording Take not found")
+    source = settings.data_dir / "takes" / take.take_id / take.stored_filename
+    if not source.is_file():
+        raise HTTPException(status_code=404, detail="Recording audio not found")
+    return FileResponse(source, media_type=take.mime_type)

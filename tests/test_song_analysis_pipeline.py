@@ -158,6 +158,14 @@ class FakeVocalPartAnalyzer:
         )
 
 
+class FailingVocalPartAnalyzer:
+    provider = "fake-audio-model"
+    model = "fake-vocal-part-model"
+
+    async def analyze(self, vocal_audio, *, duration_seconds, transcript, lyric_cues):
+        raise RuntimeError("503 high demand")
+
+
 def make_job(data_dir: Path) -> tuple[AnalysisJob, Path, JobStore, ProfileStore]:
     job_id = "job_0123456789abcdef0123456789abcdef"
     song_id = "song_0123456789abcdef0123456789abcdef"
@@ -224,7 +232,7 @@ def test_pipeline_builds_and_persists_song_profile(tmp_path: Path) -> None:
     assert profile.analysis.pitch_processing is not None
     assert profile.analysis.pitch_processing.output_pitch_point_count == 4
     assert profile.analysis.pitch_processing.fallback_used is True
-    assert profile.analysis.pipeline_version == "language-and-arrangement-v2"
+    assert profile.analysis.pipeline_version == "language-and-arrangement-v3"
     assert profile.analysis.pitch_model == "fake-pitch"
     assert profile.analysis.language_analysis_provider == "disabled"
     assert (
@@ -311,5 +319,41 @@ def test_parentheses_select_dual_pipeline_using_demucs_vocal_stem(tmp_path: Path
     assert {part.lane for part in profile.vocal_parts} == {"primary", "secondary"}
     secondary = next(part for part in profile.vocal_parts if part.lane == "secondary")
     assert secondary.start_seconds == 1.2
-    assert secondary.source == "audio_model_candidate"
+    assert secondary.source == "lyrics_provider"
+    assert secondary.identity_status == "confirmed"
+    assert secondary.needs_human_review is False
+    assert secondary.timing_status == "audio_model_observed"
+    assert secondary.timing_confidence == 0.88
+    assert secondary.timing_needs_human_review is True
     assert profile.sentences[0].language_hints
+
+
+def test_vocal_timing_failure_keeps_confirmed_provider_lyrics_and_fallback_time(
+    tmp_path: Path,
+) -> None:
+    job, source, job_store, profile_store = make_job(tmp_path)
+
+    asyncio.run(
+        make_pipeline(
+            job_store,
+            profile_store,
+            lyrics_provider=FakeDualTrackLyricsProvider(),
+            language_coach=FakeLanguageCoach(),
+            vocal_part_analyzer=FailingVocalPartAnalyzer(),
+        ).run(job.job_id, source)
+    )
+
+    completed = job_store.get(job.job_id)
+    profile = profile_store.get(job.song_id)
+    assert completed is not None
+    assert completed.status == AnalysisStatus.completed
+    assert completed.warnings[-1].stage == AnalysisStage.analyzing_vocal_parts
+    assert "503 high demand" in (completed.warnings[-1].detail or "")
+    assert profile is not None
+    secondary = next(part for part in profile.vocal_parts if part.lane == "secondary")
+    assert secondary.lyrics == "yeah"
+    assert secondary.source == "lyrics_provider"
+    assert secondary.identity_status == "confirmed"
+    assert secondary.needs_human_review is False
+    assert secondary.timing_status == "aligned_sentence_fallback"
+    assert secondary.timing_needs_human_review is True

@@ -4,8 +4,10 @@ from server.models.song import (
     SongSentence,
     VocalLane,
     VocalPart,
+    VocalPartIdentityStatus,
     VocalPartRole,
     VocalPartSource,
+    VocalPartTimingStatus,
 )
 
 PARENTHETICAL = re.compile(r"\(([^()]+)\)")
@@ -29,9 +31,13 @@ def derive_structural_vocal_parts(sentences: list[SongSentence]) -> list[VocalPa
                     end_seconds=sentence.end_seconds,
                     lyrics=cue,
                     sentence_ids=[sentence.id],
-                    source=VocalPartSource.lyrics_structure_candidate,
-                    confidence=0.7,
-                    needs_human_review=True,
+                    source=VocalPartSource.lyrics_provider,
+                    confidence=1.0,
+                    needs_human_review=False,
+                    identity_status=VocalPartIdentityStatus.confirmed,
+                    timing_status=VocalPartTimingStatus.aligned_sentence_fallback,
+                    timing_confidence=None,
+                    timing_needs_human_review=True,
                     evidence={
                         "parentheticalText": match.group(0),
                         "textSource": "lyricsProvider",
@@ -54,6 +60,9 @@ def derive_structural_vocal_parts(sentences: list[SongSentence]) -> list[VocalPa
             source=VocalPartSource.acoustic_candidate,
             confidence=0.65,
             needs_human_review=True,
+            identity_status=VocalPartIdentityStatus.candidate,
+            timing_status=VocalPartTimingStatus.aligned_sentence_fallback,
+            timing_needs_human_review=True,
             evidence={"basis": "alignedLeadSentence"},
         )
         for index, sentence in enumerate(sentences, start=1)

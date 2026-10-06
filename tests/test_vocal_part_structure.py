@@ -1,4 +1,10 @@
-from server.models.song import SongSentence, VocalLane, VocalPartSource
+from server.models.song import (
+    SongSentence,
+    VocalLane,
+    VocalPartIdentityStatus,
+    VocalPartSource,
+    VocalPartTimingStatus,
+)
 from server.services.vocal_parts.structure import derive_structural_vocal_parts
 
 
@@ -15,9 +21,12 @@ def test_parenthetical_lyrics_create_provider_backed_dual_lanes() -> None:
     assert [part.lane for part in parts] == [VocalLane.primary, VocalLane.secondary]
     assert parts[0].lyrics == "Tell me  I'm the only"
     assert parts[1].lyrics == "Ah-ah"
-    assert parts[1].source == VocalPartSource.lyrics_structure_candidate
+    assert parts[1].source == VocalPartSource.lyrics_provider
+    assert parts[1].identity_status == VocalPartIdentityStatus.confirmed
+    assert parts[1].timing_status == VocalPartTimingStatus.aligned_sentence_fallback
     assert parts[0].needs_human_review is True
-    assert parts[1].needs_human_review is True
+    assert parts[1].needs_human_review is False
+    assert parts[1].timing_needs_human_review is True
 
 
 def test_plain_lyrics_do_not_pretend_to_have_multiple_vocal_parts() -> None:
