@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     api_prefix: str = "/api/v1"
     data_dir: Path = Path("data")
+    web_dist_dir: Path = Path("web/dist")
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
     max_upload_size_bytes: int = 100 * 1024 * 1024
     max_recording_size_bytes: int = 25 * 1024 * 1024
@@ -28,6 +29,8 @@ class Settings(BaseSettings):
     lrclib_timeout_seconds: float = 10.0
     lrclib_min_match_score: float = 0.78
     language_analysis_provider: Literal["disabled", "gemini"] = "disabled"
+    language_worker_url: str | None = None
+    language_worker_token: SecretStr | None = None
     gemini_api_key: SecretStr | None = None
     gemini_model: str = "gemini-3.8-flash"
 

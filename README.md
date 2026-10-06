@@ -118,6 +118,67 @@ npm run dev
 
 前端地址为 http://localhost:5173。Vite 会把 `/api` 代理到 `http://127.0.0.1:8000`。
 
+## 手机公网预发布测试
+
+比赛交付不依赖校园网 IP、同一 Wi-Fi、WSL 或开发者电脑上的 Vite 地址。当前开发阶段使用两层部署：
+
+1. 预发布：在本机构建 H5，由 FastAPI 同源提供页面和 `/api`，再通过临时 HTTPS Tunnel 供手机跨网络测试。
+2. 正式比赛：使用同一个 Docker 镜像部署到公网云服务器，绑定固定域名并保留持久数据卷。
+
+先构建前端：
+
+```powershell
+cd D:\0Desktop2\项目\VerseViva\web
+npm.cmd install
+npm.cmd run build
+```
+
+然后从仓库根目录启动统一 Web 服务：
+
+```powershell
+cd D:\0Desktop2\项目\VerseViva
+python -m uvicorn server.main:app --host 0.0.0.0 --port 8000
+```
+
+此时以下内容使用同一个 origin：
+
+```text
+/                     React H5
+/api/v1/health        健康检查
+/api/v1/songs/...     歌曲与 Profile API
+/api/v1/takes/...     用户录音 Take API
+```
+
+不要再将 Vite 的 `5173` 地址作为比赛或跨网络交付地址。Vite 只用于日常热更新开发。
+
+临时 Tunnel 只用于手机联调，地址会变化且依赖本机在线；比赛提交必须换为固定云服务器和域名。
+
+## Docker 与正式域名
+
+复制生产环境模板，但不要提交密钥：
+
+```powershell
+Copy-Item .env.production.example .env.production
+```
+
+构建并启动：
+
+```powershell
+docker compose up --build -d
+```
+
+正式部署时把 `SITE_ADDRESS` 改为实际域名，例如 `demo.example.com`，并将域名解析到云服务器公网 IP。Caddy 会作为统一入口将 H5、API 和音频请求转发给 FastAPI。
+
+临时容器 Tunnel 可使用：
+
+```powershell
+docker compose -f compose.yaml -f compose.tunnel.yaml up --build
+```
+
+完整模型镜像包含 Demucs、Basic Pitch、WhisperX 和 ffmpeg，因此第一次构建时间和镜像体积都较大。Hero Song 应继续使用预缓存；临时上传应限制为短片段。
+
+`VERSEVIVA_LANGUAGE_WORKER_URL` 与 `VERSEVIVA_LANGUAGE_WORKER_TOKEN` 已为后续独立 Gemini Worker 预留。当前版本尚未将 Gemini 请求改为远程 Worker；迁移时保持现有 LanguageObservation / VocalCueTiming Schema，不改变前端合同。
+
 ## 开发检查
 
 ```bash

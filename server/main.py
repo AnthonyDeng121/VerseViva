@@ -1,7 +1,11 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
 
 from server.api.router import api_router
 from server.config import get_settings
@@ -30,7 +34,25 @@ app.add_middleware(
 app.include_router(api_router, prefix=settings.api_prefix)
 
 
-@app.get("/", include_in_schema=False)
-async def root() -> dict[str, str]:
-    return {"name": settings.app_name, "docs": "/docs"}
+class SpaStaticFiles(StaticFiles):
+    """Serve the built H5 and fall back to index.html for client-side routes."""
+
+    async def get_response(self, path: str, scope: dict) -> Response:
+        response = await super().get_response(path, scope)
+        if response.status_code != 404 or "." in Path(path).name:
+            return response
+        index = Path(self.directory) / "index.html"
+        return FileResponse(index) if index.is_file() else response
+
+
+if settings.web_dist_dir.is_dir():
+    app.mount(
+        "/",
+        SpaStaticFiles(directory=settings.web_dist_dir, html=True),
+        name="web",
+    )
+else:
+    @app.get("/", include_in_schema=False)
+    async def root() -> dict[str, str]:
+        return {"name": settings.app_name, "docs": "/docs"}
 
