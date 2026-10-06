@@ -153,6 +153,14 @@ python -m uvicorn server.main:app --host 0.0.0.0 --port 8000
 
 临时 Tunnel 只用于手机联调，地址会变化且依赖本机在线；比赛提交必须换为固定云服务器和域名。
 
+Windows 上可用一个命令完成前端构建、统一服务启动和临时 Tunnel：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start_public_preview.ps1
+```
+
+保持该窗口打开，并使用输出中的最新 `https://...trycloudflare.com` 地址。关闭窗口、按 Ctrl+C、电脑休眠或校园网断线后，临时地址都会失效；重新运行会生成新地址。脚本固定使用 HTTP/2，以绕开校园网常见的 QUIC/UDP 7844 限制。
+
 ## Docker 与正式域名
 
 复制生产环境模板，但不要提交密钥：
