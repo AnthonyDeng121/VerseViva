@@ -144,13 +144,13 @@ def _presentation(
             SegmentOperation.resegment,
             "cross_word_linking",
             "‿",
-            MarkPlacement.bridge,
+            MarkPlacement.below,
             "把 {span} 放在同一口气里，让前词尾音直接承接后词起音。",
         )
     return (
         SegmentOperation.merge,
         "segment_merger_or_assimilation",
         "└─┘",
-        MarkPlacement.bridge,
+        MarkPlacement.below,
         "练习 {span} 时只做一次共享或融合后的发音动作，不要拆成两个独立动作。",
     )

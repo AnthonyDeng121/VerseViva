@@ -172,9 +172,18 @@ continuous_without_change 或 uncertain。漏标不是允许的省略方式。
   例如前词尾辅音实际承担后词元音起音时，应返回 linked_or_resegmented。
 - rhotic_to_vowel 候选需要检查词尾 r 音是否实际承接后词元音；
   如果可听见这种承接，返回 linked_or_resegmented，而不是因为 ER 被归为元音就忽略。
-- /t/ 或 /d/ + /j/ 只有听到明确新增的破擦摩擦段，
-  才能返回 merged_or_assimilated；否则在 not_audibly_released、
-  continuous_without_change、uncertain 中选择。
+- consonant_to_glide 候选（例如 If you 的 /f/ + /j/）不得因为“没有产生新音”就判为
+  continuous_without_change。若前词辅音的摩擦/发声动作在无重新起音的情况下直接进入 /j/，
+  必须返回 linked_or_resegmented。只有听到两个独立起音或边界重置时才返回
+  continuous_without_change。
+- stop_to_glide 候选（例如 Let you 的 /t/ + /j/）必须执行三选一的听感对比：
+  1) 听到一个新的、连续的 /tʃ/ 类破擦段 → merged_or_assimilated；
+  2) 听不到词尾 /t/ 的独立实现，而是直接进入 you → not_audibly_released；
+  3) /t/ 和 /j/ 都清楚且是两个动作 → continuous_without_change。
+  不得只根据拼写或“这是经典音变”选择 merged_or_assimilated。
+- 对 targetSpan 包含 If you、let you、want you、did you 等高歧义边界，
+  audibleEvidence 必须明确写出实际听到的“连续摩擦/破擦”、“词尾音未出现”或“两次独立起音”；
+  无法听清时必须返回 uncertain，不能用语音经验补全。
 - 没听见爆破不足以区分删除与未释放，统一使用 not_audibly_released。
 - 不得编造波形、频谱、舌位、唇形或声门动作。audibleEvidence 只写当前音频中实际可听见的现象。
 - weak 必须 needsHumanReview=true。伴奏、混响、叠唱或分离伪影影响判断时，

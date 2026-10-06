@@ -43,6 +43,12 @@ def reconcile_provided_lyrics(
         return aligned_sentences, False
 
     match_start, match_end = match
+    first_line = lyrics_tokens[match_start].line_index
+    last_line = lyrics_tokens[match_end - 1].line_index
+    while match_start > 0 and lyrics_tokens[match_start - 1].line_index == first_line:
+        match_start -= 1
+    while match_end < len(lyrics_tokens) and lyrics_tokens[match_end].line_index == last_line:
+        match_end += 1
     selected_tokens = lyrics_tokens[match_start:match_end]
     timed_words = _transfer_timings(selected_tokens, aligned_words)
     reconciled = _build_sentences(lines, line_tokens, selected_tokens, timed_words)

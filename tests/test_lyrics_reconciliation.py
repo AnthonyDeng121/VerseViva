@@ -111,6 +111,33 @@ def test_online_lyrics_missing_from_asr_receive_interpolated_times() -> None:
     )
 
 
+def test_reconciliation_keeps_complete_online_lyrics_boundary_line() -> None:
+    asr = SongSentence(
+        id="sentence_001",
+        start_seconds=0,
+        end_seconds=2,
+        lyrics="Tell me I'm the only",
+        words=[
+            WordTiming(
+                id=f"w{index}",
+                text=word,
+                start_seconds=index * 0.4,
+                end_seconds=(index + 1) * 0.4,
+            )
+            for index, word in enumerate("Tell me I'm the only".split())
+        ],
+    )
+
+    sentences, matched = reconcile_provided_lyrics(
+        "Previous line\nTell me I'm the only, only, only, only one",
+        [asr],
+    )
+
+    assert matched is True
+    assert sentences[-1].lyrics == "Tell me I'm the only, only, only, only one"
+    assert [word.text for word in sentences[-1].words][-4:] == ["only", "only", "only", "one"]
+
+
 def test_fuzzy_match_still_rejects_unrelated_song() -> None:
     original = [aligned_sentence()]
 

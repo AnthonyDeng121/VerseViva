@@ -31,6 +31,7 @@ from server.services.lyrics import DisabledLyricsProvider, LrclibLyricsProvider
 from server.services.lyrics.models import LyricsLookupResult
 from server.services.lyrics_reconciliation import reconcile_provided_lyrics
 from server.services.song_profile_builder import build_song_profile
+from server.services.vocal_parts.structure import derive_structural_vocal_parts
 from server.storage.job_store import JobStore
 from server.storage.profile_store import ProfileStore
 
@@ -148,7 +149,7 @@ class SongAnalysisPipeline:
                 else:
                     lyrics = "\n".join(sentence.lyrics for sentence in sentences)
             candidates = generate_language_candidates(sentences)
-            observations_path = job_dir / "language" / "observations.json"
+            observations_path = job_dir / "language" / "observations-v2.json"
             observations = _load_observations(observations_path)
             if observations is None:
                 observations = await self.language_coach.analyze(
@@ -199,6 +200,7 @@ class SongAnalysisPipeline:
                 lyrics_match_confidence=(
                     lyrics_lookup.match_confidence if lyrics_lookup else None
                 ),
+                vocal_parts=derive_structural_vocal_parts(annotated_sentences),
                 created_at=datetime.now(UTC),
             )
             self.profile_store.save(profile)

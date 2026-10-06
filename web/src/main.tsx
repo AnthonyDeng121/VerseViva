@@ -1,4 +1,4 @@
-import React, { FormEvent, useEffect, useMemo, useState } from "react";
+import React, { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import "./styles.css";
 
@@ -42,6 +42,12 @@ type SongSentence = {
   startSeconds: number;
   endSeconds: number;
   lyrics: string;
+  words: {
+    id: string;
+    text: string;
+    startSeconds: number;
+    endSeconds: number;
+  }[];
   languageHints: LanguageHint[];
 };
 
@@ -334,6 +340,12 @@ function ProfileView({
   selectedHint: LanguageHint | null;
   onSelect: (hint: LanguageHint) => void;
 }) {
+  const [currentTime, setCurrentTime] = useState(0);
+  const [lyricsMode, setLyricsMode] = useState<"standard" | "layers">("standard");
+  useEffect(() => {
+    setCurrentTime(0);
+    setLyricsMode(profile.sentences.length === 0 && profile.vocalParts.length > 0 ? "layers" : "standard");
+  }, [profile.songId, profile.sentences.length, profile.vocalParts.length]);
   const hintCount = useMemo(
     () => profile.sentences.reduce((total, sentence) => total + sentence.languageHints.length, 0),
     [profile],
@@ -351,17 +363,15 @@ function ProfileView({
       <div className="players">
         <label>
           <span>原曲</span>
-          <audio controls preload="metadata" src={profile.audio.sourceUrl} />
+          <AudioPlayer src={profile.audio.sourceUrl} onTimeChange={setCurrentTime} />
         </label>
         {profile.audio.vocalUrl && (
           <label>
             <span>人声</span>
-            <audio controls preload="metadata" src={profile.audio.vocalUrl} />
+            <AudioPlayer src={profile.audio.vocalUrl} onTimeChange={setCurrentTime} />
           </label>
         )}
       </div>
-
-      {profile.vocalParts.length > 0 && <VocalLayers vocalParts={profile.vocalParts} />}
 
       <div className="legend" aria-label="标记说明">
         <span><b>×</b> 未清晰释放</span>
@@ -369,11 +379,43 @@ function ProfileView({
         <span><b>└─┘</b> 合并或融合</span>
       </div>
 
-      <div className="lyrics-list">
-        {profile.sentences.map((sentence) => (
-          <AnnotatedLine key={sentence.id} sentence={sentence} onSelect={onSelect} />
-        ))}
+      <div className="lyrics-stage-heading">
+        <div>
+          <p className="eyebrow">SYNCED LYRICS</p>
+          <h3>歌曲学习歌词</h3>
+        </div>
+        {profile.vocalParts.length > 0 && (
+          <div className="lyrics-mode-switch" role="group" aria-label="歌词视图">
+            <button
+              className={lyricsMode === "standard" ? "active" : ""}
+              onClick={() => setLyricsMode("standard")}
+              type="button"
+            >
+              普通歌词
+            </button>
+            <button
+              className={lyricsMode === "layers" ? "active" : ""}
+              onClick={() => setLyricsMode("layers")}
+              type="button"
+            >
+              叠唱歌词
+            </button>
+          </div>
+        )}
       </div>
+
+      {lyricsMode === "layers" && profile.vocalParts.length > 0
+        ? <VocalLayers
+            vocalParts={profile.vocalParts}
+            sentences={profile.sentences}
+            currentTime={currentTime}
+            onSelect={onSelect}
+          />
+        : <KaraokeLyrics
+            sentences={profile.sentences}
+            currentTime={currentTime}
+            onSelect={onSelect}
+          />}
 
       {selectedHint && <HintDetail hint={selectedHint} />}
 
@@ -385,6 +427,69 @@ function ProfileView({
         LLM 标注属于候选，弱证据不会显示；比赛 Hero Song 仍需人工校对。
       </p>
     </section>
+  );
+}
+
+function AudioPlayer({
+  src,
+  onTimeChange,
+}: {
+  src: string;
+  onTimeChange: (time: number) => void;
+}) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.volume = 0.3;
+  }, [src]);
+  return (
+    <audio
+      ref={audioRef}
+      controls
+      preload="metadata"
+      src={src}
+      onLoadedMetadata={(event) => { event.currentTarget.volume = 0.3; }}
+      onTimeUpdate={(event) => onTimeChange(event.currentTarget.currentTime)}
+      onSeeked={(event) => onTimeChange(event.currentTarget.currentTime)}
+    />
+  );
+}
+
+function KaraokeLyrics({
+  sentences,
+  currentTime,
+  onSelect,
+}: {
+  sentences: SongSentence[];
+  currentTime: number;
+  onSelect: (hint: LanguageHint) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const activeSentenceId = sentences.find(
+    (sentence) => currentTime >= sentence.startSeconds && currentTime < sentence.endSeconds,
+  )?.id;
+  useEffect(() => {
+    if (!activeSentenceId || !containerRef.current) return;
+    const active = containerRef.current.querySelector(`[data-sentence-id="${activeSentenceId}"]`);
+    active?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [activeSentenceId]);
+  if (sentences.length === 0) {
+    return <p className="lyrics-empty">当前缓存只包含 Vocal 分层信息；重新上传音频可生成语言标注歌词。</p>;
+  }
+  return (
+    <div className="lyrics-viewport" ref={containerRef}>
+      <div className="lyrics-list">
+        {sentences.map((sentence) => (
+          <AnnotatedLine
+            key={sentence.id}
+            sentence={sentence}
+            currentTime={currentTime}
+            active={sentence.id === activeSentenceId}
+            past={currentTime > sentence.endSeconds}
+            onSelect={onSelect}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -405,7 +510,18 @@ const SOURCE_LABELS: Record<VocalPart["source"], string> = {
   human_curated: "人工校对",
 };
 
-function VocalLayers({ vocalParts }: { vocalParts: VocalPart[] }) {
+function VocalLayers({
+  vocalParts,
+  sentences,
+  currentTime,
+  onSelect,
+}: {
+  vocalParts: VocalPart[];
+  sentences: SongSentence[];
+  currentTime: number;
+  onSelect: (hint: LanguageHint) => void;
+}) {
+  const sentencesById = new Map(sentences.map((sentence) => [sentence.id, sentence]));
   const primary = vocalParts
     .filter((part) => part.lane === "primary")
     .sort((left, right) => left.startSeconds - right.startSeconds);
@@ -427,14 +543,7 @@ function VocalLayers({ vocalParts }: { vocalParts: VocalPart[] }) {
   }
 
   return (
-    <section className="vocal-layers" aria-labelledby="vocal-layers-heading">
-      <div className="vocal-layers-heading">
-        <div>
-          <p className="eyebrow">VOCAL PARTS</p>
-          <h3 id="vocal-layers-heading">左右双轨歌词</h3>
-        </div>
-        <p>双轨是参考视图，不是叠录数量上限。</p>
-      </div>
+    <section className="vocal-layers" aria-label="左右双轨歌词">
       <div className="vocal-lane-scroll">
         <div className="vocal-lane-grid">
           <div className="vocal-lane-title primary">
@@ -447,12 +556,23 @@ function VocalLayers({ vocalParts }: { vocalParts: VocalPart[] }) {
             <React.Fragment key={`vocal-row-${rowIndex}`}>
               <div className="vocal-lane-cell primary">
                 {row.primary.length > 0
-                  ? row.primary.map((part) => <VocalPartCard part={part} key={part.id} />)
+                  ? row.primary.map((part) => <VocalPartCard
+                      part={part}
+                      sentence={sentencesById.get(part.sentenceIds[0])}
+                      currentTime={currentTime}
+                      onSelect={onSelect}
+                      key={part.id}
+                    />)
                   : <p className="empty-vocal-lane">此时无主 Vocal 标注</p>}
               </div>
               <div className="vocal-lane-cell secondary">
                 {row.secondary.length > 0
-                  ? row.secondary.map((part) => <VocalPartCard part={part} key={part.id} />)
+                  ? row.secondary.map((part) => <VocalPartCard
+                      part={part}
+                      currentTime={currentTime}
+                      onSelect={onSelect}
+                      key={part.id}
+                    />)
                   : <p className="empty-vocal-lane">此时无次 Vocal 标注</p>}
               </div>
             </React.Fragment>
@@ -463,15 +583,35 @@ function VocalLayers({ vocalParts }: { vocalParts: VocalPart[] }) {
   );
 }
 
-function VocalPartCard({ part }: { part: VocalPart }) {
+function VocalPartCard({
+  part,
+  sentence,
+  currentTime,
+  onSelect,
+}: {
+  part: VocalPart;
+  sentence?: SongSentence;
+  currentTime: number;
+  onSelect: (hint: LanguageHint) => void;
+}) {
   const sourceLabel = SOURCE_LABELS[part.source];
+  const active = currentTime >= part.startSeconds && currentTime < part.endSeconds;
   return (
-    <article className="vocal-part">
+    <article className={`vocal-part ${active ? "active" : ""}`}>
       <div className="vocal-part-meta">
         <strong>{ROLE_LABELS[part.role]}</strong>
         <span>{formatPartTime(part.startSeconds)} – {formatPartTime(part.endSeconds)}</span>
       </div>
-      <p>{part.lyrics}</p>
+      {sentence
+        ? <AnnotatedLine
+            sentence={sentence}
+            currentTime={currentTime}
+            active={active}
+            past={currentTime > part.endSeconds}
+            onSelect={onSelect}
+            compact
+          />
+        : <p>{part.lyrics}</p>}
       <small>
         {sourceLabel}
         {part.needsHumanReview ? " · 需复核" : ""}
@@ -489,10 +629,18 @@ function formatPartTime(seconds: number) {
 
 function AnnotatedLine({
   sentence,
+  currentTime,
+  active,
+  past,
   onSelect,
+  compact = false,
 }: {
   sentence: SongSentence;
+  currentTime: number;
+  active: boolean;
+  past: boolean;
   onSelect: (hint: LanguageHint) => void;
+  compact?: boolean;
 }) {
   const marksAt = new Map<number, { mark: CharacterMark; hint: LanguageHint }[]>();
   for (const hint of sentence.languageHints) {
@@ -502,19 +650,27 @@ function AnnotatedLine({
       marksAt.set(mark.startCharIndex, values);
     }
   }
+  const wordRanges = findWordRanges(sentence);
+  const activeWord = wordRanges.find(
+    ({ word }) => currentTime >= word.startSeconds && currentTime < word.endSeconds,
+  );
 
   return (
-    <p className="lyric-line">
+    <p
+      className={`lyric-line ${active ? "active" : ""} ${past ? "past" : ""} ${compact ? "compact" : ""}`}
+      data-sentence-id={sentence.id}
+    >
       {Array.from(sentence.lyrics).map((character, index) => (
         <React.Fragment key={`${sentence.id}-${index}`}>
-          <span className="lyric-character">
+          <span className={`lyric-character ${
+            activeWord && index >= activeWord.start && index <= activeWord.end ? "active-word" : ""
+          }`}>
             {character}
             {(marksAt.get(index) ?? [])
-              .filter(({ mark }) => mark.placement !== "bridge")
               .map(({ mark, hint }) => (
                 <button
                   key={`${hint.id}-${mark.symbol}`}
-                  className={`character-mark ${mark.placement}`}
+                  className="character-mark below"
                   onClick={() => onSelect(hint)}
                   title="查看解释"
                 >
@@ -522,22 +678,31 @@ function AnnotatedLine({
                 </button>
               ))}
           </span>
-          {(marksAt.get(index) ?? [])
-            .filter(({ mark }) => mark.placement === "bridge")
-            .map(({ mark, hint }) => (
-              <button
-                key={`${hint.id}-${mark.symbol}`}
-                className="bridge-mark"
-                onClick={() => onSelect(hint)}
-                title="查看解释"
-              >
-                {mark.symbol}
-              </button>
-            ))}
         </React.Fragment>
       ))}
     </p>
   );
+}
+
+function findWordRanges(sentence: SongSentence) {
+  const matches = Array.from(sentence.lyrics.matchAll(/[A-Za-z]+(?:['’][A-Za-z]+)*/g));
+  let cursor = 0;
+  return sentence.words.flatMap((word) => {
+    const normalized = normalizeWord(word.text);
+    const relativeIndex = matches.slice(cursor).findIndex(
+      (match) => normalizeWord(match[0]) === normalized,
+    );
+    if (relativeIndex < 0) return [];
+    const matchIndex = cursor + relativeIndex;
+    const match = matches[matchIndex];
+    cursor = matchIndex + 1;
+    const start = match.index ?? 0;
+    return [{ word, start, end: start + match[0].length - 1 }];
+  });
+}
+
+function normalizeWord(value: string) {
+  return value.toLowerCase().replaceAll("’", "'").replace(/[^a-z']/g, "");
 }
 
 function HintDetail({ hint }: { hint: LanguageHint }) {

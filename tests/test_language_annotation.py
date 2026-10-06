@@ -143,3 +143,6 @@ def test_prompt_requires_a_verdict_for_every_g2p_candidate() -> None:
     assert "每个 ID 恰好返回一次" in prompt
     assert "linked_or_resegmented" in prompt
     assert all(candidate.id in prompt for candidate in candidates)
+    assert "If you" in prompt
+    assert "Let you" in prompt
+    assert "三选一" in prompt
