@@ -2,12 +2,8 @@ import asyncio
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-import pytest
-
-from server.pipelines.basic_pitch import BasicPitchAdapter
 from server.pipelines.command import CommandResult
 from server.pipelines.demucs import DemucsAdapter
-from server.pipelines.errors import MissingModelArtifactError
 from server.pipelines.whisperx import WhisperXAdapter
 
 
@@ -46,29 +42,6 @@ def test_demucs_adapter_runs_model_and_returns_stems(tmp_path: Path) -> None:
     assert "htdemucs" in runner.commands[0]
 
 
-def test_basic_pitch_adapter_returns_all_three_artifacts(tmp_path: Path) -> None:
-    vocal_audio = tmp_path / "vocals.wav"
-    vocal_audio.write_bytes(b"audio")
-    output_dir = tmp_path / "pitch"
-
-    def create_artifacts(_: Sequence[str]) -> None:
-        for suffix in (".csv", ".mid", ".npz"):
-            (output_dir / f"vocals_basic_pitch{suffix}").write_bytes(b"result")
-
-    runner = FakeCommandRunner(create_artifacts)
-    result = asyncio.run(BasicPitchAdapter(runner=runner).extract(vocal_audio, output_dir))
-
-    assert result.note_events_csv.name == "vocals_basic_pitch.csv"
-    assert result.midi.name == "vocals_basic_pitch.mid"
-    assert result.model_output_npz.name == "vocals_basic_pitch.npz"
-    assert runner.commands[0][1:] == [
-        "--save-note-events",
-        "--save-model-outputs",
-        str(output_dir),
-        str(vocal_audio),
-    ]
-
-
 def test_whisperx_adapter_supports_language_hint(tmp_path: Path) -> None:
     vocal_audio = tmp_path / "vocals.wav"
     vocal_audio.write_bytes(b"audio")
@@ -87,18 +60,6 @@ def test_whisperx_adapter_supports_language_hint(tmp_path: Path) -> None:
     assert "--output_format" in runner.commands[0]
 
 
-def test_adapter_rejects_missing_expected_artifacts(tmp_path: Path) -> None:
-    vocal_audio = tmp_path / "vocals.wav"
-    vocal_audio.write_bytes(b"audio")
-
-    with pytest.raises(MissingModelArtifactError):
-        asyncio.run(
-            BasicPitchAdapter(runner=FakeCommandRunner()).extract(
-                vocal_audio, tmp_path / "pitch"
-            )
-        )
-
-
 def test_adapters_reuse_complete_artifacts_without_rerunning_models(tmp_path: Path) -> None:
     source = tmp_path / "source.mp3"
     source.write_bytes(b"audio")
@@ -112,11 +73,6 @@ def test_adapters_reuse_complete_artifacts_without_rerunning_models(tmp_path: Pa
     separation = asyncio.run(
         DemucsAdapter(runner=runner).separate(source, separation_dir)
     )
-    pitch_dir = tmp_path / "pitch"
-    pitch_dir.mkdir()
-    for suffix in (".csv", ".mid", ".npz"):
-        (pitch_dir / f"vocals_basic_pitch{suffix}").write_bytes(b"result")
-    asyncio.run(BasicPitchAdapter(runner=runner).extract(separation.vocals, pitch_dir))
     alignment_dir = tmp_path / "alignment"
     alignment_dir.mkdir()
     (alignment_dir / "vocals.json").write_text("{}", encoding="utf-8")

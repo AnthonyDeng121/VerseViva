@@ -15,23 +15,12 @@ class SeparationArtifacts:
 
 
 @dataclass(frozen=True, slots=True)
-class PitchArtifacts:
-    note_events_csv: Path
-    midi: Path
-    model_output_npz: Path
-
-
-@dataclass(frozen=True, slots=True)
 class AlignmentArtifacts:
     alignment_json: Path
 
 
 class VocalSeparator(Protocol):
     async def separate(self, source: Path, output_dir: Path) -> SeparationArtifacts: ...
-
-
-class PitchExtractor(Protocol):
-    async def extract(self, vocal_audio: Path, output_dir: Path) -> PitchArtifacts: ...
 
 
 class LyricsAligner(Protocol):

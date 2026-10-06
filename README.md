@@ -6,7 +6,7 @@
 
 > 听懂每一句，唱活每一首。
 
-产品与实现边界以 [AGENTS.md](./AGENTS.md) 为准。主歌词界面只显示 `×`、`‿`、合并桥等字符标记，中文解释与发音动作放在句子展开详情中；重叠人声默认使用左右并列的主 Vocal / 次 Vocal 双轨歌词展示。双轨只是教学视图，底层允许多 Vocal Part、多 Take 叠录，且每条 Take 可独立调节前后偏移和音量。比赛版本不展示音高评分或 Pitch 曲线，Pitch 只作为对齐、置信度和声部候选判断的底层证据。
+产品与实现边界以 [AGENTS.md](./AGENTS.md) 为准。主歌词界面只显示 `×`、`‿`、合并桥等字符标记，中文解释与发音动作放在句子展开详情中；重叠人声默认使用左右并列的主 Vocal / 次 Vocal 双轨歌词展示。双轨只是教学视图，底层允许多 Vocal Part、多 Take 叠录，且每条 Take 可独立调节前后偏移和音量。项目不提取或展示音高、音符、音域与音准评分。
 
 当前产品闭环是：看懂发音处理 → 分清 Vocal 层次 → 逐句跟唱和诊断 → 分轨录制重叠人声 → 同步回放 → 记住真实改善。VerseViva 不承诺把任意混合人声自动分离成独立主唱与和声，也不做完整 DAW；Hero Song 的声部边界首先采用人工校对，自动模型结果必须标明为候选。
 
@@ -45,9 +45,6 @@ python3.11 -m venv .venv
 python3.11 -m venv .venv-demucs
 .venv-demucs/bin/python -m pip install -r requirements-demucs.txt
 
-python3.11 -m venv .venv-pitch
-.venv-pitch/bin/python -m pip install -r requirements-basic-pitch.txt
-
 python3.11 -m venv .venv-whisperx
 .venv-whisperx/bin/python -m pip install -r requirements-whisperx.txt
 
@@ -57,7 +54,7 @@ cd web
 npm install
 ```
 
-三个模型工具使用隔离环境，因为各自的 NumPy、TensorFlow 和 Torch 约束可能冲突。模型权重使用工具自身的公共缓存，不放入 Git。
+两个模型工具使用隔离环境，因为各自的 NumPy 和 Torch 约束可能冲突。模型权重使用工具自身的公共缓存，不放入 Git。
 
 ## 配置
 
@@ -73,11 +70,11 @@ VERSEVIVA_GEMINI_API_KEY=你的本地密钥
 VERSEVIVA_GEMINI_MODEL=gemini-3.8-flash
 ```
 
-默认 provider 是 `disabled`，因此没有密钥时仍可运行 Demucs、Basic Pitch、WhisperX 和 Profile 流程，但不会自动生成语言标记。密钥不得写入 `.env.example` 或提交到 Git。
+默认 provider 是 `disabled`，因此没有密钥时仍可运行 Demucs、WhisperX 和 Profile 流程，但不会自动生成语言标记。密钥不得写入 `.env.example` 或提交到 Git。
 
 LRCLIB 默认启用且不需要 API Key。可通过 `VERSEVIVA_LYRICS_PROVIDER=disabled` 关闭，或用 `VERSEVIVA_LRCLIB_MIN_MATCH_SCORE` 调整自动采用阈值。
 
-分析任务支持断点恢复。Demucs、Basic Pitch、WhisperX、LRCLIB 和语言模型的完整产物会保存在对应 job 目录；失败后可在前端查看真实阶段与错误详情，并点击“从失败处重试”。重试会校验已有产物的存在性和非空完整性，只重新执行缺失或未成功的阶段。Gemini 的 `429` / `5xx` / 超时等短暂错误会先自动退避重试，仍失败才转为可手动恢复状态。
+分析任务支持断点恢复。Demucs、WhisperX、LRCLIB 和语言模型的完整产物会保存在对应 job 目录；失败后可在前端查看真实阶段与错误详情，并点击“从失败处重试”。重试会校验已有产物的存在性和非空完整性，只重新执行缺失或未成功的阶段。Gemini 的 `429` / `5xx` / 超时等短暂错误会先自动退避重试，仍失败才转为可手动恢复状态。
 
 ## 启动
 
@@ -183,7 +180,7 @@ docker compose up --build -d
 docker compose -f compose.yaml -f compose.tunnel.yaml up --build
 ```
 
-完整模型镜像包含 Demucs、Basic Pitch、WhisperX 和 ffmpeg，因此第一次构建时间和镜像体积都较大。Hero Song 应继续使用预缓存；临时上传应限制为短片段。
+完整模型镜像包含 Demucs、WhisperX 和 ffmpeg，因此第一次构建时间和镜像体积仍然较大。Hero Song 应继续使用预缓存；临时上传应限制为短片段。
 
 `VERSEVIVA_LANGUAGE_WORKER_URL` 与 `VERSEVIVA_LANGUAGE_WORKER_TOKEN` 已为后续独立 Gemini Worker 预留。当前版本尚未将 Gemini 请求改为远程 Worker；迁移时保持现有 LanguageObservation / VocalCueTiming Schema，不改变前端合同。
 
@@ -203,7 +200,6 @@ npm run lint
 
 ```bash
 .venv-demucs/bin/demucs --help
-.venv-pitch/bin/basic-pitch --help
 .venv-whisperx/bin/whisperx --help
 ffmpeg -version
 ffprobe -version
@@ -228,4 +224,4 @@ GET  /api/v1/songs/{song_id}/audio/vocals
 
 ## 从 VocalCompass 迁移
 
-VerseViva 复用了 VocalCompass 阶段验证过的 Demucs、Basic Pitch、WhisperX、Song Profile 和 Difference Engine 底座，但已经是独立项目。旧目录只可作为只读迁移来源；日常启动、测试、模型命令与数据读取均不得依赖旧目录，也不得向旧仓库远端推送。
+VerseViva 复用了 VocalCompass 阶段验证过的 Demucs、WhisperX 和 Song Profile 底座，但已经删除音高分析与旧 Difference Engine。旧目录只可作为只读迁移来源；日常启动、测试、模型命令与数据读取均不得依赖旧目录，也不得向旧仓库远端推送。

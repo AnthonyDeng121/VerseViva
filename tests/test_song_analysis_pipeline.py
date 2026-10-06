@@ -6,7 +6,6 @@ from pathlib import Path
 from server.models.song import AnalysisJob, AnalysisStage, AnalysisStatus
 from server.pipelines.contracts import (
     AlignmentArtifacts,
-    PitchArtifacts,
     SeparationArtifacts,
 )
 from server.pipelines.song_analysis import SongAnalysisPipeline
@@ -30,23 +29,6 @@ class FakeSeparator:
         vocals.write_bytes(b"vocals")
         accompaniment.write_bytes(b"music")
         return SeparationArtifacts(vocals=vocals, accompaniment=accompaniment)
-
-
-class FakePitchExtractor:
-    async def extract(self, vocal_audio: Path, output_dir: Path) -> PitchArtifacts:
-        output_dir.mkdir(parents=True)
-        csv_path = output_dir / "vocals_basic_pitch.csv"
-        csv_path.write_text(
-            "start_time_s,end_time_s,pitch_midi,velocity,pitch_bend\n"
-            "0.5,1.5,60,100,0,1,0\n"
-            "1.5,2.5,64,90,0,0\n",
-            encoding="utf-8",
-        )
-        midi = output_dir / "vocals_basic_pitch.mid"
-        npz = output_dir / "vocals_basic_pitch.npz"
-        midi.write_bytes(b"midi")
-        npz.write_bytes(b"npz")
-        return PitchArtifacts(note_events_csv=csv_path, midi=midi, model_output_npz=npz)
 
 
 class FakeLyricsAligner:
@@ -195,13 +177,11 @@ def make_pipeline(
 ) -> SongAnalysisPipeline:
     return SongAnalysisPipeline(
         separator=separator or FakeSeparator(),
-        pitch_extractor=FakePitchExtractor(),
         lyrics_aligner=FakeLyricsAligner(),
         duration_probe=FakeDurationProbe(),
         job_store=job_store,
         profile_store=profile_store,
         separation_model="fake-demucs",
-        pitch_model="fake-pitch",
         alignment_model="fake-whisperx",
         lyrics_provider=lyrics_provider,
         language_coach=language_coach,
@@ -224,16 +204,7 @@ def test_pipeline_builds_and_persists_song_profile(tmp_path: Path) -> None:
     assert profile is not None
     assert profile.language == "en"
     assert profile.duration_seconds == 3.0
-    assert profile.vocal_range is not None
-    assert profile.vocal_range.lowest_note == "C4"
-    assert profile.vocal_range.highest_note == "E4"
-    assert len(profile.sentences[0].notes) == 2
-    assert len(profile.sentences[0].pitch_contour) == 3
-    assert profile.analysis.pitch_processing is not None
-    assert profile.analysis.pitch_processing.output_pitch_point_count == 4
-    assert profile.analysis.pitch_processing.fallback_used is True
-    assert profile.analysis.pipeline_version == "language-and-arrangement-v3"
-    assert profile.analysis.pitch_model == "fake-pitch"
+    assert profile.analysis.pipeline_version == "language-and-arrangement-v4"
     assert profile.analysis.language_analysis_provider == "disabled"
     assert (
         tmp_path / "songs" / job.song_id / "audio" / "source.mp3"

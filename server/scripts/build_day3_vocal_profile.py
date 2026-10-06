@@ -148,7 +148,6 @@ def build_day3_vocal_profile(
         analysis=AnalysisMetadata(
             pipeline_version="day3-vocal-parts-v2",
             separation_model="htdemucs",
-            pitch_model="not_run",
             alignment_model="whisperx-small-plus-lyric-cues",
             lyrics_source=LyricsSource.corrected,
             lyrics_provider="cifraclub-parenthetical-demo-truth",

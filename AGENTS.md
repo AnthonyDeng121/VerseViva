@@ -98,7 +98,7 @@ VerseViva：原唱具体改变了哪些声音、有哪些同时发生的 Vocal�
 - coalescent assimilation：相邻音融合成新的听感，例如 `/t/ + /j/` 接近 `/tʃ/`
 - resyllabification：前词尾音进入下一词的起始动作
 - vowel linking：元音边界出现可观察的连接动作
-- phrase timing / pitch / energy：只作为定位、对齐和验证上述现象的辅助证据
+- phrase timing / energy：只作为定位、对齐和验证上述现象的辅助证据
 
 “两个词时间上挨得近”不自动等于连读；只有跨词边界发生了可描述、可模仿的发音动作共享或音变，才显示连读类标记。日常口语里的“功能词必弱读、内容词必重读”不得直接作为歌曲诊断规则；`can` 可以因本次旋律被突出，`want` 也可以被快速带过。
 
@@ -178,7 +178,7 @@ LLM 只能解释已有事实，不得凭感觉生成毫秒、cents、音素准�
 
 - 人声分离结果
 - 句级、词级时间轴
-- 旋律与 Note/Pitch 参考
+- 句级、词级时间与能量参考
 - 候选省音、未释放、相同辅音合并、融合音变与再音节化提示
 - 可播放和可解释的 Song Language Profile
 
@@ -192,9 +192,7 @@ LLM 只能解释已有事实，不得凭感觉生成毫秒、cents、音素准�
 - `target_phoneme_omitted`：参考中清楚存在的目标音被用户遗漏；可靠时才输出
 - `insufficient_data`：音素证据不足、伴奏遮蔽或对齐不可靠时诚实返回
 
-词间间隔、时值、能量和 Pitch 可以继续计算，但只用于定位音素窗口、置信度控制和辅助解释，不能单独把“间隔小”包装成连读。
-
-音高差异继续计算，但只用于对齐、置信度控制和辅助解释，不作为首页核心卖点。
+词间间隔、时值和能量可以继续计算，但只用于定位音素窗口、置信度控制和辅助解释，不能单独把“间隔小”包装成连读。
 
 ## 3.3 AI 能教用户改一处具体问题
 
@@ -271,7 +269,7 @@ bad  bad‿do  you  want‿me
 - 录制用户演唱
 - 保留录音、用户词级时间轴与必要的声学特征
 - 录音必须关联目标 sentence 和 Vocal Part，允许在同一时间轴追加 Take
-- 比赛主流程不展示音高评分或 Pitch 曲线；Pitch 只保留为对齐、置信度和声部候选判断的底层证据
+- 项目不提取或展示音高、音符、音域与音准评分
 
 ## Step 4：唱后诊断
 
@@ -335,12 +333,11 @@ VocalCompass 阶段已经跑通并验证：
 ```text
 Song Audio
 → Demucs vocal stem
-→ Basic Pitch notes / continuous contour
 → WhisperX sentence and word alignment
 → Song Profile
 ```
 
-这些能力不删除。它们在 VerseViva 中成为 Language Coaching 与 Vocal Arrangement Pipeline 的输入。Pitch 不再形成面向用户的评分赛道，但仍可作为内部对齐和候选证据。
+这些能力在 VerseViva 中成为 Language Coaching 与 Vocal Arrangement Pipeline 的输入。音高分析底座已经删除，不再属于产品或运行链路。
 
 ## 5.2 新 Pipeline
 
@@ -352,10 +349,10 @@ Song Audio
              Vocal Stem                Lyrics
                   │                       │
           ┌───────┼────────┐              │
-          ↓       ↓        ↓              ↓
-       Pitch   Energy   Alignment      G2P/phonology
-          │       │        │              │
-          └───────┴────────┴──────┬───────┘
+                  ↓        ↓              ↓
+               Energy   Alignment      G2P/phonology
+                  │        │              │
+                  └────────┴──────┬───────┘
                                   ↓
                 Song Language + Vocal Part Profile
                                   │
@@ -382,7 +379,7 @@ Song Audio
 - 词间无声或低能量间隔（辅助证据）
 - 时值比例（辅助证据）
 - 起音和句段边界
-- Pitch、Note、能量等辅助特征
+- 能量等辅助特征
 - 用户与参考的可比较帧
 
 LLM 负责：
@@ -406,7 +403,7 @@ LLM 负责：
 
 Vocal Part 另外使用：
 
-- `acoustic_candidate`：由重叠区间、能量、Pitch 或时间轴等特征提出的候选
+- `acoustic_candidate`：由重叠区间、能量或时间轴等特征提出的候选
 - `audio_model_candidate`：音频理解模型提出但尚未人工确认的候选
 - `lyrics_structure_candidate`：联网歌词的括号、重复行或排版结构提出的候选，不能单独证明独立声部
 - `human_curated`：Hero Song 人工确认的声部、歌词与时间范围
@@ -432,7 +429,6 @@ Vocal Part 另外使用：
       "endSeconds": 16.2,
       "lyrics": "How bad bad do you want me",
       "words": [],
-      "pitchContour": [],
       "languageHints": [
         {
           "id": "hint_want_t",
@@ -554,7 +550,7 @@ Overdub 功能的目标产品形态是可迁移到 TME / 全民 K 歌的演唱�
 - Vite
 - Web Audio API / AudioWorklet
 - 多轨回放使用共享 AudioContext 时钟与显式 latency offset
-- Canvas 2D 只用于确有必要的时间轴，不用于恢复 Pitch 曲线主界面
+- Canvas 2D 只用于确有必要的时间轴
 
 ## Backend
 
@@ -566,7 +562,6 @@ Overdub 功能的目标产品形态是可迁移到 TME / 全民 K 歌的演唱�
 
 - Demucs：人声分离
 - WhisperX：ASR 与词级时间对齐
-- Basic Pitch：Note、Pitch 与辅助对齐证据
 - G2P / pronunciation lexicon：英文音素与音节候选
 - 规则与声学特征：第一版语言差异检测
 - LLM structured output：解释与教学建议
@@ -633,7 +628,7 @@ Overdub 功能的目标产品形态是可迁移到 TME / 全民 K 歌的演唱�
 - 专业医学级声带、音色或声区判断
 - 无事实来源的 AI 自由诊断
 - 为架构漂亮而增加复杂微服务
-- 面向用户的 Pitch 曲线、音准总分或“唱准多少分”主流程
+- 音高、音符、音域、音准总分或“唱准多少分”功能
 - 专业 DAW 级剪辑、母带、效果器、自动调音和无限轨工程
 
 ---
@@ -645,11 +640,9 @@ Overdub 功能的目标产品形态是可迁移到 TME / 全民 K 歌的演唱�
 - FastAPI 基础工程
 - 上传校验、任务状态与失败持久化
 - 独立 `song_id` / `job_id` 与工作目录
-- Demucs、Basic Pitch、WhisperX Adapter
-- Basic Pitch / WhisperX Converter
+- Demucs、WhisperX Adapter
+- WhisperX Converter
 - Song Profile 存储与查询
-- 连续 Pitch 清洗、降采样与稳健音域
-- Difference Engine v0 的 cents 与参考 Pitch 插值
 - 39 项后端测试与 Ruff 验证（迁移前基线）
 - Song Language Profile 1.4 与可追溯 `LanguageHint`
 - CMUdict/G2P 相邻词边界候选生成
@@ -695,7 +688,6 @@ Overdub 功能的目标产品形态是可迁移到 TME / 全民 K 歌的演唱�
 → 校验并创建独立 song_id / job_id
 → ffprobe 读取时长
 → Demucs 分离整体 vocals.wav 与伴奏
-→ Basic Pitch 提取内部辅助特征
 → LRCLIB 按歌名 + 歌手检索歌词
 → WhisperX 对分离后整体人声进行句级、词级对齐
 → 以联网歌词为文本真值进行模糊对齐和完整行恢复
@@ -828,7 +820,7 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
 - 原速、0.75×、只听人声、按句循环
 - 点击标记或展开句子后才显示中文解释与发音动作
 - 同时出现的 Vocal Part 使用左右双轨歌词；手机通过紧凑布局、水平滚动或单轨聚焦保持左右语义
-- 不制作面向用户的 Pitch 曲线或音高评分界面
+- 不制作音高、音符、音域或音准评分功能
 
 验收：
 
@@ -1003,6 +995,13 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
 
 本节覆盖前文中已经过时的“尚未完成”描述。进入下一轮开发前，以本节和实际测试为准。
 
+### 2026-10-06 音高链路移除
+
+- 产品明确不做音高、音符、音域与音准评分；这些数据也不再作为内部辅助证据。
+- 音高分析的依赖、适配器、转换器、任务阶段、Profile 字段、旧差异引擎、测试和部署环境均已删除。
+- Song Profile Schema 升级为 1.6；读取旧缓存时会丢弃历史音高字段，不影响歌词时间轴、语言提示、Vocal Part 或音频资产。
+- 新上传 Pipeline 为 Demucs → 歌词获取 / WhisperX → Vocal Part 与语言分析 → Profile，不再创建或读取音高产物。
+
 ## 14.1 本轮已经完成
 
 ### 括号歌词与双轨语义
@@ -1024,9 +1023,9 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
   - job：`job_b242e9e7e4434526a877e26b35d23b41`
   - 原始分析 song：`song_7318687f4b964552a661ad614b07b983`
   - 固定 Hero song：`song_00000000000000000000000000000003`
-  - Demucs、Basic Pitch、LRCLIB、新 WhisperX、双轨 Gemini、语言 Gemini、Profile 构建均真实运行。
+  - Demucs、LRCLIB、新 WhisperX、双轨 Gemini、语言 Gemini、Profile 构建均真实运行。
 - 第一次语言 Gemini 请求因 `TLS/SSL connection has been closed (EOF)` 在 84% 失败；重试复用了
-  Demucs、Pitch、歌词和 WhisperX 产物并成功完成，证明失败信息与任务缓存可恢复。
+  Demucs、歌词和 WhisperX 产物并成功完成，证明失败信息与任务缓存可恢复。
 - 短片段与 LRCLIB 整首歌词的匹配已修正：括号内容不参与 WhisperX 主线窗口定位，但恢复时保留
   完整括号歌词。修复前最佳覆盖率约 45.8%，修复后约 87.95%。
 - 当前 get him back Hero Profile 的真实结果：
@@ -1074,8 +1073,8 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
 
 - 后端完整回归：92 passed（另有 1 条第三方 Starlette/httpx 弃用 Warning）。
 - Ruff、ESLint、TypeScript 和 Vite 生产构建均通过。
-- get him back 本轮实际阶段耗时可由文件时间近似观察：Demucs 约 2 分 20 秒、Basic Pitch 约
-  3 分 40 秒、WhisperX 约 7 分 7 秒、双轨 Gemini 约 1 分 14 秒、语言 Gemini 约 3 分 44 秒。
+- get him back 历史阶段耗时可由文件时间近似观察：Demucs 约 2 分 20 秒、WhisperX 约 7 分 7 秒、
+  双轨 Gemini 约 1 分 14 秒、语言 Gemini 约 3 分 44 秒。
   这些是单次 WSL2 + CPU 观测，不是数据库级性能指标。
 - 主要阶段结构化耗时尚未写入任务元数据；这是稳定化任务中仍未完成的一项，不能宣称已经实现。
 

@@ -24,5 +24,4 @@ def test_default_model_commands_are_project_relative() -> None:
     settings = Settings(_env_file=None)
 
     assert not settings.demucs_executable.is_absolute()
-    assert not settings.basic_pitch_executable.is_absolute()
     assert not settings.whisperx_executable.is_absolute()

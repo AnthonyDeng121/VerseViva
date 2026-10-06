@@ -95,7 +95,6 @@ const STAGE_LABELS: Record<string, string> = {
   queued: "等待开始",
   probing_audio: "正在读取音频信息",
   separating_vocals: "正在分离人声",
-  extracting_pitch: "正在提取对齐辅助特征",
   fetching_lyrics: "正在从 LRCLIB 匹配歌词",
   aligning_lyrics: "正在对齐歌词",
   analyzing_language: "正在核查跨词发音",
@@ -358,14 +357,58 @@ function ProfileView({
 }) {
   const [currentTime, setCurrentTime] = useState(0);
   const [lyricsMode, setLyricsMode] = useState<"standard" | "layers">("standard");
+  const [playbackRate, setPlaybackRate] = useState<0.75 | 1>(1);
+  const [loopSentenceId, setLoopSentenceId] = useState<string | null>(null);
+  const sourceAudioRef = useRef<HTMLAudioElement>(null);
+  const vocalAudioRef = useRef<HTMLAudioElement>(null);
   useEffect(() => {
     setCurrentTime(0);
+    setPlaybackRate(1);
+    setLoopSentenceId(null);
     setLyricsMode(profile.sentences.length === 0 && profile.vocalParts.length > 0 ? "layers" : "standard");
   }, [profile.songId, profile.sentences.length, profile.vocalParts.length]);
   const hintCount = useMemo(
     () => profile.sentences.reduce((total, sentence) => total + sentence.languageHints.length, 0),
     [profile],
   );
+  const activeSentence = profile.sentences.find(
+    (sentence) => currentTime >= sentence.startSeconds && currentTime < sentence.endSeconds,
+  );
+  const loopSentence = profile.sentences.find((sentence) => sentence.id === loopSentenceId);
+  const seekTo = (time: number) => {
+    for (const player of [sourceAudioRef.current, vocalAudioRef.current]) {
+      if (player && Number.isFinite(player.duration)) player.currentTime = time;
+    }
+    if (loopSentenceId) {
+      const selectedSentence = profile.sentences.find(
+        (sentence) => time >= sentence.startSeconds && time < sentence.endSeconds,
+      );
+      if (selectedSentence) setLoopSentenceId(selectedSentence.id);
+    }
+    setCurrentTime(time);
+  };
+  const handleTimeChange = (time: number) => {
+    if (loopSentence && time >= loopSentence.endSeconds) {
+      for (const referencePlayer of [sourceAudioRef.current, vocalAudioRef.current]) {
+        if (referencePlayer && Number.isFinite(referencePlayer.duration)) {
+          referencePlayer.currentTime = loopSentence.startSeconds;
+        }
+      }
+      setCurrentTime(loopSentence.startSeconds);
+      return;
+    }
+    setCurrentTime(time);
+  };
+  const toggleSentenceLoop = () => {
+    const target = loopSentence ?? activeSentence ?? profile.sentences[0];
+    if (!target) return;
+    if (loopSentence) {
+      setLoopSentenceId(null);
+      return;
+    }
+    setLoopSentenceId(target.id);
+    seekTo(target.startSeconds);
+  };
   return (
     <section className="profile-card">
       <div className="profile-heading">
@@ -379,14 +422,28 @@ function ProfileView({
       <div className="players">
         <label>
           <span>原曲</span>
-          <AudioPlayer src={profile.audio.sourceUrl} onTimeChange={setCurrentTime} />
+          <AudioPlayer audioRef={sourceAudioRef} src={profile.audio.sourceUrl}
+            playbackRate={playbackRate} onTimeChange={handleTimeChange} />
         </label>
         {profile.audio.vocalUrl && (
           <label>
             <span>人声</span>
-            <AudioPlayer src={profile.audio.vocalUrl} onTimeChange={setCurrentTime} />
+            <AudioPlayer audioRef={vocalAudioRef} src={profile.audio.vocalUrl}
+              playbackRate={playbackRate} onTimeChange={handleTimeChange} />
           </label>
         )}
+      </div>
+
+      <div className="learning-playback-controls" aria-label="听句控制">
+        <div className="speed-switch" role="group" aria-label="播放速度">
+          <button className={playbackRate === 1 ? "active" : ""} type="button" onClick={() => setPlaybackRate(1)}>原速</button>
+          <button className={playbackRate === 0.75 ? "active" : ""} type="button" onClick={() => setPlaybackRate(0.75)}>0.75×</button>
+        </div>
+        <button className={`sentence-loop-button ${loopSentence ? "active" : ""}`}
+          type="button" disabled={profile.sentences.length === 0} onClick={toggleSentenceLoop}>
+          {loopSentence ? `循环中：${loopSentence.lyrics}` : "循环当前句"}
+        </button>
+        <span>点击歌词可跳到该句</span>
       </div>
 
       <div className="legend" aria-label="标记说明">
@@ -426,11 +483,13 @@ function ProfileView({
             sentences={profile.sentences}
             currentTime={currentTime}
             onSelect={onSelect}
+            onSeek={seekTo}
           />
         : <KaraokeLyrics
             sentences={profile.sentences}
             currentTime={currentTime}
             onSelect={onSelect}
+            onSeek={seekTo}
           />}
 
       {selectedHint && <HintDetail hint={selectedHint} />}
@@ -455,25 +514,34 @@ function ProfileView({
 }
 
 function AudioPlayer({
+  audioRef,
   src,
+  playbackRate,
   onTimeChange,
 }: {
+  audioRef: React.RefObject<HTMLAudioElement | null>;
   src: string;
-  onTimeChange: (time: number) => void;
+  playbackRate: number;
+  onTimeChange: (time: number, player: HTMLAudioElement) => void;
 }) {
-  const audioRef = useRef<HTMLAudioElement>(null);
   useEffect(() => {
-    if (audioRef.current) audioRef.current.volume = 0.3;
-  }, [src]);
+    if (audioRef.current) {
+      audioRef.current.volume = 0.3;
+      audioRef.current.playbackRate = playbackRate;
+    }
+  }, [audioRef, playbackRate, src]);
   return (
     <audio
       ref={audioRef}
       controls
       preload="metadata"
       src={src}
-      onLoadedMetadata={(event) => { event.currentTarget.volume = 0.3; }}
-      onTimeUpdate={(event) => onTimeChange(event.currentTarget.currentTime)}
-      onSeeked={(event) => onTimeChange(event.currentTarget.currentTime)}
+      onLoadedMetadata={(event) => {
+        event.currentTarget.volume = 0.3;
+        event.currentTarget.playbackRate = playbackRate;
+      }}
+      onTimeUpdate={(event) => onTimeChange(event.currentTarget.currentTime, event.currentTarget)}
+      onSeeked={(event) => onTimeChange(event.currentTarget.currentTime, event.currentTarget)}
     />
   );
 }
@@ -482,10 +550,12 @@ function KaraokeLyrics({
   sentences,
   currentTime,
   onSelect,
+  onSeek,
 }: {
   sentences: SongSentence[];
   currentTime: number;
   onSelect: (hint: LanguageHint) => void;
+  onSeek: (time: number) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const activeSentenceId = sentences.find(
@@ -510,6 +580,7 @@ function KaraokeLyrics({
             active={sentence.id === activeSentenceId}
             past={currentTime > sentence.endSeconds}
             onSelect={onSelect}
+            onSeek={onSeek}
           />
         ))}
       </div>
@@ -540,11 +611,13 @@ function VocalLayers({
   sentences,
   currentTime,
   onSelect,
+  onSeek,
 }: {
   vocalParts: VocalPart[];
   sentences: SongSentence[];
   currentTime: number;
   onSelect: (hint: LanguageHint) => void;
+  onSeek: (time: number) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sentencesById = new Map(sentences.map((sentence) => [sentence.id, sentence]));
@@ -595,6 +668,7 @@ function VocalLayers({
                       sentence={sentencesById.get(part.sentenceIds[0])}
                       currentTime={currentTime}
                       onSelect={onSelect}
+                      onSeek={onSeek}
                       key={part.id}
                     />)
                   : <p className="empty-vocal-lane">此时无主 Vocal 标注</p>}
@@ -605,6 +679,7 @@ function VocalLayers({
                       part={part}
                       currentTime={currentTime}
                       onSelect={onSelect}
+                      onSeek={onSeek}
                       key={part.id}
                     />)
                   : <p className="empty-vocal-lane">此时无次 Vocal 标注</p>}
@@ -622,11 +697,13 @@ function VocalPartCard({
   sentence,
   currentTime,
   onSelect,
+  onSeek,
 }: {
   part: VocalPart;
   sentence?: SongSentence;
   currentTime: number;
   onSelect: (hint: LanguageHint) => void;
+  onSeek: (time: number) => void;
 }) {
   const sourceLabel = SOURCE_LABELS[part.source];
   const active = currentTime >= part.startSeconds && currentTime < part.endSeconds;
@@ -643,9 +720,10 @@ function VocalPartCard({
             active={active}
             past={currentTime > part.endSeconds}
             onSelect={onSelect}
+            onSeek={onSeek}
             compact
           />
-        : <ProgressivePartLyrics part={part} currentTime={currentTime} />}
+        : <ProgressivePartLyrics part={part} currentTime={currentTime} onSeek={onSeek} />}
       <small>
         {sourceLabel}
         {part.needsHumanReview ? " · 声部身份需复核" : ""}
@@ -656,13 +734,21 @@ function VocalPartCard({
   );
 }
 
-function ProgressivePartLyrics({ part, currentTime }: { part: VocalPart; currentTime: number }) {
+function ProgressivePartLyrics({ part, currentTime, onSeek }: {
+  part: VocalPart;
+  currentTime: number;
+  onSeek: (time: number) => void;
+}) {
   const characters = Array.from(part.lyrics);
   const progress = Math.max(0, Math.min(1,
     (currentTime - part.startSeconds) / Math.max(part.endSeconds - part.startSeconds, 0.01),
   ));
   const highlighted = Math.floor(characters.length * progress);
-  return <p className="progressive-part-lyrics">{characters.map((character, index) => (
+  return <p className="progressive-part-lyrics clickable" role="button" tabIndex={0}
+    onClick={() => onSeek(part.startSeconds)}
+    onKeyDown={(event) => {
+      if (event.key === "Enter" || event.key === " ") onSeek(part.startSeconds);
+    }}>{characters.map((character, index) => (
     <span className={index < highlighted ? "sung" : ""} key={`${index}-${character}`}>{character}</span>
   ))}</p>;
 }
@@ -679,6 +765,7 @@ function AnnotatedLine({
   active,
   past,
   onSelect,
+  onSeek,
   compact = false,
 }: {
   sentence: SongSentence;
@@ -686,6 +773,7 @@ function AnnotatedLine({
   active: boolean;
   past: boolean;
   onSelect: (hint: LanguageHint) => void;
+  onSeek: (time: number) => void;
   compact?: boolean;
 }) {
   const marksAt = new Map<number, { mark: CharacterMark; hint: LanguageHint }[]>();
@@ -705,6 +793,13 @@ function AnnotatedLine({
     <p
       className={`lyric-line ${active ? "active" : ""} ${past ? "past" : ""} ${compact ? "compact" : ""}`}
       data-sentence-id={sentence.id}
+      role="button"
+      tabIndex={0}
+      onClick={() => onSeek(sentence.startSeconds)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") onSeek(sentence.startSeconds);
+      }}
+      title="跳到这句"
     >
       {Array.from(sentence.lyrics).map((character, index) => (
         <React.Fragment key={`${sentence.id}-${index}`}>
@@ -719,7 +814,10 @@ function AnnotatedLine({
                   className={`character-mark below ${
                     mark.symbol === "×" ? "elision" : mark.symbol === "‿" ? "boundary link" : "boundary merge"
                   }`}
-                  onClick={() => onSelect(hint)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSelect(hint);
+                  }}
                   title="查看解释"
                 >
                   {mark.symbol}

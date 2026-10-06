@@ -17,7 +17,6 @@ class AnalysisStage(StrEnum):
     queued = "queued"
     probing_audio = "probing_audio"
     separating_vocals = "separating_vocals"
-    extracting_pitch = "extracting_pitch"
     fetching_lyrics = "fetching_lyrics"
     aligning_lyrics = "aligning_lyrics"
     analyzing_vocal_parts = "analyzing_vocal_parts"
@@ -68,13 +67,6 @@ class AudioAssets(SongProfileModel):
     accompaniment_url: str | None = None
 
 
-class PitchPoint(SongProfileModel):
-    time_seconds: float = Field(ge=0)
-    frequency_hz: float = Field(gt=0)
-    midi: float
-    confidence: float = Field(ge=0, le=1)
-
-
 class WordTiming(SongProfileModel):
     id: str
     text: str
@@ -84,21 +76,6 @@ class WordTiming(SongProfileModel):
 
     @model_validator(mode="after")
     def validate_interval(self) -> "WordTiming":
-        if self.end_seconds < self.start_seconds:
-            raise ValueError("end_seconds must be greater than or equal to start_seconds")
-        return self
-
-
-class Note(SongProfileModel):
-    id: str
-    start_seconds: float = Field(ge=0)
-    end_seconds: float = Field(ge=0)
-    midi: int = Field(ge=0, le=127)
-    note_name: str
-    confidence: float = Field(ge=0, le=1)
-
-    @model_validator(mode="after")
-    def validate_interval(self) -> "Note":
         if self.end_seconds < self.start_seconds:
             raise ValueError("end_seconds must be greater than or equal to start_seconds")
         return self
@@ -281,8 +258,6 @@ class SongSentence(SongProfileModel):
     end_seconds: float = Field(ge=0)
     lyrics: str
     words: list[WordTiming] = Field(default_factory=list)
-    pitch_contour: list[PitchPoint] = Field(default_factory=list)
-    notes: list[Note] = Field(default_factory=list)
     language_hints: list[LanguageHint] = Field(default_factory=list)
     vocal_features: VocalFeatures = Field(default_factory=VocalFeatures)
 
@@ -300,19 +275,6 @@ class SongSentence(SongProfileModel):
         return self
 
 
-class VocalRange(SongProfileModel):
-    lowest_midi: int = Field(ge=0, le=127)
-    highest_midi: int = Field(ge=0, le=127)
-    lowest_note: str
-    highest_note: str
-
-    @model_validator(mode="after")
-    def validate_range(self) -> "VocalRange":
-        if self.highest_midi < self.lowest_midi:
-            raise ValueError("highest_midi must be greater than or equal to lowest_midi")
-        return self
-
-
 class LyricsSource(StrEnum):
     provided = "provided"
     lrclib = "lrclib"
@@ -326,47 +288,38 @@ class VocalArrangementMode(StrEnum):
     dual_track = "dual_track"
 
 
-class PitchProcessingSummary(SongProfileModel):
-    source: str
-    fallback_used: bool = False
-    fallback_reason: str | None = None
-    raw_note_count: int = Field(ge=0)
-    accepted_note_count: int = Field(ge=0)
-    rejected_note_count: int = Field(ge=0)
-    raw_pitch_point_count: int = Field(ge=0)
-    output_pitch_point_count: int = Field(ge=0)
-    confidence_threshold: float = Field(ge=0, le=1)
-    minimum_note_duration_seconds: float = Field(ge=0)
-    octave_corrections: int = Field(ge=0)
-
-
 class AnalysisMetadata(SongProfileModel):
     pipeline_version: str
     separation_model: str
-    pitch_model: str
     alignment_model: str
     lyrics_source: LyricsSource
     lyrics_provider: str | None = None
     lyrics_provider_track_id: int | None = None
     lyrics_match_confidence: float | None = Field(default=None, ge=0, le=1)
     created_at: datetime
-    pitch_processing: PitchProcessingSummary | None = None
     language_analysis_provider: str | None = None
     language_analysis_model: str | None = None
     vocal_arrangement_mode: VocalArrangementMode = VocalArrangementMode.single_track
 
 
 class SongProfile(SongProfileModel):
-    schema_version: str = "1.5"
+    schema_version: str = "1.6"
     song_id: str
     title: str
     duration_seconds: float = Field(gt=0)
     language: str | None = None
     audio: AudioAssets
-    vocal_range: VocalRange | None = None
     sentences: list[SongSentence] = Field(default_factory=list)
     vocal_parts: list[VocalPart] = Field(default_factory=list)
     analysis: AnalysisMetadata
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_schema_version(cls, value):
+        if isinstance(value, dict):
+            value = dict(value)
+            value["schema_version" if "schema_version" in value else "schemaVersion"] = "1.6"
+        return value
 
     @model_validator(mode="after")
     def validate_vocal_parts(self) -> "SongProfile":

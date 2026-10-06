@@ -109,6 +109,13 @@ input:focus, textarea:focus { outline: 3px solid rgba(8, 126, 107, .14); border-
 .players { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .players label { padding: 14px; border-radius: 14px; background: #f3f7f4; }
 audio { width: 100%; }
+.learning-playback-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; padding: 10px 12px; border-radius: 13px; background: #f3f7f4; }
+.learning-playback-controls > span { color: #69766f; font-size: 12px; }
+.speed-switch { display: inline-flex; padding: 3px; border-radius: 10px; background: #e2ebe6; }
+.speed-switch button, .sentence-loop-button { min-height: 34px; border: 0; border-radius: 8px; padding: 6px 11px; color: #52615a; background: transparent; cursor: pointer; }
+.speed-switch button.active, .sentence-loop-button.active { color: white; background: #087e6b; font-weight: 800; }
+.sentence-loop-button { max-width: min(100%, 360px); overflow: hidden; border: 1px solid #b9cec4; background: white; text-overflow: ellipsis; white-space: nowrap; }
+.sentence-loop-button:disabled { cursor: not-allowed; opacity: .5; }
 .vocal-layers { display: grid; gap: 16px; padding: 18px; border-radius: 18px; background: #f7f3ed; }
 .vocal-layers-heading { display: flex; justify-content: space-between; align-items: end; gap: 20px; }
 .vocal-layers-heading > p { max-width: 310px; text-align: right; font-size: 13px; }
@@ -125,6 +132,7 @@ audio { width: 100%; }
 .vocal-part p { color: #26332d; font-size: 14px; line-height: 1.45; }
 .progressive-part-lyrics span { color: #718078; transition: color .15s ease; }
 .progressive-part-lyrics span.sung { color: #0b9b81; }
+.progressive-part-lyrics.clickable { cursor: pointer; }
 .empty-vocal-lane { padding: 16px 4px; font-size: 13px; }
 .legend { display: flex; flex-wrap: wrap; gap: 10px; }
 .legend span { padding: 7px 11px; border-radius: 99px; color: #56635d; background: #f0f3f1; font-size: 13px; }
@@ -145,6 +153,7 @@ audio { width: 100%; }
   overflow-wrap: anywhere;
   transition: color .2s ease, opacity .2s ease, transform .2s ease;
   opacity: .52;
+  cursor: pointer;
 }
 .lyric-line.active { color: #17261f; opacity: 1; transform: scale(1.015); transform-origin: left center; font-weight: 750; }
 .lyric-line.past { opacity: .34; }
@@ -179,6 +188,8 @@ audio { width: 100%; }
   .upload-card details { grid-column: auto; }
   .profile-card { padding: 14px; border-radius: 16px; }
   .players { grid-template-columns: 1fr; }
+  .learning-playback-controls { align-items: stretch; }
+  .sentence-loop-button { flex: 1 1 100%; max-width: 100%; min-height: 42px; }
   .profile-heading { align-items: flex-start; }
   .lyrics-stage-heading { align-items: stretch; flex-direction: column; }
   .lyrics-mode-switch { align-self: flex-start; }

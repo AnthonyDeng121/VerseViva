@@ -18,7 +18,6 @@ class Settings(BaseSettings):
     auto_run_analysis_pipeline: bool = True
     demucs_executable: Path = Path(".venv-demucs/bin/demucs")
     demucs_model: str = "htdemucs"
-    basic_pitch_executable: Path = Path(".venv-pitch/bin/basic-pitch")
     whisperx_executable: Path = Path(".venv-whisperx/bin/whisperx")
     whisperx_model: str = "small"
     whisperx_device: str = "cpu"

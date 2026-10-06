@@ -12,7 +12,6 @@ ENV PYTHONUNBUFFERED=1 \
     VERSEVIVA_DATA_DIR=/app/data \
     VERSEVIVA_WEB_DIST_DIR=/app/web/dist \
     VERSEVIVA_DEMUCS_EXECUTABLE=/opt/verseviva/demucs/bin/demucs \
-    VERSEVIVA_BASIC_PITCH_EXECUTABLE=/opt/verseviva/basic-pitch/bin/basic-pitch \
     VERSEVIVA_WHISPERX_EXECUTABLE=/opt/verseviva/whisperx/bin/whisperx \
     VERSEVIVA_FFPROBE_EXECUTABLE=ffprobe
 
@@ -27,8 +26,6 @@ RUN python -m pip install --upgrade pip setuptools wheel \
     && python -m pip install . \
     && python -m venv /opt/verseviva/demucs \
     && /opt/verseviva/demucs/bin/pip install -r requirements-demucs.txt \
-    && python -m venv /opt/verseviva/basic-pitch \
-    && /opt/verseviva/basic-pitch/bin/pip install -r requirements-basic-pitch.txt \
     && python -m venv /opt/verseviva/whisperx \
     && /opt/verseviva/whisperx/bin/pip install -r requirements-whisperx.txt
 

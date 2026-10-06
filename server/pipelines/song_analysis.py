@@ -16,12 +16,10 @@ from server.models.song import (
     VocalPart,
 )
 from server.pipelines.audio_probe import AudioDurationProbe, FfprobeAudioDurationProbe
-from server.pipelines.basic_pitch import BasicPitchAdapter, convert_basic_pitch_contour
 from server.pipelines.contracts import (
     LanguageCoach,
     LyricsAligner,
     LyricsProvider,
-    PitchExtractor,
     VocalPartAnalyzer,
     VocalSeparator,
 )
@@ -43,16 +41,15 @@ from server.services.vocal_parts.arrangement import (
 from server.storage.job_store import JobStore
 from server.storage.profile_store import ProfileStore
 
-PIPELINE_VERSION = "language-and-arrangement-v3"
+PIPELINE_VERSION = "language-and-arrangement-v4"
 STAGE_PROGRESS = {
     AnalysisStage.probing_audio: 2,
     AnalysisStage.separating_vocals: 10,
-    AnalysisStage.extracting_pitch: 40,
-    AnalysisStage.fetching_lyrics: 55,
-    AnalysisStage.aligning_lyrics: 68,
-    AnalysisStage.analyzing_vocal_parts: 76,
-    AnalysisStage.analyzing_language: 84,
-    AnalysisStage.building_profile: 90,
+    AnalysisStage.fetching_lyrics: 30,
+    AnalysisStage.aligning_lyrics: 55,
+    AnalysisStage.analyzing_vocal_parts: 70,
+    AnalysisStage.analyzing_language: 82,
+    AnalysisStage.building_profile: 92,
     AnalysisStage.completed: 100,
 }
 
@@ -61,26 +58,22 @@ class SongAnalysisPipeline:
     def __init__(
         self,
         separator: VocalSeparator,
-        pitch_extractor: PitchExtractor,
         lyrics_aligner: LyricsAligner,
         duration_probe: AudioDurationProbe,
         job_store: JobStore,
         profile_store: ProfileStore,
         separation_model: str,
-        pitch_model: str,
         alignment_model: str,
         lyrics_provider: LyricsProvider | None = None,
         language_coach: LanguageCoach | None = None,
         vocal_part_analyzer: VocalPartAnalyzer | None = None,
     ):
         self.separator = separator
-        self.pitch_extractor = pitch_extractor
         self.lyrics_aligner = lyrics_aligner
         self.duration_probe = duration_probe
         self.job_store = job_store
         self.profile_store = profile_store
         self.separation_model = separation_model
-        self.pitch_model = pitch_model
         self.alignment_model = alignment_model
         self.lyrics_provider = lyrics_provider or DisabledLyricsProvider()
         self.language_coach = language_coach or DisabledLanguageCoach()
@@ -97,15 +90,6 @@ class SongAnalysisPipeline:
             duration = await self.duration_probe.duration_seconds(source)
             self._advance(job, AnalysisStage.separating_vocals)
             separation = await self.separator.separate(source, job_dir / "separation")
-
-            self._advance(job, AnalysisStage.extracting_pitch)
-            pitch_artifacts = await self.pitch_extractor.extract(
-                separation.vocals, job_dir / "pitch"
-            )
-            pitch_conversion = convert_basic_pitch_contour(
-                pitch_artifacts.note_events_csv,
-                pitch_artifacts.model_output_npz,
-            )
 
             provided_lyrics_path = job_dir / "input" / "lyrics.txt"
             lyrics_lookup = _load_lyrics_lookup(job_dir / "lyrics" / "lookup.json")
@@ -247,12 +231,8 @@ class SongAnalysisPipeline:
                     ),
                 ),
                 sentences=annotated_sentences,
-                notes=pitch_conversion.notes,
-                pitch_points=pitch_conversion.pitch_points,
-                pitch_processing=pitch_conversion.summary,
                 pipeline_version=PIPELINE_VERSION,
                 separation_model=self.separation_model,
-                pitch_model=self.pitch_model,
                 alignment_model=self.alignment_model,
                 language_analysis_provider=self.language_coach.provider,
                 language_analysis_model=self.language_coach.model,
@@ -330,9 +310,6 @@ def build_default_pipeline(settings: Settings) -> SongAnalysisPipeline:
             executable=executable(settings.demucs_executable),
             model_name=settings.demucs_model,
         ),
-        pitch_extractor=BasicPitchAdapter(
-            executable=executable(settings.basic_pitch_executable)
-        ),
         lyrics_aligner=WhisperXAdapter(
             executable=executable(settings.whisperx_executable),
             model_name=settings.whisperx_model,
@@ -343,7 +320,6 @@ def build_default_pipeline(settings: Settings) -> SongAnalysisPipeline:
         job_store=JobStore(settings.data_dir),
         profile_store=ProfileStore(settings.data_dir),
         separation_model=settings.demucs_model,
-        pitch_model="basic-pitch",
         alignment_model=f"whisperx-{settings.whisperx_model}",
         lyrics_provider=lyrics_provider,
         language_coach=language_coach,
@@ -402,7 +378,6 @@ def _stage_error_message(stage: AnalysisStage) -> str:
     messages = {
         AnalysisStage.probing_audio: "无法读取音频信息。",
         AnalysisStage.separating_vocals: "人声分离失败。",
-        AnalysisStage.extracting_pitch: "音频辅助特征提取失败。",
         AnalysisStage.fetching_lyrics: "联网歌词查询失败。",
         AnalysisStage.aligning_lyrics: "歌词时间对齐失败。",
         AnalysisStage.analyzing_vocal_parts: "双轨 Vocal 解析失败。",
