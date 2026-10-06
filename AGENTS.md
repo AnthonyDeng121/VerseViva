@@ -1012,6 +1012,16 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
 - 录音选择改为主轨/次轨 + 起始句/结束句；同一句代表单句练唱，多句代表连续片段。
 - 已保存 Take 提供“全部轨道试听”，使用共享 AudioContext 按歌曲时间轴调度用户录音，并同步播放伴奏。
 
+### 2026-10-06 练唱记忆第一版
+
+- 新增 SQLite `practice_attempts` 持久化；每个 Take 保存结构化问题、1–3 条建议、同片段前后比较与分析版本。
+- 用户保留录音后自动触发分析；刷新页面可恢复历史 Attempt 与聚合 Memory，证据不足的录音不计入可靠趋势。
+- Gemini 只核查所选句子已有 LanguageHint 目标，输出问题、符合参考或 `insufficient_data`；明确禁止音高评价与 `timing_deviation`。
+- GLM-4.7-Flash 只根据结构化问题和历史 Memory 编写中文动作建议；未配置或调用失败时使用规则模板降级，不阻断练唱。
+- 同一 session、song、track slot 的相邻可靠 Attempt 会显示 improved / unchanged / regressed；不同片段不会相互比较。
+- secondary Take 使用已确认的 Vocal Part 歌词、参考 vocals stem 对应区间和用户录音进行 Gemini 对比；参考整体人声无法可靠辨认次轨时返回 `insufficient_data`，不得套用主轨 LanguageHint。
+- 当前仍需真实手机反复录唱验收 Gemini 对 WebM/M4A 用户音频的判断质量；GLM API Key 需由运行环境配置，不能写入仓库。
+
 ## 14.1 本轮已经完成
 
 ### 括号歌词与双轨语义

@@ -36,6 +36,31 @@ type RecordingTake = {
   createdAt: string;
 };
 
+type PracticeAttempt = {
+  attemptId: string;
+  takeId: string;
+  status: "analyzed" | "insufficient_data" | "failed";
+  issues: { issueId: string; type: string; wordText: string; confidence: number }[];
+  recommendations: {
+    rank: number;
+    issueId: string;
+    headline: string;
+    observation: string;
+    action: string;
+  }[];
+  comparison: {
+    result: "first_attempt" | "improved" | "unchanged" | "regressed" | "insufficient_data";
+  };
+  insufficientReason?: string | null;
+  createdAt: string;
+};
+
+type PracticeMemory = {
+  totalAttempts: number;
+  reliableAttempts: number;
+  phenomena: { issueType: string; issueCount: number; recentIssueCount: number; trend: string }[];
+};
+
 type RecorderState =
   | "idle"
   | "requesting"
@@ -92,6 +117,9 @@ export function RecordingStudio({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
   const [takes, setTakes] = useState<RecordingTake[]>([]);
+  const [attempts, setAttempts] = useState<PracticeAttempt[]>([]);
+  const [memory, setMemory] = useState<PracticeMemory | null>(null);
+  const [analyzingTakeId, setAnalyzingTakeId] = useState<string | null>(null);
   const [selectedTake, setSelectedTake] = useState<RecordingTake | null>(null);
   const [accompanimentVolume, setAccompanimentVolume] = useState(0.55);
   const [voiceVolume, setVoiceVolume] = useState(1);
@@ -132,6 +160,27 @@ export function RecordingStudio({
     return () => {
       cancelled = true;
     };
+  }, [sessionId, songId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([
+      fetch(`/api/v1/songs/${songId}/attempts?session_id=${encodeURIComponent(sessionId)}`),
+      fetch(`/api/v1/practice/memory?session_id=${encodeURIComponent(sessionId)}`),
+    ]).then(async ([attemptResponse, memoryResponse]) => {
+      if (!attemptResponse.ok || !memoryResponse.ok) throw new Error("恢复练唱记忆失败");
+      const [restoredAttempts, restoredMemory] = await Promise.all([
+        attemptResponse.json() as Promise<PracticeAttempt[]>,
+        memoryResponse.json() as Promise<PracticeMemory>,
+      ]);
+      if (!cancelled) {
+        setAttempts(restoredAttempts);
+        setMemory(restoredMemory);
+      }
+    }).catch((reason: unknown) => {
+      if (!cancelled) setError(reason instanceof Error ? reason.message : "恢复练唱记忆失败");
+    });
+    return () => { cancelled = true; };
   }, [sessionId, songId]);
 
   useEffect(() => () => {
@@ -282,9 +331,31 @@ export function RecordingStudio({
       setTakes(restored.ok ? await restored.json() as RecordingTake[] : [...takes, created]);
       setSelectedTake(created);
       setState("uploaded");
+      await analyzeTake(created.takeId);
     } catch (reason) {
       setState("preview");
       setError(reason instanceof Error ? reason.message : "录音上传失败");
+    }
+  }
+
+  async function analyzeTake(takeId: string) {
+    setAnalyzingTakeId(takeId);
+    try {
+      const response = await fetch(`/api/v1/takes/${takeId}/analyze`, { method: "POST" });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { detail?: string } | null;
+        throw new Error(payload?.detail ?? "本次练唱分析失败");
+      }
+      const attempt = await response.json() as PracticeAttempt;
+      setAttempts((current) => [...current.filter((item) => item.takeId !== takeId), attempt]);
+      const memoryResponse = await fetch(
+        `/api/v1/practice/memory?session_id=${encodeURIComponent(sessionId)}`,
+      );
+      if (memoryResponse.ok) setMemory(await memoryResponse.json() as PracticeMemory);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "本次练唱分析失败");
+    } finally {
+      setAnalyzingTakeId(null);
     }
   }
 
@@ -421,6 +492,9 @@ export function RecordingStudio({
 
       {error && <p className="recording-error">{error}</p>}
       {state === "recording" && <p className="recording-live">● 正在录制；到片段结尾会自动停止</p>}
+      {analyzingTakeId && <p className="recording-live">正在听这一遍的语言动作并更新练唱记忆…</p>}
+
+      {attempts.length > 0 && <PracticeFeedback attempt={attempts.at(-1)!} memory={memory} />}
 
       {activePreviewUrl && <div className="mix-preview">
         <h4>伴奏 + 用户人声混合试听</h4>
@@ -470,12 +544,24 @@ export function RecordingStudio({
           <div><strong>{take.saveMode === "overdub_append" ? "叠唱 Take" : "普通练唱"}</strong>
             <small>{take.isCurrent ? "当前采用" : "历史版本"} · {formatTime(take.selectionStartSeconds)}
               – {formatTime(take.selectionEndSeconds)}</small></div>
-          <button type="button" className="secondary-button" onClick={() => {
-            if (previewUrl) URL.revokeObjectURL(previewUrl);
-            setPreviewUrl(null);
-            setPreviewBlob(null);
-            setSelectedTake(take);
-          }}>加载混合试听</button>
+          <div className="take-row-actions">
+            <button type="button" className="secondary-button" onClick={() => {
+              if (previewUrl) URL.revokeObjectURL(previewUrl);
+              setPreviewUrl(null);
+              setPreviewBlob(null);
+              setSelectedTake(take);
+            }}>加载混合试听</button>
+            {attempts.find((item) => item.takeId === take.takeId)?.status !== "analyzed" &&
+              <button type="button" className="secondary-button"
+                disabled={analyzingTakeId === take.takeId}
+                onClick={() => void analyzeTake(take.takeId)}>
+                {analyzingTakeId === take.takeId
+                  ? "分析中…"
+                  : attempts.some((item) => item.takeId === take.takeId)
+                    ? "重新分析并记住"
+                    : "分析并记住"}
+              </button>}
+          </div>
         </article>)}
       </div>}
       {selectedTake && <p className="recording-selection-summary">
@@ -483,6 +569,54 @@ export function RecordingStudio({
       </p>}
     </section>
   );
+}
+
+function PracticeFeedback({ attempt, memory }: {
+  attempt: PracticeAttempt;
+  memory: PracticeMemory | null;
+}) {
+  const comparisonLabels = {
+    first_attempt: "这是这个片段的第一遍可靠记录",
+    improved: "与上一遍相比，这次有改善",
+    unchanged: "与上一遍相比，主要问题暂未变化",
+    regressed: "这次出现了新的重点，可再试一遍",
+    insufficient_data: "本次证据不足，未计入趋势",
+  };
+  return <section className="practice-feedback" aria-live="polite">
+    <div className="practice-feedback-heading">
+      <div>
+        <p className="eyebrow">本次建议</p>
+        <h4>{attempt.status === "analyzed" ? comparisonLabels[attempt.comparison.result] : "暂不下结论"}</h4>
+      </div>
+      {memory && <span>{memory.reliableAttempts}/{memory.totalAttempts} 次可靠分析</span>}
+    </div>
+    {attempt.status === "insufficient_data"
+      ? <p className="recording-warning">{attempt.insufficientReason ?? "本次录音不足以可靠判断，请重录。"}</p>
+      : attempt.recommendations.length > 0
+        ? <ol className="practice-recommendations">
+            {attempt.recommendations.map((item) => <li key={item.issueId}>
+              <strong>{item.headline}</strong>
+              <p>{item.observation}</p>
+              <p className="practice-action">下一遍：{item.action}</p>
+            </li>)}
+          </ol>
+        : <p className="practice-success">现有目标没有发现可靠差异，这一遍会作为成功记录保留。</p>}
+    {memory && memory.phenomena.length > 0 && <div className="memory-summary">
+      <strong>练唱记忆</strong>
+      <p>{memory.phenomena.slice(0, 2).map((item) =>
+        `${issueTypeLabel(item.issueType)}：累计 ${item.issueCount} 次${item.trend === "improving" ? "，近期在改善" : ""}`,
+      ).join("；")}</p>
+    </div>}
+  </section>;
+}
+
+function issueTypeLabel(issueType: string) {
+  return ({
+    expected_elision_realized: "尾音多释放",
+    identical_consonants_separated: "相同辅音分开",
+    coalescent_assimilation_missing: "融合动作缺失",
+    target_phoneme_omitted: "目标音遗漏",
+  } as Record<string, string>)[issueType] ?? issueType;
 }
 
 function formatTime(seconds: number) {

@@ -6,11 +6,14 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, sta
 from fastapi.responses import FileResponse
 
 from server.config import get_settings
+from server.models.practice import PracticeAttempt, PracticeMemory
 from server.models.recording import (
     RecordingSelectionType,
     RecordingTake,
     TakeSaveMode,
 )
+from server.services.practice.service import analyze_practice_take
+from server.storage.practice_store import PracticeStore
 from server.storage.profile_store import ProfileStore
 from server.storage.take_store import TakeStore
 
@@ -197,3 +200,34 @@ async def get_take_audio(take_id: str) -> FileResponse:
     if not source.is_file():
         raise HTTPException(status_code=404, detail="Recording audio not found")
     return FileResponse(source, media_type=take.mime_type)
+
+
+@router.post("/takes/{take_id}/analyze", response_model=PracticeAttempt)
+async def analyze_take(take_id: str) -> PracticeAttempt:
+    settings = get_settings()
+    take = TakeStore(settings.data_dir).get(take_id)
+    if take is None:
+        raise HTTPException(status_code=404, detail="Recording Take not found")
+    profile = ProfileStore(settings.data_dir).get(take.song_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Song profile not found")
+    source = settings.data_dir / "takes" / take.take_id / take.stored_filename
+    if not source.is_file():
+        raise HTTPException(status_code=404, detail="Recording audio not found")
+    return await analyze_practice_take(settings, take, profile, source)
+
+
+@router.get("/songs/{song_id}/attempts", response_model=list[PracticeAttempt])
+async def list_practice_attempts(
+    song_id: str,
+    session_id: str = Query(...),
+) -> list[PracticeAttempt]:
+    settings = get_settings()
+    if ProfileStore(settings.data_dir).get(song_id) is None:
+        raise HTTPException(status_code=404, detail="Song profile not found")
+    return PracticeStore(settings.data_dir).list_for_session(session_id, song_id)
+
+
+@router.get("/practice/memory", response_model=PracticeMemory)
+async def get_practice_memory(session_id: str = Query(...)) -> PracticeMemory:
+    return PracticeStore(get_settings().data_dir).memory(session_id)

@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     language_worker_token: SecretStr | None = None
     gemini_api_key: SecretStr | None = None
     gemini_model: str = "gemini-3.8-flash"
+    practice_acoustic_provider: Literal["disabled", "gemini"] = "gemini"
+    practice_issue_confidence_threshold: float = 0.65
+    glm_api_key: SecretStr | None = None
+    glm_model: str = "glm-4.7-flash"
+    glm_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
+    glm_timeout_seconds: float = 45.0
 
     model_config = SettingsConfigDict(
         env_file=".env",

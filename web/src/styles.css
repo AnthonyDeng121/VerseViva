@@ -229,10 +229,23 @@ audio { width: 100%; }
 .take-row div { display: grid; gap: 4px; }
 .take-history-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .mix-preview audio { display: block; margin-top: 10px; }
+.take-row-actions { display: flex !important; flex-wrap: wrap; justify-content: flex-end; gap: 7px !important; }
+.practice-feedback { margin: 14px 0; padding: 14px; border: 1px solid rgba(14,159,134,.24); border-radius: 14px; background: rgba(236,249,245,.78); }
+.practice-feedback-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.practice-feedback-heading h4, .practice-feedback-heading p { margin: 0; }
+.practice-feedback-heading > span { color: #69766f; font-size: 12px; white-space: nowrap; }
+.practice-recommendations { margin: 12px 0 0; padding-left: 20px; }
+.practice-recommendations li + li { margin-top: 12px; }
+.practice-recommendations p { margin: 4px 0 0; }
+.practice-action { color: #087e6b; font-weight: 700; }
+.practice-success { margin-bottom: 0; color: #087e6b; }
+.memory-summary { margin-top: 13px; padding-top: 11px; border-top: 1px solid rgba(14,159,134,.16); }
+.memory-summary p { margin: 4px 0 0; color: #69766f; }
 
 @media (max-width: 680px) {
   .recording-studio { padding: 16px; }
   .recording-heading, .recording-actions, .volume-controls, .take-row { align-items: stretch; flex-direction: column; }
   .recording-selectors { grid-template-columns: 1fr; }
   .recording-actions button, .take-row button { width: 100%; min-height: 44px; }
+  .practice-feedback-heading { flex-direction: column; }
 }
