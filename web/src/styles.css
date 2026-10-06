@@ -106,8 +106,9 @@ input:focus, textarea:focus { outline: 3px solid rgba(8, 126, 107, .14); border-
 .profile-title-line { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
 .profile-title-line .eyebrow { flex: none; }
 .profile-heading > span { color: #087e6b; font-weight: 800; }
-.players { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-.players label { padding: 14px; border-radius: 14px; background: #f3f7f4; }
+.players { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.players label { padding: 9px 11px; border-radius: 12px; background: #f3f7f4; }
+.players audio { height: 36px; }
 audio { width: 100%; }
 .learning-playback-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; padding: 10px 12px; border-radius: 13px; background: #f3f7f4; }
 .learning-playback-controls > span { color: #69766f; font-size: 12px; }
@@ -116,24 +117,22 @@ audio { width: 100%; }
 .speed-switch button.active, .sentence-loop-button.active { color: white; background: #087e6b; font-weight: 800; }
 .sentence-loop-button { max-width: min(100%, 360px); overflow: hidden; border: 1px solid #b9cec4; background: white; text-overflow: ellipsis; white-space: nowrap; }
 .sentence-loop-button:disabled { cursor: not-allowed; opacity: .5; }
-.vocal-layers { display: grid; gap: 16px; padding: 18px; border-radius: 18px; background: #f7f3ed; }
+.vocal-layers { display: grid; padding: 4px 0; border-block: 1px solid #e5ebe7; }
 .vocal-layers-heading { display: flex; justify-content: space-between; align-items: end; gap: 20px; }
 .vocal-layers-heading > p { max-width: 310px; text-align: right; font-size: 13px; }
-.vocal-lane-scroll { max-height: min(48vh, 440px); overflow: auto; padding-bottom: 4px; scroll-behavior: smooth; }
-.vocal-lane-grid { display: grid; grid-template-columns: repeat(2, minmax(260px, 1fr)); gap: 8px 12px; min-width: 540px; }
-.vocal-lane-cell { display: grid; align-content: start; gap: 6px; padding: 7px; border: 1px solid #ded8ce; border-radius: 11px; background: rgba(255, 255, 255, .82); }
-.vocal-lane-cell.secondary { border-color: #c9ddd8; background: rgba(240, 250, 247, .9); }
+.vocal-lane-scroll { max-height: min(46vh, 420px); overflow-y: auto; overflow-x: hidden; scroll-behavior: smooth; }
+.vocal-lane-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 0; }
+.vocal-lane-cell { min-height: 42px; padding: 7px 10px 10px 4px; }
+.vocal-lane-cell.secondary { padding-inline: 10px 4px; border-left: 1px solid #cbd8d2; }
 .vocal-lane-title, .vocal-part-meta { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
-.vocal-lane-title { padding: 0 10px 4px; }
+.vocal-lane-title { position: sticky; top: 0; z-index: 1; padding: 6px 8px; background: rgba(255,255,255,.94); }
 .vocal-lane-title.secondary { color: #087e6b; }
+.vocal-lane-title.secondary { border-left: 1px solid #cbd8d2; }
 .vocal-lane-title span, .vocal-part-meta span, .vocal-part small { color: #738078; font-size: 11px; }
-.vocal-part { display: grid; gap: 5px; padding: 9px; border-radius: 9px; background: white; box-shadow: 0 5px 14px rgba(47, 57, 51, .04); }
-.vocal-part.active { outline: 2px solid #0e9f86; background: #effaf6; }
-.vocal-part p { color: #26332d; font-size: 14px; line-height: 1.45; }
+.progressive-part-lyrics { color: #718078; font-size: clamp(12px, 3.4vw, 16px); line-height: 1.4; }
 .progressive-part-lyrics span { color: #718078; transition: color .15s ease; }
 .progressive-part-lyrics span.sung { color: #0b9b81; }
 .progressive-part-lyrics.clickable { cursor: pointer; }
-.empty-vocal-lane { padding: 16px 4px; font-size: 13px; }
 .legend { display: flex; flex-wrap: wrap; gap: 10px; }
 .legend span { padding: 7px 11px; border-radius: 99px; color: #56635d; background: #f0f3f1; font-size: 13px; }
 .legend b { margin-right: 5px; color: #087e6b; }
@@ -142,14 +141,14 @@ audio { width: 100%; }
 .lyrics-mode-switch { display: flex; padding: 3px; border-radius: 12px; background: #e9efeb; }
 .lyrics-mode-switch button { border: 0; border-radius: 9px; padding: 8px 12px; color: #59665f; background: transparent; cursor: pointer; }
 .lyrics-mode-switch button.active { color: white; background: #087e6b; font-weight: 800; }
-.lyrics-viewport { max-height: min(46vh, 420px); overflow-y: auto; scroll-behavior: smooth; padding: 8px 6px; border-block: 1px solid #e5ebe7; }
-.lyrics-list { display: grid; gap: 0; padding: 20vh 0; }
+.lyrics-viewport { max-height: min(46vh, 420px); overflow-y: auto; scroll-behavior: smooth; padding: 2px 6px; border-block: 1px solid #e5ebe7; }
+.lyrics-list { display: grid; gap: 0; padding: 4px 0; }
 .lyrics-empty { margin: 24px 0; padding: 32px; color: #66736d; text-align: center; background: #f2f7f5; border-radius: 16px; }
 .lyric-line {
-  padding: 8px 0 17px;
+  padding: 7px 0 10px;
   color: #718078;
   font-size: clamp(16px, 3vw, 22px);
-  line-height: 1.75;
+  line-height: 1.5;
   overflow-wrap: anywhere;
   transition: color .2s ease, opacity .2s ease, transform .2s ease;
   opacity: .52;
@@ -170,11 +169,11 @@ audio { width: 100%; }
   cursor: pointer;
 }
 .character-mark { position: absolute; left: 50%; transform: translateX(-50%); font-size: 12px; line-height: 1; }
-.character-mark.below { bottom: -.58em; white-space: nowrap; }
+.character-mark.below { bottom: -.38em; white-space: nowrap; }
 .character-mark.above { top: -.25em; }
 .character-mark.boundary { left: 100%; transform: translateX(-.08em); text-align: left; }
 .character-mark.boundary.link { width: .9em; }
-.character-mark.boundary.merge { width: 1.45em; overflow: hidden; font-size: 10px; letter-spacing: -.2em; }
+.character-mark.boundary.merge { width: max-content; min-width: 1.8em; overflow: visible; font-size: 10px; letter-spacing: -.12em; }
 
 .hint-detail { display: grid; gap: 10px; padding: 18px; border-left: 4px solid #087e6b; border-radius: 12px; background: #f0f7f4; }
 .detail-heading span { color: #6b7771; font-size: 12px; text-transform: uppercase; }
@@ -187,7 +186,8 @@ audio { width: 100%; }
   .upload-card { grid-template-columns: 1fr; padding: 14px; }
   .upload-card details { grid-column: auto; }
   .profile-card { padding: 14px; border-radius: 16px; }
-  .players { grid-template-columns: 1fr; }
+  .players { grid-template-columns: 1fr; gap: 7px; }
+  .players label { grid-template-columns: 44px minmax(0, 1fr); align-items: center; padding: 7px 9px; }
   .learning-playback-controls { align-items: stretch; }
   .sentence-loop-button { flex: 1 1 100%; max-width: 100%; min-height: 42px; }
   .profile-heading { align-items: flex-start; }
@@ -196,7 +196,7 @@ audio { width: 100%; }
   .hero-shortcut { display: grid; grid-template-columns: 1fr 1fr; align-items: stretch; }
   .hero-shortcut > div { grid-column: 1 / -1; }
   .hero-shortcut .secondary-button { padding: 5px 9px; font-size: 12px; }
-  .vocal-layers { padding: 14px; }
+  .vocal-layers { padding: 0; }
   .vocal-layers-heading { align-items: flex-start; }
   .vocal-layers-heading > p { display: none; }
 }
@@ -215,9 +215,6 @@ audio { width: 100%; }
 .recording-selectors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .recording-selectors label, .volume-controls label { display: grid; gap: 7px; }
 .recording-selectors select { width: 100%; min-height: 42px; padding: 8px 10px; border: 1px solid rgba(70,49,37,.2); border-radius: 10px; background: #fff; }
-.take-save-mode { display: grid; gap: 8px; margin: 16px 0 10px; }
-.take-save-mode label { display: grid; grid-template-columns: 18px 1fr; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
-.take-save-mode input { width: 16px; height: 16px; margin: 0; padding: 0; }
 .recording-selection-summary, .headphone-note, .recording-error, .recording-live, .recording-warning { margin: 10px 0; }
 .headphone-note, .recording-selection-summary { color: #75665d; font-size: 14px; }
 .recording-error, .recording-warning { color: #9c3f32; }
@@ -230,6 +227,7 @@ audio { width: 100%; }
 .take-row { margin-top: 10px; padding: 12px; border-radius: 12px; background: rgba(255,255,255,.72); }
 .take-row.history { opacity: .66; }
 .take-row div { display: grid; gap: 4px; }
+.take-history-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .mix-preview audio { display: block; margin-top: 10px; }
 
 @media (max-width: 680px) {

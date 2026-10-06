@@ -12,6 +12,8 @@ type RecordingVocalPart = {
   lane: "primary" | "secondary";
   role: string;
   lyrics: string;
+  startSeconds: number;
+  endSeconds: number;
 };
 
 type RecordingTake = {
@@ -27,6 +29,8 @@ type RecordingTake = {
   saveMode: "practice_replace" | "overdub_append";
   audioUrl: string;
   mimeType: string;
+  gain?: number;
+  muted?: boolean;
   isCurrent: boolean;
   supersededByTakeId?: string | null;
   createdAt: string;
@@ -80,13 +84,9 @@ export function RecordingStudio({
   accompanimentUrl?: string | null;
   onTimelineChange?: (time: number) => void;
 }) {
-  const [selectionType, setSelectionType] = useState<"sentence" | "segment">("sentence");
   const [startIndex, setStartIndex] = useState(0);
   const [endIndex, setEndIndex] = useState(0);
-  const [vocalPartId, setVocalPartId] = useState("");
-  const [saveMode, setSaveMode] = useState<"practice_replace" | "overdub_append">(
-    "practice_replace",
-  );
+  const [lane, setLane] = useState<"primary" | "secondary">("primary");
   const [state, setState] = useState<RecorderState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -101,18 +101,20 @@ export function RecordingStudio({
   const stopTimerRef = useRef<number | null>(null);
   const accompanimentRef = useRef<HTMLAudioElement>(null);
   const voiceRef = useRef<HTMLAudioElement>(null);
+  const mixContextRef = useRef<AudioContext | null>(null);
   const sessionId = useMemo(() => getOrCreateSessionId(songId), [songId]);
 
   const safeStartIndex = Math.min(startIndex, Math.max(sentences.length - 1, 0));
-  const safeEndIndex = selectionType === "sentence"
-    ? safeStartIndex
-    : Math.max(safeStartIndex, Math.min(endIndex, Math.max(sentences.length - 1, 0)));
+  const safeEndIndex = Math.max(safeStartIndex, Math.min(endIndex, Math.max(sentences.length - 1, 0)));
   const selectedSentences = sentences.slice(safeStartIndex, safeEndIndex + 1);
+  const selectionType = safeStartIndex === safeEndIndex ? "sentence" : "segment";
   const selectionStart = selectedSentences[0]?.startSeconds ?? 0;
   const selectionEnd = selectedSentences.at(-1)?.endSeconds ?? 0;
   const activePreviewUrl = previewUrl ?? selectedTake?.audioUrl ?? null;
   const activePreviewStart = selectedTake?.selectionStartSeconds ?? selectionStart;
   const activePreviewEnd = selectedTake?.selectionEndSeconds ?? selectionEnd;
+  const selectedVocalPart = vocalParts.find((part) => part.lane === lane
+    && part.startSeconds < selectionEnd && part.endSeconds > selectionStart);
 
   useEffect(() => {
     let cancelled = false;
@@ -136,6 +138,7 @@ export function RecordingStudio({
     streamRef.current?.getTracks().forEach((track) => track.stop());
     if (stopTimerRef.current !== null) window.clearTimeout(stopTimerRef.current);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
+    void mixContextRef.current?.close();
   }, [previewUrl]);
 
   useEffect(() => {
@@ -252,16 +255,16 @@ export function RecordingStudio({
     form.set("session_id", sessionId);
     form.set(
       "track_slot_id",
-      `${selectionType}:${selectedIds.join("+")}:${vocalPartId || "unassigned"}`,
+      `${lane}:${selectedIds.join("+")}`,
     );
     form.set("selection_type", selectionType);
     form.set("sentence_ids", JSON.stringify(selectedIds));
     form.set("selection_start_seconds", String(selectionStart));
     form.set("selection_end_seconds", String(selectionEnd));
     form.set("timeline_start_seconds", String(selectionStart));
-    form.set("save_mode", saveMode);
+    form.set("save_mode", "overdub_append");
     form.set("client_duration_seconds", String(selectionEnd - selectionStart));
-    if (vocalPartId) form.set("vocal_part_id", vocalPartId);
+    if (selectedVocalPart) form.set("vocal_part_id", selectedVocalPart.id);
 
     try {
       const response = await fetch(`/api/v1/songs/${songId}/takes`, {
@@ -308,6 +311,51 @@ export function RecordingStudio({
     accompanimentRef.current?.pause();
   }
 
+  async function playAllTakes() {
+    const activeTakes = takes.filter((take) => take.isCurrent && !take.muted);
+    if (!activeTakes.length) return;
+    stopAllTakes();
+    setError(null);
+    try {
+      const AudioContextClass = window.AudioContext;
+      const context = new AudioContextClass();
+      mixContextRef.current = context;
+      await context.resume();
+      const decoded = await Promise.all(activeTakes.map(async (take) => {
+        const response = await fetch(take.audioUrl);
+        if (!response.ok) throw new Error("读取已保存录音失败");
+        return context.decodeAudioData(await response.arrayBuffer());
+      }));
+      const timelineStart = Math.min(...activeTakes.map((take) => take.timelineStartSeconds));
+      const audioStart = context.currentTime + 0.08;
+      decoded.forEach((buffer, index) => {
+        const take = activeTakes[index];
+        const source = context.createBufferSource();
+        const gain = context.createGain();
+        gain.gain.value = take.gain ?? 1;
+        source.buffer = buffer;
+        source.connect(gain).connect(context.destination);
+        source.start(audioStart + Math.max(0, take.timelineStartSeconds - timelineStart));
+      });
+      if (accompanimentRef.current && accompanimentUrl) {
+        accompanimentRef.current.currentTime = timelineStart;
+        accompanimentRef.current.volume = accompanimentVolume;
+        await accompanimentRef.current.play();
+      }
+      onTimelineChange?.(timelineStart);
+    } catch (reason) {
+      stopAllTakes();
+      setError(reason instanceof Error ? reason.message : "无法播放全部轨道");
+    }
+  }
+
+  function stopAllTakes() {
+    accompanimentRef.current?.pause();
+    const context = mixContextRef.current;
+    mixContextRef.current = null;
+    if (context && context.state !== "closed") void context.close();
+  }
+
   if (!sentences.length) return null;
 
   return (
@@ -315,62 +363,45 @@ export function RecordingStudio({
       <div className="recording-heading">
         <div>
           <p className="eyebrow">PRACTICE TAKE</p>
-          <h3>练唱这一句或这一段</h3>
+          <h3>选择轨道与练唱范围</h3>
         </div>
         <span className={window.isSecureContext ? "secure-ok" : "secure-warning"}>
           {window.isSecureContext ? "麦克风环境可用" : "需要 HTTPS"}
         </span>
       </div>
 
-      <div className="recording-mode-switch">
-        <button type="button" className={selectionType === "sentence" ? "active" : ""}
-          onClick={() => { setSelectionType("sentence"); setEndIndex(startIndex); }}>单句</button>
-        <button type="button" className={selectionType === "segment" ? "active" : ""}
-          onClick={() => setSelectionType("segment")}>一段</button>
+      <div className="recording-mode-switch" role="group" aria-label="演唱轨道">
+        <button type="button" className={lane === "primary" ? "active" : ""}
+          onClick={() => setLane("primary")}>主轨</button>
+        <button type="button" className={lane === "secondary" ? "active" : ""}
+          onClick={() => setLane("secondary")}>次轨</button>
       </div>
 
       <div className="recording-selectors">
         <label>
-          <span>{selectionType === "sentence" ? "选择句子" : "起始句"}</span>
+          <span>起始句</span>
           <select value={safeStartIndex} onChange={(event) => {
             const next = Number(event.target.value);
             setStartIndex(next);
-            if (selectionType === "sentence" || endIndex < next) setEndIndex(next);
+            if (endIndex < next) setEndIndex(next);
           }}>
             {sentences.map((sentence, index) => <option value={index} key={sentence.id}>
               {index + 1}. {sentence.lyrics}
             </option>)}
           </select>
         </label>
-        {selectionType === "segment" && <label>
+        <label>
           <span>结束句</span>
           <select value={safeEndIndex} onChange={(event) => setEndIndex(Number(event.target.value))}>
             {sentences.map((sentence, index) => <option value={index} disabled={index < safeStartIndex}
               key={sentence.id}>{index + 1}. {sentence.lyrics}</option>)}
           </select>
-        </label>}
-        <label>
-          <span>Vocal Part（可选）</span>
-          <select value={vocalPartId} onChange={(event) => setVocalPartId(event.target.value)}>
-            <option value="">未指定 / 普通练唱</option>
-            {vocalParts.map((part) => <option value={part.id} key={part.id}>
-              {part.lane} · {part.role} · {part.lyrics}
-            </option>)}
-          </select>
         </label>
       </div>
 
-      <div className="take-save-mode">
-        <label><input type="radio" checked={saveMode === "practice_replace"}
-          onChange={() => setSaveMode("practice_replace")} />
-          普通重唱：替换本次演唱轨的当前版本</label>
-        <label><input type="radio" checked={saveMode === "overdub_append"}
-          onChange={() => setSaveMode("overdub_append")} />
-          叠唱追加：保留每一条 Take</label>
-      </div>
-
       <p className="recording-selection-summary">
-        {formatTime(selectionStart)} – {formatTime(selectionEnd)} · {selectedSentences.length} 句
+        {lane === "primary" ? "主轨" : "次轨"} · {formatTime(selectionStart)} – {formatTime(selectionEnd)}
+        · {selectedSentences.length === 1 ? "单句" : `${selectedSentences.length} 句`}
       </p>
       <p className="headphone-note">建议戴耳机录制，避免伴奏被麦克风再次收录。</p>
 
@@ -425,7 +456,15 @@ export function RecordingStudio({
         : <p className="recording-warning">当前 Profile 没有 Demucs 伴奏资产，可录音但无法混合伴奏。</p>}
 
       {takes.length > 0 && <div className="take-history">
-        <h4>本次演唱的 Take</h4>
+        <div className="take-history-heading">
+          <h4>本次演唱的 Take</h4>
+          <div className="recording-actions">
+            <button type="button" className="primary-button" onClick={() => void playAllTakes()}>
+              全部轨道试听
+            </button>
+            <button type="button" className="secondary-button" onClick={stopAllTakes}>停止</button>
+          </div>
+        </div>
         {[...takes].reverse().map((take) => <article key={take.takeId}
           className={`take-row ${take.isCurrent ? "current" : "history"}`}>
           <div><strong>{take.saveMode === "overdub_append" ? "叠唱 Take" : "普通练唱"}</strong>

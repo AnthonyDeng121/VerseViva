@@ -1,4 +1,4 @@
-import React, { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import React, { FormEvent, useEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { RecordingStudio } from "./RecordingStudio";
 import "./styles.css";
@@ -105,7 +105,7 @@ const STAGE_LABELS: Record<string, string> = {
 
 const HERO_SONGS = [
   { id: "song_00000000000000000000000000000002", label: "Juno" },
-  { id: "song_00000000000000000000000000000003", label: "get him back! bridge" },
+  { id: "song_00000000000000000000000000000003", label: "get him back!" },
 ] as const;
 
 const ACTIVE_JOB_KEY = "verseviva.activeJobId";
@@ -136,8 +136,6 @@ function App() {
         const restoredJob = (await response.json()) as AnalysisJob;
         if (cancelled) return;
         setJob(restoredJob);
-        setTitle(restoredJob.title ?? "");
-        setArtist(restoredJob.artist ?? "");
         if (restoredJob.status === "completed") {
           const profileResponse = await fetch(`/api/v1/songs/${restoredJob.song_id}`);
           if (!profileResponse.ok) throw new Error("恢复上次分析结果失败");
@@ -196,8 +194,8 @@ function App() {
       }
       const createdJob = (await response.json()) as AnalysisJob;
       setJob(createdJob);
-      setTitle(createdJob.title ?? title);
-      setArtist(createdJob.artist ?? artist);
+      setTitle("");
+      setArtist("");
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "上传失败");
     } finally {
@@ -238,6 +236,12 @@ function App() {
     }
   }
 
+  function dismissJob() {
+    window.localStorage.removeItem(ACTIVE_JOB_KEY);
+    setJob(null);
+    setError(null);
+  }
+
   return (
     <main>
       <header className="hero">
@@ -260,7 +264,7 @@ function App() {
             type="text"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            placeholder="可选；文件名不清楚时填写"
+            placeholder="例如：Abracadabra（可选）"
           />
         </label>
         <label>
@@ -270,7 +274,7 @@ function App() {
             type="text"
             value={artist}
             onChange={(event) => setArtist(event.target.value)}
-            placeholder="可选；填写后可降低同名歌误匹配"
+            placeholder="例如：Lady Gaga（可选）"
           />
         </label>
         <details>
@@ -287,8 +291,8 @@ function App() {
 
       <section className="hero-shortcut">
         <div>
-          <strong>已缓存 Hero Songs</strong>
-          <p>语音标记与左右 Vocal Part 在同一界面展示。</p>
+          <strong>示例歌曲</strong>
+          <p>直接打开示例，体验语言标记与左右双轨歌词。</p>
         </div>
         {HERO_SONGS.map((song) => (
           <button className="secondary-button" type="button" key={song.id} onClick={() => loadHero(song.id)}>
@@ -325,6 +329,9 @@ function App() {
               <p>已完成的阶段产物会保留，重试时不会重复计算。</p>
               <button className="retry-button" onClick={retry} disabled={retrying}>
                 {retrying ? "正在重试…" : "从失败处重试"}
+              </button>
+              <button className="secondary-button" type="button" onClick={dismissJob}>
+                取消并返回
               </button>
             </div>
           )}
@@ -367,10 +374,6 @@ function ProfileView({
     setLoopSentenceId(null);
     setLyricsMode(profile.sentences.length === 0 && profile.vocalParts.length > 0 ? "layers" : "standard");
   }, [profile.songId, profile.sentences.length, profile.vocalParts.length]);
-  const hintCount = useMemo(
-    () => profile.sentences.reduce((total, sentence) => total + sentence.languageHints.length, 0),
-    [profile],
-  );
   const activeSentence = profile.sentences.find(
     (sentence) => currentTime >= sentence.startSeconds && currentTime < sentence.endSeconds,
   );
@@ -414,9 +417,8 @@ function ProfileView({
       <div className="profile-heading">
         <div className="profile-title-line">
           <p className="eyebrow">分析结果</p>
-          <h2>{profile.title}</h2>
+          <h2>{displaySongTitle(profile.title)}</h2>
         </div>
-        <span>{hintCount} 处标记</span>
       </div>
 
       <div className="players">
@@ -480,9 +482,7 @@ function ProfileView({
       {lyricsMode === "layers" && profile.vocalParts.length > 0
         ? <VocalLayers
             vocalParts={profile.vocalParts}
-            sentences={profile.sentences}
             currentTime={currentTime}
-            onSelect={onSelect}
             onSeek={seekTo}
           />
         : <KaraokeLyrics
@@ -502,15 +502,12 @@ function ProfileView({
         onTimelineChange={setCurrentTime}
       />
 
-      <p className="model-note">
-        歌词来源：{profile.analysis.lyricsSource ?? "asr"}
-        {profile.analysis.lyricsProvider ? ` / ${profile.analysis.lyricsProvider}` : ""}。
-        标注来源：{profile.analysis.languageAnalysisProvider ?? "未启用"}
-        {profile.analysis.languageAnalysisModel ? ` / ${profile.analysis.languageAnalysisModel}` : ""}。
-        LLM 标注属于候选，弱证据不会显示；比赛 Hero Song 仍需人工校对。
-      </p>
     </section>
   );
+}
+
+function displaySongTitle(title: string) {
+  return title.replace(/\s*[—-]\s*Language\s*&\s*Vocal\s*Layers\s*$/i, "").trim();
 }
 
 function AudioPlayer({
@@ -588,39 +585,16 @@ function KaraokeLyrics({
   );
 }
 
-const ROLE_LABELS: Record<VocalPart["role"], string> = {
-  lead: "Lead",
-  harmony: "Harmony",
-  backing_vocal: "Backing vocal",
-  response: "Response",
-  ad_lib: "Ad-lib",
-  double: "Double",
-  overlap: "Overlap",
-};
-
-const SOURCE_LABELS: Record<VocalPart["source"], string> = {
-  acoustic_candidate: "声学 / ASR 候选",
-  audio_model_candidate: "音频模型候选",
-  lyrics_structure_candidate: "歌词结构候选",
-  lyrics_provider: "歌词网站",
-  human_curated: "人工校对",
-};
-
 function VocalLayers({
   vocalParts,
-  sentences,
   currentTime,
-  onSelect,
   onSeek,
 }: {
   vocalParts: VocalPart[];
-  sentences: SongSentence[];
   currentTime: number;
-  onSelect: (hint: LanguageHint) => void;
   onSeek: (time: number) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const sentencesById = new Map(sentences.map((sentence) => [sentence.id, sentence]));
   const primary = vocalParts
     .filter((part) => part.lane === "primary")
     .sort((left, right) => left.startSeconds - right.startSeconds);
@@ -663,26 +637,16 @@ function VocalLayers({
             <React.Fragment key={`vocal-row-${rowIndex}`}>
               <div className="vocal-lane-cell primary" data-vocal-row={rowIndex}>
                 {row.primary.length > 0
-                  ? row.primary.map((part) => <VocalPartCard
-                      part={part}
-                      sentence={sentencesById.get(part.sentenceIds[0])}
-                      currentTime={currentTime}
-                      onSelect={onSelect}
-                      onSeek={onSeek}
-                      key={part.id}
-                    />)
-                  : <p className="empty-vocal-lane">此时无主 Vocal 标注</p>}
+                  ? row.primary.map((part) => <ProgressivePartLyrics part={part}
+                      lyrics={withoutParenthetical(part.lyrics)} currentTime={currentTime}
+                      onSeek={onSeek} key={part.id} />)
+                  : null}
               </div>
               <div className="vocal-lane-cell secondary">
                 {row.secondary.length > 0
-                  ? row.secondary.map((part) => <VocalPartCard
-                      part={part}
-                      currentTime={currentTime}
-                      onSelect={onSelect}
-                      onSeek={onSeek}
-                      key={part.id}
-                    />)
-                  : <p className="empty-vocal-lane">此时无次 Vocal 标注</p>}
+                  ? row.secondary.map((part) => <ProgressivePartLyrics part={part}
+                      currentTime={currentTime} onSeek={onSeek} key={part.id} />)
+                  : null}
               </div>
             </React.Fragment>
           ))}
@@ -692,54 +656,13 @@ function VocalLayers({
   );
 }
 
-function VocalPartCard({
-  part,
-  sentence,
-  currentTime,
-  onSelect,
-  onSeek,
-}: {
+function ProgressivePartLyrics({ part, lyrics = part.lyrics, currentTime, onSeek }: {
   part: VocalPart;
-  sentence?: SongSentence;
-  currentTime: number;
-  onSelect: (hint: LanguageHint) => void;
-  onSeek: (time: number) => void;
-}) {
-  const sourceLabel = SOURCE_LABELS[part.source];
-  const active = currentTime >= part.startSeconds && currentTime < part.endSeconds;
-  return (
-    <article className={`vocal-part ${active ? "active" : ""}`}>
-      <div className="vocal-part-meta">
-        <strong>{ROLE_LABELS[part.role]}</strong>
-        <span>{formatPartTime(part.startSeconds)} – {formatPartTime(part.endSeconds)}</span>
-      </div>
-      {sentence
-        ? <AnnotatedLine
-            sentence={sentence}
-            currentTime={currentTime}
-            active={active}
-            past={currentTime > part.endSeconds}
-            onSelect={onSelect}
-            onSeek={onSeek}
-            compact
-          />
-        : <ProgressivePartLyrics part={part} currentTime={currentTime} onSeek={onSeek} />}
-      <small>
-        {sourceLabel}
-        {part.needsHumanReview ? " · 声部身份需复核" : ""}
-        {part.timingNeedsHumanReview ? " · 时间需复核" : ""}
-        {` · ${Math.round(part.confidence * 100)}%`}
-      </small>
-    </article>
-  );
-}
-
-function ProgressivePartLyrics({ part, currentTime, onSeek }: {
-  part: VocalPart;
+  lyrics?: string;
   currentTime: number;
   onSeek: (time: number) => void;
 }) {
-  const characters = Array.from(part.lyrics);
+  const characters = Array.from(lyrics);
   const progress = Math.max(0, Math.min(1,
     (currentTime - part.startSeconds) / Math.max(part.endSeconds - part.startSeconds, 0.01),
   ));
@@ -753,10 +676,8 @@ function ProgressivePartLyrics({ part, currentTime, onSeek }: {
   ))}</p>;
 }
 
-function formatPartTime(seconds: number) {
-  const minutes = Math.floor(seconds / 60);
-  const remainder = seconds - minutes * 60;
-  return `${minutes}:${remainder.toFixed(1).padStart(4, "0")}`;
+function withoutParenthetical(lyrics: string) {
+  return lyrics.replace(/\s*\([^)]*\)/g, "").trim();
 }
 
 function AnnotatedLine({

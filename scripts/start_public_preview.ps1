@@ -25,7 +25,7 @@ function Find-WinGetExecutable([string]$fileName) {
 
 $npm = Find-WinGetExecutable "npm.cmd"
 $cloudflared = Find-WinGetExecutable "cloudflared.exe"
-$python = (Get-Command python -ErrorAction Stop).Source
+$wsl = (Get-Command wsl.exe -ErrorAction Stop).Source
 
 if (-not $SkipBuild) {
     Write-Host "[1/3] Building the mobile H5..." -ForegroundColor Cyan
@@ -49,8 +49,8 @@ if ($existing) {
 Write-Host "[2/3] Starting the same-origin VerseViva service..." -ForegroundColor Cyan
 $stdout = Join-Path $logRoot "uvicorn.stdout.log"
 $stderr = Join-Path $logRoot "uvicorn.stderr.log"
-$server = Start-Process -FilePath $python `
-    -ArgumentList @("-m", "uvicorn", "server.main:app", "--host", "127.0.0.1", "--port", "$Port") `
+$server = Start-Process -FilePath $wsl `
+    -ArgumentList @("--cd", $projectRoot, ".venv/bin/python", "-m", "uvicorn", "server.main:app", "--host", "127.0.0.1", "--port", "$Port") `
     -WorkingDirectory $projectRoot `
     -WindowStyle Hidden `
     -RedirectStandardOutput $stdout `
