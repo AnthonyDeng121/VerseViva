@@ -176,3 +176,38 @@ audio { width: 100%; }
   .vocal-layers-heading { align-items: flex-start; }
   .vocal-layers-heading > p { display: none; }
 }
+
+.recording-studio { margin-top: 28px; padding: 22px; border: 1px solid rgba(74,54,43,.16); border-radius: 20px; background: linear-gradient(145deg, #fffaf4, #f6ede4); }
+.recording-heading, .recording-actions, .volume-controls, .take-row { display: flex; align-items: center; gap: 12px; }
+.recording-heading, .take-row { justify-content: space-between; }
+.recording-heading h3, .mix-preview h4, .take-history h4 { margin: 4px 0 0; }
+.secure-ok, .secure-warning { padding: 6px 10px; border-radius: 999px; font-size: 12px; white-space: nowrap; }
+.secure-ok { color: #246044; background: #dff2e7; }
+.secure-warning { color: #8d3c31; background: #f8ddd8; }
+.recording-mode-switch { display: inline-flex; margin: 18px 0 12px; padding: 4px; border-radius: 12px; background: rgba(82,62,49,.08); }
+.recording-mode-switch button { min-width: 76px; padding: 8px 14px; border: 0; border-radius: 9px; color: #5e5148; background: transparent; }
+.recording-mode-switch button.active { color: #fff; background: #9f4e3d; }
+.recording-selectors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.recording-selectors label, .volume-controls label { display: grid; gap: 7px; }
+.recording-selectors select { width: 100%; min-height: 42px; padding: 8px 10px; border: 1px solid rgba(70,49,37,.2); border-radius: 10px; background: #fff; }
+.take-save-mode { display: grid; gap: 8px; margin: 16px 0 10px; }
+.take-save-mode label { display: flex; align-items: flex-start; gap: 8px; }
+.recording-selection-summary, .headphone-note, .recording-error, .recording-live, .recording-warning { margin: 10px 0; }
+.headphone-note, .recording-selection-summary { color: #75665d; font-size: 14px; }
+.recording-error, .recording-warning { color: #9c3f32; }
+.recording-live { color: #b0302c; font-weight: 700; }
+.record-stop-button { padding: 10px 16px; border: 0; border-radius: 12px; color: #fff; background: #b0302c; }
+.mix-preview, .take-history { margin-top: 18px; padding-top: 16px; border-top: 1px solid rgba(74,54,43,.14); }
+.volume-controls { align-items: end; margin: 14px 0; }
+.volume-controls label { flex: 1; }
+.volume-controls input { width: 100%; }
+.take-row { margin-top: 10px; padding: 12px; border-radius: 12px; background: rgba(255,255,255,.72); }
+.take-row.history { opacity: .66; }
+.take-row div { display: grid; gap: 4px; }
+
+@media (max-width: 680px) {
+  .recording-studio { padding: 16px; }
+  .recording-heading, .recording-actions, .volume-controls, .take-row { align-items: stretch; flex-direction: column; }
+  .recording-selectors { grid-template-columns: 1fr; }
+  .recording-actions button, .take-row button { width: 100%; min-height: 44px; }
+}

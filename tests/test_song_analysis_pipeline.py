@@ -239,6 +239,12 @@ def test_pipeline_builds_and_persists_song_profile(tmp_path: Path) -> None:
         tmp_path / "songs" / job.song_id / "audio" / "source.mp3"
     ).read_bytes() == b"ID3-audio"
     assert (tmp_path / "songs" / job.song_id / "audio" / "vocals.wav").read_bytes() == b"vocals"
+    assert (
+        tmp_path / "songs" / job.song_id / "audio" / "accompaniment.wav"
+    ).read_bytes() == b"music"
+    assert profile.audio.accompaniment_url == (
+        f"/api/v1/songs/{job.song_id}/audio/accompaniment"
+    )
 
 
 def test_pipeline_persists_failure_stage_and_message(tmp_path: Path) -> None:

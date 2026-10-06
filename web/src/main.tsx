@@ -1,5 +1,6 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
+import { RecordingStudio } from "./RecordingStudio";
 import "./styles.css";
 
 type AnalysisJob = {
@@ -72,7 +73,11 @@ type VocalPart = {
 type SongProfile = {
   songId: string;
   title: string;
-  audio: { sourceUrl: string; vocalUrl?: string | null };
+  audio: {
+    sourceUrl: string;
+    vocalUrl?: string | null;
+    accompanimentUrl?: string | null;
+  };
   sentences: SongSentence[];
   vocalParts: VocalPart[];
   analysis: {
@@ -429,6 +434,13 @@ function ProfileView({
           />}
 
       {selectedHint && <HintDetail hint={selectedHint} />}
+
+      <RecordingStudio
+        songId={profile.songId}
+        sentences={profile.sentences}
+        vocalParts={profile.vocalParts}
+        accompanimentUrl={profile.audio.accompanimentUrl}
+      />
 
       <p className="model-note">
         歌词来源：{profile.analysis.lyricsSource ?? "asr"}

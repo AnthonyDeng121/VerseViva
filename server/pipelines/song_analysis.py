@@ -231,6 +231,7 @@ class SongAnalysisPipeline:
             _publish_audio_assets(
                 source=source,
                 vocals=separation.vocals,
+                accompaniment=separation.accompaniment,
                 song_dir=self.profile_store.songs_dir / job.song_id,
             )
             profile = build_song_profile(
@@ -241,6 +242,9 @@ class SongAnalysisPipeline:
                 audio=AudioAssets(
                     source_url=f"/api/v1/songs/{job.song_id}/audio/source",
                     vocal_url=f"/api/v1/songs/{job.song_id}/audio/vocals",
+                    accompaniment_url=(
+                        f"/api/v1/songs/{job.song_id}/audio/accompaniment"
+                    ),
                 ),
                 sentences=annotated_sentences,
                 notes=pitch_conversion.notes,
@@ -347,11 +351,14 @@ def build_default_pipeline(settings: Settings) -> SongAnalysisPipeline:
     )
 
 
-def _publish_audio_assets(*, source: Path, vocals: Path, song_dir: Path) -> None:
+def _publish_audio_assets(
+    *, source: Path, vocals: Path, accompaniment: Path, song_dir: Path
+) -> None:
     audio_dir = song_dir / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
     copy2(source, audio_dir / f"source{source.suffix.lower()}")
     copy2(vocals, audio_dir / "vocals.wav")
+    copy2(accompaniment, audio_dir / "accompaniment.wav")
 
 
 def _save_json(path: Path, payload: object) -> None:

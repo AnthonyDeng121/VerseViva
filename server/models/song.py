@@ -65,6 +65,7 @@ class SongProfileModel(BaseModel):
 class AudioAssets(SongProfileModel):
     source_url: str
     vocal_url: str | None = None
+    accompaniment_url: str | None = None
 
 
 class PitchPoint(SongProfileModel):

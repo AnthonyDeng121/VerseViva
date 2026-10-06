@@ -36,6 +36,7 @@ def make_profile() -> SongProfile:
         audio=AudioAssets(
             source_url="/media/songs/song_demo/source.mp3",
             vocal_url="/media/songs/song_demo/vocals.wav",
+            accompaniment_url="/media/songs/song_demo/accompaniment.wav",
         ),
         vocal_range=VocalRange(
             lowest_midi=48,
@@ -95,6 +96,7 @@ def test_song_profile_serializes_to_agreed_camel_case_contract() -> None:
     assert payload["schemaVersion"] == "1.5"
     assert payload["durationSeconds"] == 60.003
     assert payload["audio"]["vocalUrl"].endswith("vocals.wav")
+    assert payload["audio"]["accompanimentUrl"].endswith("accompaniment.wav")
     assert payload["vocalRange"]["lowestMidi"] == 48
     assert payload["sentences"][0]["startSeconds"] == 0.852
     assert payload["sentences"][0]["words"][0]["text"] == "I"
