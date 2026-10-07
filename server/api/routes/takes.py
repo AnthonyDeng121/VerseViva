@@ -11,6 +11,7 @@ from server.models.recording import (
     RecordingSelectionType,
     RecordingTake,
     RecordingTakeUpdate,
+    TakePurpose,
     TakeSaveMode,
 )
 from server.services.practice.service import analyze_practice_take
@@ -73,6 +74,7 @@ async def upload_take(
     selection_end_seconds: float = Form(...),
     timeline_start_seconds: float = Form(...),
     save_mode: TakeSaveMode = Form(...),  # noqa: B008
+    purpose: TakePurpose = Form(default=TakePurpose.guided_practice),  # noqa: B008
     vocal_part_id: str | None = Form(default=None),
     client_duration_seconds: float | None = Form(default=None),
     latency_compensation_ms: float = Form(default=0),
@@ -157,6 +159,7 @@ async def upload_take(
             selection_end_seconds=selection_end_seconds,
             timeline_start_seconds=timeline_start_seconds,
             save_mode=save_mode,
+            purpose=purpose,
             audio_url=f"/api/v1/takes/{take_id}/audio",
             stored_filename=destination.name,
             mime_type=content_type,
@@ -226,6 +229,11 @@ async def analyze_take(take_id: str) -> PracticeAttempt:
     take = TakeStore(settings.data_dir).get(take_id)
     if take is None:
         raise HTTPException(status_code=404, detail="Recording Take not found")
+    if take.purpose == TakePurpose.free_overdub:
+        raise HTTPException(
+            status_code=409,
+            detail="清唱叠录仅用于保存与混音，不参与演唱分析或长期记忆",
+        )
     profile = ProfileStore(settings.data_dir).get(take.song_id)
     if profile is None:
         raise HTTPException(status_code=404, detail="Song profile not found")

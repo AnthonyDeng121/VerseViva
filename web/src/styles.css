@@ -242,6 +242,10 @@ audio { width: 100%; }
 .recording-mode-switch { display: inline-flex; margin: 12px 0 9px; padding: 3px; border-radius: 10px; background: rgba(82,62,49,.08); }
 .recording-mode-switch button { min-width: 76px; padding: 8px 14px; border: 0; border-radius: 9px; color: #5e5148; background: transparent; }
 .recording-mode-switch button.active { color: #fff; background: #9f4e3d; }
+.purpose-switch { margin-left: 8px; }
+.recording-purpose-note { margin: 0 0 12px; color: #6f7774; font-size: .76rem; }
+.recording-success { color: #0d7e6a; font-size: .82rem; }
+.take-purpose { color: #0d7e6a; }
 .recording-selectors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .recording-selectors label, .volume-controls label { display: grid; gap: 7px; }
 .recording-selectors select { width: 100%; min-height: 42px; padding: 8px 10px; border: 1px solid rgba(70,49,37,.2); border-radius: 10px; background: #fff; }

@@ -19,6 +19,11 @@ class TakeSaveMode(StrEnum):
     overdub_append = "overdub_append"
 
 
+class TakePurpose(StrEnum):
+    guided_practice = "guided_practice"
+    free_overdub = "free_overdub"
+
+
 class TakeStatus(StrEnum):
     uploaded = "uploaded"
     processing = "processing"
@@ -42,6 +47,7 @@ class RecordingTake(RecordingModel):
     selection_end_seconds: float = Field(gt=0)
     timeline_start_seconds: float = Field(ge=0)
     save_mode: TakeSaveMode
+    purpose: TakePurpose = TakePurpose.guided_practice
     status: TakeStatus = TakeStatus.uploaded
     audio_url: str
     stored_filename: str

@@ -155,3 +155,21 @@ def test_take_can_be_renamed_and_its_mix_settings_persist(take_client) -> None:
     assert response.json()["gain"] == 0.72
     assert response.json()["manualOffsetMs"] == -120
     assert client.get(f"/api/v1/takes/{created['takeId']}").json()["gain"] == 0.72
+
+
+def test_free_overdub_is_saved_but_cannot_enter_practice_analysis(take_client) -> None:
+    client, _, song_id = take_client
+
+    created = _webm_upload(
+        client,
+        song_id,
+        purpose="free_overdub",
+        save_mode="overdub_append",
+    )
+
+    assert created.status_code == 201
+    payload = created.json()
+    assert payload["purpose"] == "free_overdub"
+    analysis = client.post(f"/api/v1/takes/{payload['takeId']}/analyze")
+    assert analysis.status_code == 409
+    assert "不参与演唱分析或长期记忆" in analysis.json()["detail"]

@@ -34,6 +34,7 @@ type RecordingTake = {
   selectionEndSeconds: number;
   timelineStartSeconds: number;
   saveMode: "practice_replace" | "overdub_append";
+  purpose: "guided_practice" | "free_overdub";
   audioUrl: string;
   mimeType: string;
   gain?: number;
@@ -127,8 +128,10 @@ export function RecordingStudio({
   const [startIndex, setStartIndex] = useState(0);
   const [endIndex, setEndIndex] = useState(0);
   const [lane, setLane] = useState<"primary" | "secondary">("primary");
+  const [purpose, setPurpose] = useState<"guided_practice" | "free_overdub">("guided_practice");
   const [state, setState] = useState<RecorderState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
   const [takes, setTakes] = useState<RecordingTake[]>([]);
@@ -282,6 +285,7 @@ export function RecordingStudio({
 
   async function startRecording() {
     setError(null);
+    setSavedNotice(null);
     resetPreview();
     if (!window.isSecureContext) {
       setError("手机麦克风需要 HTTPS 安全连接，请使用移动端 HTTPS 预览地址。");
@@ -405,6 +409,7 @@ export function RecordingStudio({
     form.set("selection_end_seconds", String(selectionEnd));
     form.set("timeline_start_seconds", String(selectionStart));
     form.set("save_mode", "overdub_append");
+    form.set("purpose", purpose);
     form.set("client_duration_seconds", String(selectionEnd - selectionStart));
     form.set("latency_compensation_ms", String(previewOffsetMs));
     if (selectedVocalPartId) form.set("vocal_part_id", selectedVocalPartId);
@@ -423,7 +428,11 @@ export function RecordingStudio({
         `/api/v1/songs/${songId}/takes?session_id=${encodeURIComponent(sessionId)}`,
       );
       setTakes(restored.ok ? await restored.json() as RecordingTake[] : [...takes, created]);
-      await analyzeTake(created.takeId);
+      if (purpose === "guided_practice") {
+        await analyzeTake(created.takeId);
+      } else {
+        setSavedNotice("清唱叠录已保存，可在已保存音轨中试听和编辑；不会参与演唱分析或长期记忆。");
+      }
       resetPreview();
     } catch (reason) {
       setState("preview");
@@ -591,6 +600,16 @@ export function RecordingStudio({
           onClick={() => setLane("secondary")}>次轨</button>
       </div>
 
+      <div className="recording-mode-switch purpose-switch" role="group" aria-label="录音用途">
+        <button type="button" className={purpose === "guided_practice" ? "active" : ""}
+          onClick={() => setPurpose("guided_practice")}>指导练唱</button>
+        <button type="button" className={purpose === "free_overdub" ? "active" : ""}
+          onClick={() => setPurpose("free_overdub")}>清唱叠录</button>
+      </div>
+      <p className="recording-purpose-note">{purpose === "guided_practice"
+        ? "上传后分析语言技巧，并计入个人练唱记忆。"
+        : "自由选择句子并保存为叠录音轨，不分析，也不计入个人练唱记忆。"}</p>
+
       {(editingAll || editingTake) && <section className="current-track-editor">
         <strong>{editingAll ? "全部轨道" : editingTake?.displayName}</strong>
         <input className="playback-progress" type="range" min="0"
@@ -695,7 +714,9 @@ export function RecordingStudio({
           <button type="button" className="primary-button analyzing-button"
             disabled={state === "uploading"} onClick={() => void uploadRecording()}>
             {state === "uploading" && <span className="button-spinner" aria-hidden="true" />}
-            {state === "uploading" ? "正在上传并分析…" : "分析并上传"}
+            {state === "uploading"
+              ? purpose === "guided_practice" ? "正在上传并分析…" : "正在保存叠录…"
+              : purpose === "guided_practice" ? "分析并上传" : "保存清唱叠录"}
           </button>
           <button type="button" className="secondary-button"
             disabled={state === "uploading"} onClick={resetPreview}>重录</button>
@@ -703,6 +724,7 @@ export function RecordingStudio({
       </div>
 
       {error && <p className="recording-error">{error}</p>}
+      {savedNotice && <p className="recording-success">{savedNotice}</p>}
       {state === "recording" && <p className="recording-live">● 正在录制；到片段结尾会自动停止</p>}
       {analyzingTakeId && <p className="recording-live">正在分析，请保持页面打开…</p>}
 
@@ -750,16 +772,17 @@ export function RecordingStudio({
                 if (displayName) void updateTake(take.takeId, { displayName });
               }} />
             <small>{formatTime(take.selectionStartSeconds)}–{formatTime(take.selectionEndSeconds)} · {takeLyricSummary(take, sentences)}</small>
+            {take.purpose === "free_overdub" && <small className="take-purpose">清唱叠录 · 不参与分析与记忆</small>}
           </div>
           <div className="take-inline-controls">
             <button type="button" className="secondary-button"
               onClick={() => { setEditingAll(false); setEditingTakeId(editingTakeId === take.takeId ? null : take.takeId);
                 void playTake(take); }}>编辑</button>
-            <button type="button" className="secondary-button"
+            {take.purpose === "guided_practice" && <button type="button" className="secondary-button"
               disabled={analyzingTakeId === take.takeId}
               onClick={() => void analyzeTake(take.takeId)}>
               {analyzingTakeId === take.takeId ? "分析中…" : "重分析"}
-            </button>
+            </button>}
           </div>
         </article>)}
       </div>}
