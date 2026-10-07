@@ -111,12 +111,16 @@ export function RecordingStudio({
   vocalParts,
   accompanimentUrl,
   onTimelineChange,
+  onRecordingStart,
+  onRecordingFinished,
 }: {
   songId: string;
   sentences: RecordingSentence[];
   vocalParts: RecordingVocalPart[];
   accompanimentUrl?: string | null;
   onTimelineChange?: (time: number) => void;
+  onRecordingStart?: () => void;
+  onRecordingFinished?: () => void;
 }) {
   const [startIndex, setStartIndex] = useState(0);
   const [endIndex, setEndIndex] = useState(0);
@@ -286,10 +290,12 @@ export function RecordingStudio({
         stream.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
         accompanimentRef.current?.pause();
+        onRecordingFinished?.();
       };
 
       recorder.start(250);
       setState("recording");
+      onRecordingStart?.();
       if (accompanimentRef.current && accompanimentUrl) {
         accompanimentRef.current.currentTime = selectionStart;
         accompanimentRef.current.volume = accompanimentVolume;
@@ -402,13 +408,14 @@ export function RecordingStudio({
     singleTakeAudioRef.current = audio;
     audio.volume = Math.min(take.gain ?? 1, 1);
     audio.onended = stopPlayback;
+    audio.ontimeupdate = () => onTimelineChange?.(take.timelineStartSeconds + audio.currentTime);
     try {
       if (accompanimentRef.current && accompanimentUrl) {
         accompanimentRef.current.currentTime = take.timelineStartSeconds;
         accompanimentRef.current.volume = accompanimentVolume;
         const offsetSeconds = ((take.latencyCompensationMs ?? 0) + (take.manualOffsetMs ?? 0)) / 1000;
-        if (offsetSeconds < 0) audio.currentTime = Math.min(-offsetSeconds, audio.duration || -offsetSeconds);
-        if (offsetSeconds > 0) accompanimentRef.current.currentTime += offsetSeconds;
+        if (offsetSeconds > 0) audio.currentTime = Math.min(offsetSeconds, audio.duration || offsetSeconds);
+        if (offsetSeconds < 0) accompanimentRef.current.currentTime += -offsetSeconds;
         await Promise.all([audio.play(), accompanimentRef.current.play()]);
       } else {
         await audio.play();
@@ -452,7 +459,7 @@ export function RecordingStudio({
         source.buffer = buffer;
         source.connect(gain).connect(context.destination);
         const offset = ((take.latencyCompensationMs ?? 0) + (take.manualOffsetMs ?? 0)) / 1000;
-        source.start(audioStart + Math.max(0, take.timelineStartSeconds - timelineStart + offset));
+        source.start(audioStart + Math.max(0, take.timelineStartSeconds - timelineStart - offset));
       });
       if (accompanimentRef.current && accompanimentUrl) {
         accompanimentRef.current.currentTime = timelineStart;
@@ -508,8 +515,7 @@ export function RecordingStudio({
     <section className="recording-studio" aria-label="用户练唱录音">
       <div className="recording-heading">
         <div>
-          <p className="eyebrow">PRACTICE TAKE</p>
-          <h3>选择轨道与练唱范围</h3>
+          <h3>选择轨道与演唱范围</h3>
         </div>
         <span className={window.isSecureContext ? "secure-ok" : "secure-warning"}>
           {window.isSecureContext ? "麦克风环境可用" : "需要 HTTPS"}
@@ -550,16 +556,16 @@ export function RecordingStudio({
         · {selectedOptions.length === 1 ? "单句" : `${selectedOptions.length} 句`}
       </p>
       {practiceOptions.length === 0 && <p className="recording-warning">这首歌没有可练习的次轨歌词。</p>}
-      <p className="headphone-note">建议戴耳机录制，避免伴奏被麦克风再次收录。</p>
+      <p className="headphone-note">建议佩戴耳机，避免伴奏被收录。</p>
 
       {state === "preview" && previewUrl && <div className="recording-preview preview-editor">
         <audio controls src={previewUrl}
           onVolumeChange={(event) => setPreviewVoiceVolume(event.currentTarget.volume)}
           onPlay={(event) => {
             event.currentTarget.volume = previewVoiceVolume;
-            if (previewOffsetMs < 0) event.currentTarget.currentTime = -previewOffsetMs / 1000;
+            if (previewOffsetMs > 0) event.currentTarget.currentTime = previewOffsetMs / 1000;
             if (accompanimentRef.current && accompanimentUrl) {
-              accompanimentRef.current.currentTime = selectionStart + Math.max(0, previewOffsetMs / 1000);
+              accompanimentRef.current.currentTime = selectionStart + Math.max(0, -previewOffsetMs / 1000);
               accompanimentRef.current.volume = accompanimentVolume;
               void accompanimentRef.current.play().catch(() => undefined);
             }
@@ -572,7 +578,7 @@ export function RecordingStudio({
             value={accompanimentVolume} onChange={(event) => setAccompanimentVolume(Number(event.target.value))} /></label>
           <label><span>人声音量</span><input type="range" min="0" max="1" step="0.01"
             value={previewVoiceVolume} onChange={(event) => setPreviewVoiceVolume(Number(event.target.value))} /></label>
-          <label><span>人声延迟 {previewOffsetMs > 0 ? "+" : ""}{previewOffsetMs} ms</span>
+          <label><span>人声时间 {previewOffsetMs > 0 ? "+" : ""}{previewOffsetMs} ms（正值提前）</span>
             <input type="range" min="-1000" max="1000" step="10" value={previewOffsetMs}
               onChange={(event) => setPreviewOffsetMs(Number(event.target.value))} /></label>
         </div>
@@ -607,7 +613,9 @@ export function RecordingStudio({
       {accompanimentUrl
         ? <audio ref={accompanimentRef} src={accompanimentUrl} preload="metadata"
             onTimeUpdate={(event) => {
-              if (state === "recording") onTimelineChange?.(event.currentTarget.currentTime);
+              if (state === "recording" || playingLabel) {
+                onTimelineChange?.(event.currentTarget.currentTime);
+              }
             }} />
         : <p className="recording-warning">当前 Profile 没有 Demucs 伴奏资产，可录音但无法混合伴奏。</p>}
 
@@ -672,7 +680,7 @@ export function RecordingStudio({
             </button>
           </div>
           {editingTakeId === take.takeId && <div className="take-offset-editor">
-            <label><span>人声延迟 {(take.manualOffsetMs ?? 0) > 0 ? "+" : ""}{take.manualOffsetMs ?? 0} ms</span>
+            <label><span>人声时间 {(take.manualOffsetMs ?? 0) > 0 ? "+" : ""}{take.manualOffsetMs ?? 0} ms（正值提前）</span>
               <input type="range" min="-1000" max="1000" step="10" value={take.manualOffsetMs ?? 0}
                 onChange={(event) => {
                   const manualOffsetMs = Number(event.target.value);

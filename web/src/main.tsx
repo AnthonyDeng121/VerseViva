@@ -121,7 +121,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
-  const [pageMode, setPageMode] = useState<"upload" | "sing">("upload");
+  const [pageMode, setPageMode] = useState<"upload" | "technique" | "sing">("upload");
   const [cachedSongs, setCachedSongs] = useState<CachedSong[]>(() => {
     try { return JSON.parse(window.localStorage.getItem(CACHED_SONGS_KEY) ?? "[]") as CachedSong[]; }
     catch { return []; }
@@ -158,7 +158,7 @@ function App() {
           const restoredProfile = (await profileResponse.json()) as SongProfile;
           if (!cancelled) {
             setProfile(restoredProfile);
-            setPageMode("sing");
+            setPageMode("technique");
             rememberSong({ songId: restoredProfile.songId, title: restoredProfile.title,
               artist: restoredJob.artist });
           }
@@ -190,7 +190,7 @@ function App() {
           const profileResponse = await fetch(`/api/v1/songs/${nextJob.song_id}`);
           if (!profileResponse.ok) throw new Error("读取歌曲标注失败");
           setProfile((await profileResponse.json()) as SongProfile);
-          setPageMode("sing");
+          setPageMode("technique");
           rememberSong({ songId: nextJob.song_id, title: nextJob.title, artist: nextJob.artist });
         } else if (nextJob.status === "failed") {
           setError(nextJob.error?.message ?? "歌曲分析失败");
@@ -252,7 +252,7 @@ function App() {
       if (!response.ok) throw new Error("Hero 歌曲缓存尚未生成");
       setProfile((await response.json()) as SongProfile);
       setJob(null);
-      setPageMode("sing");
+      setPageMode("technique");
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "读取叠唱 Hero 失败");
     }
@@ -275,6 +275,8 @@ function App() {
         <div className="page-mode-switch" role="group" aria-label="功能切换">
           <button type="button" className={pageMode === "upload" ? "active" : ""}
             onClick={() => setPageMode("upload")}>选择歌曲</button>
+          <button type="button" className={pageMode === "technique" ? "active" : ""}
+            onClick={() => setPageMode("technique")} disabled={!profile}>技巧分析</button>
           <button type="button" className={pageMode === "sing" ? "active" : ""}
             onClick={() => setPageMode("sing")} disabled={!profile}>演唱</button>
         </div>
@@ -387,8 +389,9 @@ function App() {
 
       {error && !job?.error && <p className="error-card">{error}</p>}
 
-      {profile && pageMode === "sing" && (
-        <ProfileView profile={profile} selectedHint={selectedHint} onSelect={setSelectedHint} />
+      {profile && pageMode !== "upload" && (
+        <ProfileView profile={profile} selectedHint={selectedHint} onSelect={setSelectedHint}
+          mode={pageMode} onModeChange={setPageMode} />
       )}
     </main>
   );
@@ -398,10 +401,14 @@ function ProfileView({
   profile,
   selectedHint,
   onSelect,
+  mode,
+  onModeChange,
 }: {
   profile: SongProfile;
   selectedHint: LanguageHint | null;
   onSelect: (hint: LanguageHint) => void;
+  mode: "technique" | "sing";
+  onModeChange: (mode: "upload" | "technique" | "sing") => void;
 }) {
   const [currentTime, setCurrentTime] = useState(0);
   const [lyricsMode, setLyricsMode] = useState<"standard" | "layers">("standard");
@@ -484,7 +491,7 @@ function ProfileView({
         )}
       </div>
 
-      <div className="learning-playback-controls" aria-label="听句控制">
+      {mode === "technique" && <><div className="learning-playback-controls" aria-label="听句控制">
         <div className="speed-switch" role="group" aria-label="播放速度">
           <button className={playbackRate === 1 ? "active" : ""} type="button" onClick={() => setPlaybackRate(1)}>原速</button>
           <button className={playbackRate === 0.75 ? "active" : ""} type="button" onClick={() => setPlaybackRate(0.75)}>0.75×</button>
@@ -493,20 +500,16 @@ function ProfileView({
           type="button" disabled={profile.sentences.length === 0} onClick={toggleSentenceLoop}>
           {loopSentence ? "停止循环" : "循环当前句"}
         </button>
-        <span>点击歌词可跳到该句</span>
+        <span>点击歌词跳转</span>
       </div>
 
       <div className="legend" aria-label="标记说明">
-        <span><b>×</b>：吞音（不发音）</span>
-        <span><b>‿</b>：连读（二合一）</span>
-        <span><b>└┘</b>：连读（读改音）</span>
+        <span><b>×</b>吞音(不发音)</span>
+        <span><b>‿</b>连读(二合一)</span>
+        <span><b>└┘</b>连读(改音)</span>
       </div>
 
       <div className="lyrics-stage-heading">
-        <div>
-          <p className="eyebrow">SYNCED LYRICS</p>
-          <h3>歌曲学习歌词</h3>
-        </div>
         {profile.vocalParts.length > 0 && (
           <div className="lyrics-mode-switch" role="group" aria-label="歌词视图">
             <button
@@ -544,15 +547,20 @@ function ProfileView({
 
       {selectedHint && <HintDetail sentence={profile.sentences.find((sentence) =>
         sentence.languageHints.some((hint) => hint.id === selectedHint.id))}
-        initialHintId={selectedHint.id} />}
+        initialHintId={selectedHint.id} />}</>}
 
+      {mode === "sing" && <SingingLyrics currentTime={currentTime} sentences={profile.sentences}
+        vocalParts={profile.vocalParts} />}
+      <div className={mode === "sing" ? "recording-page" : "recording-page hidden"}>
       <RecordingStudio
         songId={profile.songId}
         sentences={profile.sentences}
         vocalParts={profile.vocalParts}
         accompanimentUrl={profile.audio.accompanimentUrl}
         onTimelineChange={setCurrentTime}
-      />
+        onRecordingStart={() => onModeChange("technique")}
+        onRecordingFinished={() => onModeChange("sing")}
+      /></div>
 
     </section>
   );
@@ -560,6 +568,22 @@ function ProfileView({
 
 function displaySongTitle(title: string) {
   return title.replace(/\s*[—-]\s*Language\s*&\s*Vocal\s*Layers\s*$/i, "").trim();
+}
+
+function SingingLyrics({ currentTime, sentences, vocalParts }: {
+  currentTime: number; sentences: SongSentence[]; vocalParts: VocalPart[];
+}) {
+  const activeSentence = sentences.find((sentence) => currentTime >= sentence.startSeconds
+    && currentTime < sentence.endSeconds);
+  const activeParts = vocalParts.filter((part) => currentTime >= part.startSeconds
+    && currentTime < part.endSeconds);
+  const primary = activeParts.find((part) => part.lane === "primary");
+  const secondary = activeParts.find((part) => part.lane === "secondary");
+  return <section className="singing-focus" aria-live="polite">
+    <p className="singing-primary">{primary ? withoutParenthetical(primary.lyrics)
+      : activeSentence?.lyrics ?? "选择一条音轨开始编辑"}</p>
+    {secondary && <p className="singing-secondary">{secondary.lyrics}</p>}
+  </section>;
 }
 
 function AudioPlayer({
@@ -787,16 +811,16 @@ function AnnotatedLine({
       if (mark.symbol === "×") {
         const text = sentence.lyrics.toLowerCase();
         const index = mark.startCharIndex;
-        if (text[index] === "k" && text[index + 1] === "e"
-          && !/[a-z]/.test(text[index + 2] ?? "")) {
-          const next = marksAt.get(index + 1) ?? [];
-          next.push({ mark: { ...mark, startCharIndex: index + 1, endCharIndex: index + 1 }, hint });
-          marksAt.set(index + 1, next);
-        } else if (text[index] === "e" && text[index - 1] === "k"
+        if (text[index] === "e" && /[a-z]/.test(text[index - 1] ?? "")
           && !/[a-z]/.test(text[index + 1] ?? "")) {
           const previous = marksAt.get(index - 1) ?? [];
           previous.push({ mark: { ...mark, startCharIndex: index - 1, endCharIndex: index - 1 }, hint });
           marksAt.set(index - 1, previous);
+        } else if (/[a-z]/.test(text[index] ?? "") && text[index + 1] === "e"
+          && !/[a-z]/.test(text[index + 2] ?? "")) {
+          const next = marksAt.get(index + 1) ?? [];
+          next.push({ mark: { ...mark, startCharIndex: index + 1, endCharIndex: index + 1 }, hint });
+          marksAt.set(index + 1, next);
         }
       }
     }
@@ -895,7 +919,8 @@ function HintDetail({ sentence, initialHintId }: {
       <button className="hint-arrow" type="button" aria-label="上一个语言点"
         disabled={count < 2} onClick={() => setIndex((index - 1 + count) % count)}>‹</button>
       <div className="hint-content">
-        <div className="detail-heading"><strong>{technique}</strong><span>{index + 1}/{count}</span></div>
+        <div className="detail-heading"><TechniqueDisplay value={technique} symbol={displayMark} />
+          <span>{index + 1}/{count}</span></div>
         <p className="action"><b>建议：</b>{detail.action}</p>
         <p><b>专业分析：</b>{detail.explanation}</p>
       </div>
@@ -904,6 +929,24 @@ function HintDetail({ sentence, initialHintId }: {
       {hint.evidence.needsHumanReview && <p className="review-note">这条候选需要人工复核。</p>}
     </aside>
   );
+}
+
+function TechniqueDisplay({ value, symbol }: { value: string; symbol: string }) {
+  const parts = value.split(symbol);
+  const left = parts[0] ?? "";
+  const right = parts[1] ?? "";
+  const before = Array.from(left);
+  const after = Array.from(right);
+  const markClass = symbol === "×" ? "elision" : symbol === "‿" ? "boundary link" : "boundary merge";
+  return <strong className="technique-display">
+    {before.map((character, index) => <span className="lyric-character" key={`before-${index}`}>
+      {character}{(index === before.length - 1 || (symbol === "×"
+        && before.at(-1)?.toLowerCase() === "e" && index === before.length - 2))
+        && <i className={`character-mark below ${markClass}`}>
+        {symbol}</i>}
+    </span>)}
+    {after.map((character, index) => <span className="lyric-character" key={`after-${index}`}>{character}</span>)}
+  </strong>;
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

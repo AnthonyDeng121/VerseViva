@@ -8,6 +8,8 @@ from server.models.practice import (
     PracticeAttempt,
     PracticeStatus,
 )
+from server.services.practice.models import AcousticFinding, FindingResult
+from server.services.practice.service import _has_audible_judgment
 from server.storage.practice_store import PracticeStore
 
 
@@ -81,3 +83,15 @@ def test_attempt_payload_round_trips_through_sqlite(tmp_path):
 
     assert store.get_for_take(original.take_id) == original
     assert store.list_for_session("session_test", "song_test") == [original]
+
+
+def test_silent_or_uncertain_recording_cannot_be_treated_as_success() -> None:
+    uncertain = AcousticFinding(
+        hint_id="hint_1",
+        result=FindingResult.uncertain,
+        confidence=0.2,
+        audible_evidence=[],
+    )
+
+    assert _has_audible_judgment([]) is False
+    assert _has_audible_judgment([uncertain]) is False

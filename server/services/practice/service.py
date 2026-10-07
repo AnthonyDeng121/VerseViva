@@ -17,7 +17,7 @@ from server.services.practice.analyzer import (
     secondary_target_id,
 )
 from server.services.practice.coach import GlmPracticeCoach
-from server.services.practice.models import FindingResult
+from server.services.practice.models import AcousticFinding, FindingResult
 from server.storage.practice_store import PracticeStore
 
 
@@ -124,6 +124,19 @@ async def analyze_practice_take(
         store.save(attempt)
         return attempt
 
+    # A usable singing take must contain at least one audible target judgement.
+    # Empty findings previously fell through to "no issues" and were incorrectly
+    # presented as a successful attempt, including for silent recordings.
+    if not _has_audible_judgment(batch.findings):
+        attempt = PracticeAttempt(
+            **base,
+            status=PracticeStatus.insufficient_data,
+            comparison=_comparison(previous, []),
+            insufficient_reason="未听到足够的演唱内容，无法判断语言动作，请重新录制。",
+        )
+        store.save(attempt)
+        return attempt
+
     issues = (
         _build_secondary_issues(
             secondary_part,
@@ -155,6 +168,10 @@ async def analyze_practice_take(
     )
     store.save(attempt)
     return attempt
+
+
+def _has_audible_judgment(findings: list[AcousticFinding]) -> bool:
+    return any(item.result != FindingResult.uncertain for item in findings)
 
 
 def _build_issues(
