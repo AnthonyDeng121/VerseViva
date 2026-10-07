@@ -55,7 +55,13 @@ def _load_cmudict() -> dict[str, list[list[str]]]:
 def generate_language_candidates(
     sentences: list[SongSentence],
     lexicon: PronunciationLexicon | None = None,
+    language: str | None = None,
 ) -> list[LanguageCandidate]:
+    normalized_language = (language or "").lower().split("-")[0]
+    if normalized_language == "ko":
+        return _generate_korean_candidates(sentences)
+    if normalized_language == "ja":
+        return _generate_japanese_candidates(sentences)
     lexicon = lexicon or CmuPronunciationLexicon()
     candidates: list[LanguageCandidate] = []
     for line_index, sentence in enumerate(sentences):
@@ -95,6 +101,145 @@ def generate_language_candidates(
                 )
             )
     return candidates
+
+
+def _generate_korean_candidates(sentences: list[SongSentence]) -> list[LanguageCandidate]:
+    candidates: list[LanguageCandidate] = []
+    for line_index, sentence in enumerate(sentences):
+        if not sentence.pronunciation or not sentence.words:
+            continue
+        original_words = re.findall(r"[\uac00-\ud7a3]", sentence.lyrics)
+        roman_words = [_romanize_hangul_unit(char) for char in original_words]
+        count = len(original_words)
+        if count < 2:
+            continue
+        roman_cursor = 0
+        spans: list[tuple[int, int]] = []
+        for word in roman_words:
+            start = sentence.pronunciation.text.find(word, roman_cursor)
+            spans.append((start, start + len(word) - 1))
+            roman_cursor = start + len(word)
+        for index in range(count - 1):
+            left_char = original_words[index][-1]
+            right_char = original_words[index + 1][0]
+            left_final = (ord(left_char) - 0xAC00) % 28
+            right_initial = (ord(right_char) - 0xAC00) // 588
+            if left_final == 0:
+                continue
+            left_roman = roman_words[index]
+            right_roman = roman_words[index + 1]
+            if right_initial == 11:  # silent ㅇ before a vowel: 받침 carries over
+                phenomenon = "liaison"
+                boundary = BoundaryKind.consonant_to_vowel
+                output = _korean_liaison_display(left_roman, right_roman)
+                action = "不要在前一个词后停顿，把词尾辅音直接带到后一个元音。"
+            elif left_final in {1, 2, 3, 7, 19, 20, 22, 23, 24, 25, 27}:
+                phenomenon = "final_stop_unreleased"
+                boundary = BoundaryKind.stop_before_consonant
+                output = f"{left_roman} {right_roman}"
+                action = "完成前一个词的收尾位置，但不要把尾音单独弹出来，直接进入后词。"
+            else:
+                continue
+            start_seconds, end_seconds = _candidate_time(sentence, index, count)
+            candidates.append(
+                LanguageCandidate(
+                    id=f"candidate_{line_index:03d}_{index:03d}",
+                    sentence_id=sentence.id,
+                    line_index=line_index,
+                    start_word_index=min(index, len(sentence.words) - 1),
+                    end_word_index=min(index + 1, len(sentence.words) - 1),
+                    target_span=f"{left_roman} {right_roman}",
+                    left_word=left_roman,
+                    right_word=right_roman,
+                    left_segment=left_roman[-1],
+                    right_segment=right_roman[0],
+                    boundary_kind=boundary,
+                    start_seconds=start_seconds,
+                    end_seconds=end_seconds,
+                    left_end_char_index=spans[index][1],
+                    right_start_char_index=spans[index + 1][0],
+                    language="ko",
+                    phenomenon=phenomenon,
+                    canonical_pronunciation=f"{left_roman} {right_roman}",
+                    observed_pronunciation=output,
+                    learner_action=action,
+                )
+            )
+    return candidates
+
+
+def _generate_japanese_candidates(sentences: list[SongSentence]) -> list[LanguageCandidate]:
+    candidates: list[LanguageCandidate] = []
+    for line_index, sentence in enumerate(sentences):
+        if not sentence.pronunciation or not sentence.words:
+            continue
+        roman = sentence.pronunciation.text
+        words = roman.split()
+        cursor = 0
+        spans: list[tuple[int, int]] = []
+        for word in words:
+            start = roman.find(word, cursor)
+            spans.append((start, start + len(word) - 1))
+            cursor = start + len(word)
+        for index, (left, right) in enumerate(zip(words, words[1:], strict=False)):
+            if not left.endswith("n") or not right:
+                continue
+            first = right[0].lower()
+            if first in "bmp":
+                heard = f"{left[:-1]}m {right}"
+                action = "不要单独读一个“恩”；闭住嘴唇保持鼻音，再进入后面的辅音。"
+            elif first in "kg":
+                heard = f"{left[:-1]}ng {right}"
+                action = "不要单独读一个“恩”；把鼻音位置放到口腔后部，再进入后面的辅音。"
+            else:
+                continue
+            start_seconds, end_seconds = _candidate_time(sentence, index, len(words))
+            candidates.append(
+                LanguageCandidate(
+                    id=f"candidate_{line_index:03d}_{index:03d}",
+                    sentence_id=sentence.id,
+                    line_index=line_index,
+                    start_word_index=min(index, len(sentence.words) - 1),
+                    end_word_index=min(index + 1, len(sentence.words) - 1),
+                    target_span=f"{left} {right}",
+                    left_word=left,
+                    right_word=right,
+                    left_segment="n",
+                    right_segment=first,
+                    boundary_kind=BoundaryKind.other_boundary,
+                    start_seconds=start_seconds,
+                    end_seconds=end_seconds,
+                    left_end_char_index=spans[index][1],
+                    right_start_char_index=spans[index + 1][0],
+                    language="ja",
+                    phenomenon="moraic_nasal_assimilation",
+                    canonical_pronunciation=f"{left} {right}",
+                    observed_pronunciation=heard,
+                    learner_action=action,
+                )
+            )
+    return candidates
+
+
+def _candidate_time(sentence: SongSentence, index: int, unit_count: int) -> tuple[float, float]:
+    if len(sentence.words) >= unit_count:
+        left = sentence.words[min(index, len(sentence.words) - 1)]
+        right = sentence.words[min(index + 1, len(sentence.words) - 1)]
+        return left.start_seconds, right.end_seconds
+    width = (sentence.end_seconds - sentence.start_seconds) / max(1, unit_count)
+    return sentence.start_seconds + width * index, sentence.start_seconds + width * (index + 2)
+
+
+def _korean_liaison_display(left: str, right: str) -> str:
+    endings = ("ng", "ch", "kk", "ks", "nj", "nh", "lk", "lm", "lb", "ls", "lt", "lp", "lh", "ps")
+    final = next((ending for ending in endings if left.endswith(ending)), left[-1:])
+    return f"{left[:-len(final)]} {final}{right}"
+
+
+def _romanize_hangul_unit(char: str) -> str:
+    from server.services.language.pronunciation import romanize_korean
+
+    return romanize_korean(char)
 
 
 def _parenthetical_lane(lyrics: str, char_index: int) -> str:

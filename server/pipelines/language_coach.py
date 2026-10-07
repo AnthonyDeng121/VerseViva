@@ -187,6 +187,11 @@ continuous_without_change 或 uncertain。漏标不是允许的省略方式。
   audibleEvidence 必须明确写出实际听到的“连续摩擦/破擦”、“词尾音未出现”或“两次独立起音”；
   无法听清时必须返回 uncertain，不能用语音经验补全。
 - 没听见爆破不足以区分删除与未释放，统一使用 not_audibly_released。
+- 韩语候选必须以韩文原词和候选中的辅助读音共同定位。罗马音不是声学真值：
+  词尾辅音没有独立释放时可返回 not_audibly_released；词尾辅音实际移入后一个
+  元音起音时返回 linked_or_resegmented。不得因为罗马字写成 g/k、d/t 就自行判定音变。
+- 日语候选必须核查本次演唱中实际可听见的鼻音位置或音段合并。规范假名读法只能
+  产生候选，不能单独作为原唱已经发生变化的证据。
 - 不得编造波形、频谱、舌位、唇形或声门动作。audibleEvidence 只写当前音频中实际可听见的现象。
 - weak 必须 needsHumanReview=true。伴奏、混响、叠唱或分离伪影影响判断时，
   使用 moderate/weak 或 uncertain。

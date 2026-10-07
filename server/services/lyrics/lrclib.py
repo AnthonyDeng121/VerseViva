@@ -106,8 +106,10 @@ def _similarity(left: str | None, right: str | None) -> float:
 
 def _normalize(value: str) -> str:
     value = QUALIFIER_PATTERN.sub("", value)
-    value = unicodedata.normalize("NFKD", value).casefold()
-    return " ".join(re.findall(r"[a-z0-9]+", value))
+    value = unicodedata.normalize("NFKC", value).casefold()
+    # Keep letters and numbers from every script. The old ASCII-only expression
+    # reduced Japanese and Korean titles to an empty string.
+    return " ".join(re.findall(r"[^\W_]+", value, flags=re.UNICODE))
 
 
 def _number(value: object) -> float | None:

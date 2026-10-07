@@ -4,7 +4,9 @@ from difflib import SequenceMatcher
 
 from server.models.song import SongSentence, WordTiming
 
-WORD_PATTERN = re.compile(r"[A-Za-z]+(?:['’][A-Za-z]+)*")
+WORD_PATTERN = re.compile(
+    r"[A-Za-z]+(?:['’][A-Za-z]+)*|[\uac00-\ud7a3]+|[\u3040-\u30ff\u3400-\u9fff]"
+)
 PARENTHETICAL = re.compile(r"\([^()]*\)")
 MIN_FUZZY_SCORE = 0.68
 MIN_ASR_COVERAGE = 0.60
@@ -24,11 +26,13 @@ def reconcile_provided_lyrics(
     """Use online lyrics as text truth and WhisperX only as timing evidence."""
 
     lines = [line.strip() for line in provided_lyrics.splitlines() if line.strip()]
-    line_tokens = [WORD_PATTERN.findall(line) for line in lines]
+    line_tokens = [_tokenize(line) for line in lines]
     if not lines or any(not tokens for tokens in line_tokens):
         return aligned_sentences, False
 
-    aligned_words = [word for sentence in aligned_sentences for word in sentence.words]
+    aligned_words = _expand_japanese_words(
+        [word for sentence in aligned_sentences for word in sentence.words], provided_lyrics
+    )
     if not aligned_words:
         return aligned_sentences, False
 
@@ -43,7 +47,7 @@ def reconcile_provided_lyrics(
     matching_tokens = [
         _LyricsToken(text=token, line_index=line_index)
         for line_index, line in enumerate(lines)
-        for token in WORD_PATTERN.findall(PARENTHETICAL.sub("", line))
+        for token in _tokenize(PARENTHETICAL.sub("", line))
     ]
     match = _find_best_window(
         [_normalize(token.text) for token in matching_tokens],
@@ -79,7 +83,9 @@ def reconcile_synced_lyrics_excerpt(
             parsed.append(
                 (int(match.group(1)) * 60 + float(match.group(2)), match.group(3).strip())
             )
-    aligned_words = [word for sentence in aligned_sentences for word in sentence.words]
+    aligned_words = _expand_japanese_words(
+        [word for sentence in aligned_sentences for word in sentence.words], synced_lyrics
+    )
     if len(parsed) < 2 or len(aligned_words) < 3:
         return aligned_sentences, False
 
@@ -98,7 +104,7 @@ def reconcile_synced_lyrics_excerpt(
             text = "\n".join(line for _, line in parsed[start:end])
             candidate = [
                 _normalize(token)
-                for token in WORD_PATTERN.findall(PARENTHETICAL.sub("", text))
+                for token in _tokenize(PARENTHETICAL.sub("", text))
             ]
             if not candidate:
                 continue
@@ -118,8 +124,10 @@ def _reconcile_selected_lines(
     lyrics: str, aligned_sentences: list[SongSentence]
 ) -> tuple[list[SongSentence], bool]:
     lines = [line.strip() for line in lyrics.splitlines() if line.strip()]
-    line_tokens = [WORD_PATTERN.findall(line) for line in lines]
-    aligned_words = [word for sentence in aligned_sentences for word in sentence.words]
+    line_tokens = [_tokenize(line) for line in lines]
+    aligned_words = _expand_japanese_words(
+        [word for sentence in aligned_sentences for word in sentence.words], lyrics
+    )
     if not lines or any(not tokens for tokens in line_tokens) or not aligned_words:
         return aligned_sentences, False
     selected = [_LyricsToken(token, line_index) for line_index, tokens in enumerate(line_tokens)
@@ -279,6 +287,34 @@ def _build_sentences(
 
 def _normalize(word: str) -> str:
     return word.lower().replace("’", "").replace("'", "")
+
+
+def _tokenize(value: str) -> list[str]:
+    return WORD_PATTERN.findall(value)
+
+
+def _expand_japanese_words(words: list[WordTiming], lyrics: str) -> list[WordTiming]:
+    if not re.search(r"[\u3040-\u30ff\u3400-\u9fff]", lyrics):
+        return words
+    expanded: list[WordTiming] = []
+    for word in words:
+        units = re.findall(r"[\u3040-\u30ff\u3400-\u9fff]|[A-Za-z]+", word.text)
+        if len(units) <= 1:
+            expanded.append(word)
+            continue
+        width = (word.end_seconds - word.start_seconds) / len(units)
+        for index, unit in enumerate(units):
+            expanded.append(
+                word.model_copy(
+                    update={
+                        "id": f"{word.id}_{index}",
+                        "text": unit,
+                        "start_seconds": word.start_seconds + width * index,
+                        "end_seconds": word.start_seconds + width * (index + 1),
+                    }
+                )
+            )
+    return expanded
 
 
 def _find_contiguous_subsequence(haystack: list[str], needle: list[str]) -> int | None:

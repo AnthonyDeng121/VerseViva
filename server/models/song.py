@@ -127,6 +127,14 @@ class LocalizedHintDetail(SongProfileModel):
     action: str = Field(min_length=1)
 
 
+class PronunciationGuide(SongProfileModel):
+    """A learner-facing reading kept separate from the source lyric text."""
+
+    text: str = Field(min_length=1)
+    scheme: str = Field(min_length=1)
+    source: str = Field(min_length=1)
+
+
 class SegmentTransformation(SongProfileModel):
     """A language-independent change from expected to observed sound segments."""
 
@@ -164,6 +172,8 @@ class LanguageHint(SongProfileModel):
     confidence: float = Field(ge=0, le=1)
     marks: list[CharacterMark] = Field(min_length=1)
     details: list[LocalizedHintDetail] = Field(default_factory=list)
+    canonical_pronunciation: str | None = None
+    observed_pronunciation: str | None = None
     evidence: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -257,6 +267,7 @@ class SongSentence(SongProfileModel):
     start_seconds: float = Field(ge=0)
     end_seconds: float = Field(ge=0)
     lyrics: str
+    pronunciation: PronunciationGuide | None = None
     words: list[WordTiming] = Field(default_factory=list)
     language_hints: list[LanguageHint] = Field(default_factory=list)
     vocal_features: VocalFeatures = Field(default_factory=VocalFeatures)
@@ -268,8 +279,11 @@ class SongSentence(SongProfileModel):
         for hint in self.language_hints:
             if hint.end_word_index >= len(self.words):
                 raise ValueError("language hint word indexes must point to sentence words")
-            if any(mark.end_char_index >= len(self.lyrics) for mark in hint.marks):
-                raise ValueError("language hint character marks must point to sentence lyrics")
+            mark_text = self.pronunciation.text if self.pronunciation else self.lyrics
+            if any(mark.end_char_index >= len(mark_text) for mark in hint.marks):
+                raise ValueError(
+                    "language hint character marks must point to sentence lyrics or pronunciation"
+                )
             if hint.start_seconds < self.start_seconds or hint.end_seconds > self.end_seconds:
                 raise ValueError("language hint timestamps must stay inside the sentence")
         return self

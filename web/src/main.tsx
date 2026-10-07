@@ -33,6 +33,8 @@ type LanguageHint = {
   source: string;
   marks: CharacterMark[];
   details: { locale: string; explanation: string; action: string }[];
+  canonicalPronunciation?: string | null;
+  observedPronunciation?: string | null;
   evidence: {
     evidenceStrength?: string;
     needsHumanReview?: boolean;
@@ -45,6 +47,11 @@ type SongSentence = {
   startSeconds: number;
   endSeconds: number;
   lyrics: string;
+  pronunciation?: {
+    text: string;
+    scheme: string;
+    source: string;
+  } | null;
   words: {
     id: string;
     text: string;
@@ -75,6 +82,7 @@ type VocalPart = {
 type SongProfile = {
   songId: string;
   title: string;
+  language?: string | null;
   audio: {
     sourceUrl: string;
     vocalUrl?: string | null;
@@ -108,6 +116,8 @@ const STAGE_LABELS: Record<string, string> = {
 const HERO_SONGS = [
   { id: "song_00000000000000000000000000000002", label: "Juno" },
   { id: "song_00000000000000000000000000000003", label: "get him back!" },
+  { id: "song_00000000000000000000000000000004", label: "AS IF IT'S YOUR LAST · 한국어" },
+  { id: "song_00000000000000000000000000000005", label: "動物園は大変だ · 日本語" },
 ] as const;
 
 const ACTIVE_JOB_KEY = "verseviva.activeJobId";
@@ -270,7 +280,7 @@ function App() {
     <main>
       <header className="hero">
         <p className="eyebrow">VERSEVIVA · 声声不息</p>
-        <h1>教你学唱英文歌，并支持叠唱音轨</h1>
+        <h1>教你学唱外语歌，并支持叠唱音轨</h1>
         <p className="intro">
           点击上传歌曲文件，输入歌曲名 + 人名，系统自动解析歌词教学并支持多轨叠唱
         </p>
@@ -826,6 +836,7 @@ function AnnotatedLine({
   onSeek: (time: number) => void;
   compact?: boolean;
 }) {
+  const annotationText = sentence.pronunciation?.text ?? sentence.lyrics;
   const marksAt = new Map<number, { mark: CharacterMark; hint: LanguageHint }[]>();
   const visibleHints = sentence.languageHints.filter(
     (hint) => !crossesParentheticalLane(sentence, hint),
@@ -836,7 +847,7 @@ function AnnotatedLine({
       values.push({ mark, hint });
       marksAt.set(mark.startCharIndex, values);
       if (mark.symbol === "×") {
-        const text = sentence.lyrics.toLowerCase();
+        const text = annotationText.toLowerCase();
         const index = mark.startCharIndex;
         if (text[index] === "e" && /[a-z]/.test(text[index - 1] ?? "")
           && !/[a-z]/.test(text[index + 1] ?? "")) {
@@ -852,7 +863,7 @@ function AnnotatedLine({
       }
     }
   }
-  const wordRanges = findWordRanges(sentence);
+  const wordRanges = sentence.pronunciation ? [] : findWordRanges(sentence);
   const activeWord = wordRanges.find(
     ({ word }) => currentTime >= word.startSeconds && currentTime < word.endSeconds,
   );
@@ -872,7 +883,9 @@ function AnnotatedLine({
       }}
       title="跳到这句"
     >
-      {Array.from(sentence.lyrics).map((character, index) => (
+      {sentence.pronunciation && <span className="lyric-original">{sentence.lyrics}</span>}
+      <span className={sentence.pronunciation ? "lyric-pronunciation" : "lyric-original-only"}>
+      {Array.from(annotationText).map((character, index) => (
         <React.Fragment key={`${sentence.id}-${index}`}>
           <span className={`lyric-character ${
             activeWord && index >= activeWord.start && index <= activeWord.end ? "active-word" : ""
@@ -897,6 +910,7 @@ function AnnotatedLine({
           </span>
         </React.Fragment>
       ))}
+      </span>
     </p>
   );
 }
@@ -925,7 +939,8 @@ function normalizeWord(value: string) {
 function crossesParentheticalLane(sentence: SongSentence, hint: LanguageHint) {
   if (hint.startWordIndex === undefined || hint.endWordIndex === undefined
     || hint.startWordIndex === hint.endWordIndex) return false;
-  const words = Array.from(sentence.lyrics.matchAll(/[A-Za-z]+(?:['’][A-Za-z]+)*/g));
+  const annotationText = sentence.pronunciation?.text ?? sentence.lyrics;
+  const words = Array.from(annotationText.matchAll(/[A-Za-z]+(?:['’][A-Za-z]+)*/g));
   const start = words[hint.startWordIndex]?.index;
   const end = words[hint.endWordIndex]?.index;
   if (start === undefined || end === undefined) return false;
@@ -963,6 +978,11 @@ function HintDetail({ sentence, initialHintId }: {
       <div className="hint-content">
         <div className="detail-heading"><TechniqueDisplay value={technique} symbol={displayMark} />
           <span>{index + 1}/{count}</span></div>
+        {sentence.pronunciation && <div className="pronunciation-breakdown">
+          <p><b>原文：</b>{sentence.lyrics}</p>
+          <p><b>辅助读音：</b>{hint.canonicalPronunciation ?? sentence.pronunciation.text}</p>
+          {hint.observedPronunciation && <p><b>演唱提示：</b>{hint.observedPronunciation}</p>}
+        </div>}
         <p className="action"><b>建议：</b>{detail.action}</p>
         <p><b>专业分析：</b>{detail.explanation}</p>
       </div>

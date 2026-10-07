@@ -1,3 +1,4 @@
+import hashlib
 import json
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -26,8 +27,12 @@ from server.pipelines.contracts import (
 from server.pipelines.demucs import DemucsAdapter
 from server.pipelines.language_coach import DisabledLanguageCoach, GeminiLanguageCoach
 from server.pipelines.whisperx import WhisperXAdapter, convert_whisperx_json
-from server.services.language import apply_language_observations, generate_language_candidates
-from server.services.language.models import LanguageObservationBatch
+from server.services.language import (
+    add_pronunciation_guides,
+    apply_language_observations,
+    generate_language_candidates,
+)
+from server.services.language.models import LanguageCandidate, LanguageObservationBatch
 from server.services.lyrics import DisabledLyricsProvider, LrclibLyricsProvider
 from server.services.lyrics.models import LyricsLookupResult
 from server.services.lyrics_reconciliation import (
@@ -95,6 +100,13 @@ class SongAnalysisPipeline:
             separation = await self.separator.separate(source, job_dir / "separation")
 
             provided_lyrics_path = job_dir / "input" / "lyrics.txt"
+            if provided_lyrics_path.is_file():
+                job.warnings = [
+                    warning
+                    for warning in job.warnings
+                    if warning.stage != AnalysisStage.fetching_lyrics
+                ]
+                self.job_store.save(job)
             lyrics_lookup = _load_lyrics_lookup(job_dir / "lyrics" / "lookup.json")
             if not provided_lyrics_path.is_file():
                 self._advance(job, AnalysisStage.fetching_lyrics)
@@ -121,8 +133,17 @@ class SongAnalysisPipeline:
                         self.job_store.save(job)
 
             self._advance(job, AnalysisStage.aligning_lyrics)
+            alignment_language_hint = _detect_lyrics_language(
+                provided_lyrics_path.read_text(encoding="utf-8")
+                if provided_lyrics_path.is_file()
+                else lyrics_lookup.plain_lyrics
+                if lyrics_lookup is not None
+                else ""
+            )
             alignment_artifacts = await self.lyrics_aligner.align(
-                separation.vocals, job_dir / "alignment"
+                separation.vocals,
+                job_dir / "alignment",
+                language=alignment_language_hint,
             )
             alignment = convert_whisperx_json(alignment_artifacts.alignment_json)
 
@@ -202,9 +223,18 @@ class SongAnalysisPipeline:
                     sentences=sentences,
                 )
 
-            candidates = generate_language_candidates(sentences)
+            profile_language = _detect_lyrics_language(lyrics) or alignment.language
+            sentences = add_pronunciation_guides(sentences, profile_language)
+            candidates = generate_language_candidates(
+                sentences, language=profile_language
+            )
             self._advance(job, AnalysisStage.analyzing_language)
-            observations_path = job_dir / "language" / "observations-v3.json"
+            observation_fingerprint = _language_cache_fingerprint(lyrics, candidates)
+            observations_path = (
+                job_dir
+                / "language"
+                / f"observations-v6-{observation_fingerprint}.json"
+            )
             observations = _load_observations(observations_path)
             if observations is None:
                 observations = await self.language_coach.analyze(
@@ -233,7 +263,7 @@ class SongAnalysisPipeline:
                 song_id=job.song_id,
                 title=job.title,
                 duration_seconds=duration,
-                language=alignment.language,
+                language=profile_language,
                 audio=AudioAssets(
                     source_url=f"/api/v1/songs/{job.song_id}/audio/source",
                     vocal_url=f"/api/v1/songs/{job.song_id}/audio/vocals",
@@ -369,6 +399,12 @@ def _load_lyrics_lookup(path: Path) -> LyricsLookupResult | None:
 def _load_observations(path: Path) -> LanguageObservationBatch | None:
     if not path.is_file():
         return None
+    try:
+        return LanguageObservationBatch.model_validate_json(
+            path.read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError):
+        return None
 
 
 def _load_vocal_parts(path: Path) -> list[VocalPart] | None:
@@ -378,10 +414,6 @@ def _load_vocal_parts(path: Path) -> list[VocalPart] | None:
         payload = json.loads(path.read_text(encoding="utf-8"))
         return [VocalPart.model_validate(item) for item in payload]
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
-        return None
-    try:
-        return LanguageObservationBatch.model_validate_json(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
         return None
 
 
@@ -396,3 +428,36 @@ def _stage_error_message(stage: AnalysisStage) -> str:
         AnalysisStage.building_profile: "教学标注生成失败。",
     }
     return messages.get(stage, "歌曲分析没有完成。")
+
+
+def _detect_lyrics_language(lyrics: str) -> str | None:
+    korean = sum("\uac00" <= char <= "\ud7a3" for char in lyrics)
+    japanese_kana = sum(
+        "\u3040" <= char <= "\u30ff" for char in lyrics
+    )
+    japanese_kanji = sum("\u3400" <= char <= "\u9fff" for char in lyrics)
+    latin = sum(char.isascii() and char.isalpha() for char in lyrics)
+    if korean >= 2 and korean > japanese_kana + japanese_kanji and korean >= latin * 0.2:
+        return "ko"
+    if (
+        japanese_kana >= 2
+        and japanese_kana + japanese_kanji > korean
+        and japanese_kana >= latin * 0.2
+    ):
+        return "ja"
+    return None
+
+
+def _language_cache_fingerprint(
+    lyrics: str, candidates: list[LanguageCandidate]
+) -> str:
+    payload = {
+        "lyrics": lyrics,
+        "candidates": [
+            candidate.model_dump(mode="json", by_alias=True) for candidate in candidates
+        ],
+    }
+    encoded = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:16]

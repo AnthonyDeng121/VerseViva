@@ -35,6 +35,11 @@ class LanguageCandidate(LanguageAnalysisModel):
     end_seconds: float = Field(ge=0)
     left_end_char_index: int = Field(ge=0)
     right_start_char_index: int = Field(ge=0)
+    language: str = "en"
+    phenomenon: str | None = None
+    canonical_pronunciation: str | None = None
+    observed_pronunciation: str | None = None
+    learner_action: str | None = None
 
 
 class ObservationResult(StrEnum):

@@ -63,7 +63,20 @@ def _build_hint(
     provider: str,
     model: str,
 ) -> LanguageHint:
-    operation, phenomenon, symbol, placement, action = _presentation(observation.result)
+    operation, default_phenomenon, symbol, placement, action = _presentation(observation.result)
+    candidate_matches_result = (
+        candidate.phenomenon == "final_stop_unreleased"
+        and observation.result == ObservationResult.not_audibly_released
+    ) or (
+        candidate.phenomenon == "liaison"
+        and observation.result == ObservationResult.linked_or_resegmented
+    ) or (
+        candidate.phenomenon == "moraic_nasal_assimilation"
+        and observation.result == ObservationResult.merged_or_assimilated
+    )
+    phenomenon = (
+        candidate.phenomenon if candidate_matches_result else default_phenomenon
+    )
     input_segments = [candidate.left_segment]
     output_segments = [candidate.left_segment]
     if observation.result == ObservationResult.linked_or_resegmented:
@@ -82,7 +95,7 @@ def _build_hint(
     explanation = "；".join(observation.audible_evidence) or "模型未提供可听证据。"
     return LanguageHint(
         id=f"hint_{candidate.id}",
-        language="en",
+        language=candidate.language,
         phenomenon=phenomenon,
         transformations=[
             SegmentTransformation(
@@ -109,9 +122,17 @@ def _build_hint(
             LocalizedHintDetail(
                 locale="zh-CN",
                 explanation=explanation,
-                action=action.format(span=candidate.target_span),
+                action=(
+                    candidate.learner_action
+                    if candidate_matches_result and candidate.learner_action
+                    else action.format(span=candidate.target_span)
+                ),
             )
         ],
+        canonical_pronunciation=candidate.canonical_pronunciation,
+        observed_pronunciation=(
+            candidate.observed_pronunciation if candidate_matches_result else None
+        ),
         evidence={
             "provider": provider,
             "model": model,
