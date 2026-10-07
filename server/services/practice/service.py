@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from uuid import uuid4
 
@@ -33,6 +34,12 @@ async def analyze_practice_take(
         return existing
 
     sentences = [item for item in profile.sentences if item.id in take.sentence_ids]
+    selected_part = next(
+        (item for item in profile.vocal_parts if item.id == take.vocal_part_id),
+        None,
+    )
+    if selected_part is not None and selected_part.lane.value == "primary":
+        sentences = [_primary_only_sentence(item) for item in sentences]
     targets = [
         hint
         for sentence in sentences
@@ -58,6 +65,17 @@ async def analyze_practice_take(
         (item for item in profile.vocal_parts if item.id == take.vocal_part_id),
         None,
     )
+    if is_secondary and secondary_part is None:
+        secondary_part = next(
+            (
+                item
+                for item in profile.vocal_parts
+                if item.lane.value == "secondary"
+                and item.start_seconds < take.selection_end_seconds
+                and item.end_seconds > take.selection_start_seconds
+            ),
+            None,
+        )
     if is_secondary and secondary_part is None:
         attempt = PracticeAttempt(
             **base,
@@ -103,7 +121,14 @@ async def analyze_practice_take(
                 secondary_part,
             )
         else:
-            batch = await analyzer.analyze(audio_path, sentences)
+            reference_vocal_path = (
+                settings.data_dir / "songs" / profile.song_id / "audio" / "vocals.wav"
+            )
+            batch = await analyzer.analyze(
+                audio_path,
+                sentences,
+                reference_vocal_path if reference_vocal_path.is_file() else None,
+            )
     except Exception as exc:
         attempt = PracticeAttempt(
             **base,
@@ -172,6 +197,21 @@ async def analyze_practice_take(
 
 def _has_audible_judgment(findings: list[AcousticFinding]) -> bool:
     return any(item.result != FindingResult.uncertain for item in findings)
+
+
+def _primary_only_sentence(sentence: SongSentence) -> SongSentence:
+    parenthetical_ranges = [match.span() for match in re.finditer(r"\([^)]*\)", sentence.lyrics)]
+    hints = [
+        hint
+        for hint in sentence.language_hints
+        if not any(
+            start <= mark.start_char_index < end
+            for mark in hint.marks
+            for start, end in parenthetical_ranges
+        )
+    ]
+    lyrics = re.sub(r"\s*\([^)]*\)", "", sentence.lyrics).strip()
+    return sentence.model_copy(update={"lyrics": lyrics, "language_hints": hints})
 
 
 def _build_issues(

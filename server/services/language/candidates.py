@@ -71,6 +71,10 @@ def generate_language_candidates(
             right_segment = right_phonemes[0]
             left_span = spans[word_index]
             right_span = spans[word_index + 1]
+            if _parenthetical_lane(sentence.lyrics, left_span[0]) != _parenthetical_lane(
+                sentence.lyrics, right_span[0]
+            ):
+                continue
             candidates.append(
                 LanguageCandidate(
                     id=f"candidate_{line_index:03d}_{word_index:03d}",
@@ -91,6 +95,13 @@ def generate_language_candidates(
                 )
             )
     return candidates
+
+
+def _parenthetical_lane(lyrics: str, char_index: int) -> str:
+    for match in re.finditer(r"\([^)]*\)", lyrics):
+        if match.start() <= char_index < match.end():
+            return "secondary"
+    return "primary"
 
 
 def _word_character_spans(sentence: SongSentence) -> list[tuple[int, int]]:

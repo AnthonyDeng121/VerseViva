@@ -167,6 +167,8 @@ continuous_without_change 或 uncertain。漏标不是允许的省略方式。
 - uncertain：当前音频不能可靠区分。
 
 约束：
+- 括号外的 primary 与括号内的 secondary 是分别演唱的不同 Vocal lane；
+  禁止将括号前后或主次轨之间的词组成跨词连读、合并、省音或同化证据。
 - 没有停顿不自动等于 linked_or_resegmented。
 - 但也不能因为没有产生“新音”就漏掉真实的辅音到元音重新切分；
   例如前词尾辅音实际承担后词元音起音时，应返回 linked_or_resegmented。

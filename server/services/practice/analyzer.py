@@ -22,8 +22,14 @@ class GeminiPracticeAnalyzer:
         self,
         audio_path: Path,
         sentences: list[SongSentence],
+        reference_vocal_path: Path | None = None,
     ) -> AcousticFindingBatch:
-        return await asyncio.to_thread(self._analyze_sync, audio_path, sentences)
+        return await asyncio.to_thread(
+            self._analyze_sync,
+            audio_path,
+            sentences,
+            reference_vocal_path,
+        )
 
     async def analyze_secondary(
         self,
@@ -63,11 +69,12 @@ class GeminiPracticeAnalyzer:
         self,
         audio_path: Path,
         sentences: list[SongSentence],
+        reference_vocal_path: Path | None,
     ) -> AcousticFindingBatch:
         last_error: Exception | None = None
         for attempt in range(3):
             try:
-                return self._analyze_once(audio_path, sentences)
+                return self._analyze_once(audio_path, sentences, reference_vocal_path)
             except Exception as exc:
                 last_error = exc
                 if attempt == 2 or not _is_retryable_gemini_error(exc):
@@ -79,6 +86,7 @@ class GeminiPracticeAnalyzer:
         self,
         audio_path: Path,
         sentences: list[SongSentence],
+        reference_vocal_path: Path | None,
     ) -> AcousticFindingBatch:
         try:
             from google import genai
@@ -86,17 +94,35 @@ class GeminiPracticeAnalyzer:
             raise RuntimeError("Practice analysis requires google-genai") from exc
 
         client = genai.Client(api_key=self.api_key)
-        uploaded = client.files.upload(file=str(audio_path))
+        uploaded = _wait_for_active(client, client.files.upload(file=str(audio_path)))
+        reference_audio = None
+        if reference_vocal_path is not None:
+            reference_audio = _wait_for_active(
+                client,
+                client.files.upload(file=str(reference_vocal_path)),
+            )
         try:
+            audio_inputs = []
+            if reference_audio is not None:
+                audio_inputs.append(
+                    {
+                        "type": "audio",
+                        "uri": reference_audio.uri,
+                        "mime_type": reference_audio.mime_type,
+                    }
+                )
+            audio_inputs.append(
+                {
+                    "type": "audio",
+                    "uri": uploaded.uri,
+                    "mime_type": uploaded.mime_type,
+                }
+            )
             interaction = client.interactions.create(
                 model=self.model,
                 input=[
                     {"type": "text", "text": _build_prompt(sentences)},
-                    {
-                        "type": "audio",
-                        "uri": uploaded.uri,
-                        "mime_type": uploaded.mime_type,
-                    },
+                    *audio_inputs,
                 ],
                 response_format={
                     "type": "text",
@@ -109,12 +135,13 @@ class GeminiPracticeAnalyzer:
             findings = [finding for finding in batch.findings if finding.hint_id in known]
             return batch.model_copy(update={"findings": findings})
         finally:
-            name = getattr(uploaded, "name", None)
-            if name:
-                try:
-                    client.files.delete(name=name)
-                except Exception:
-                    pass
+            for item in (uploaded, reference_audio):
+                name = getattr(item, "name", None)
+                if name:
+                    try:
+                        client.files.delete(name=name)
+                    except Exception:
+                        pass
 
     def _analyze_secondary_once(
         self,
@@ -130,6 +157,8 @@ class GeminiPracticeAnalyzer:
         client = genai.Client(api_key=self.api_key)
         user_audio = client.files.upload(file=str(audio_path))
         reference_audio = client.files.upload(file=str(reference_vocal_path))
+        user_audio = _wait_for_active(client, user_audio)
+        reference_audio = _wait_for_active(client, reference_audio)
         try:
             interaction = client.interactions.create(
                 model=self.model,
@@ -181,6 +210,25 @@ def issue_type_for_hint(hint: LanguageHint) -> LanguageIssueType | None:
     return None
 
 
+def _wait_for_active(client, uploaded, timeout_seconds: float = 60.0):
+    """Gemini rejects freshly uploaded files until server-side processing is ACTIVE."""
+    deadline = time.monotonic() + timeout_seconds
+    current = uploaded
+    while time.monotonic() < deadline:
+        state = getattr(current, "state", None)
+        state_name = str(getattr(state, "name", state) or "").upper()
+        if state_name.endswith("ACTIVE") or not state_name:
+            return current
+        if state_name.endswith("FAILED"):
+            raise RuntimeError("Gemini 音频文件处理失败")
+        time.sleep(1)
+        name = getattr(current, "name", None)
+        if not name:
+            return current
+        current = client.files.get(name=name)
+    raise TimeoutError("Gemini 音频文件未在 60 秒内准备完成")
+
+
 def _build_prompt(sentences: list[SongSentence]) -> str:
     targets = []
     for sentence in sentences:
@@ -204,6 +252,8 @@ def _build_prompt(sentences: list[SongSentence]) -> str:
                 }
             )
     return f"""
+你会依次收到参考整体人声（若提供）和用户录音。参考人声仅用于核对本次原唱的实际处理，
+用户录音才是诊断对象；不得把不同 Vocal lane 的声音或歌词互相连接。
 你正在核查一段用户练唱录音，只判断 TARGETS 中已有的语言演唱目标。
 
 规则：

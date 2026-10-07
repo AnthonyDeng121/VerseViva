@@ -27,6 +27,8 @@ type CharacterMark = {
 type LanguageHint = {
   id: string;
   phenomenon: string;
+  startWordIndex?: number;
+  endWordIndex?: number;
   confidence: number;
   source: string;
   marks: CharacterMark[];
@@ -282,7 +284,7 @@ function App() {
         </div>
       </header>
 
-      {pageMode === "upload" && <details className="home-collapsible" open>
+      {pageMode === "upload" && <details className="home-collapsible">
         <summary>自行上传歌曲</summary>
       <form className="upload-card" onSubmit={submit}>
         <label>
@@ -323,7 +325,7 @@ function App() {
         </button>
       </form></details>}
 
-      {pageMode === "upload" && <details className="home-collapsible" open>
+      {pageMode === "upload" && <details className="home-collapsible">
         <summary>示例歌曲</summary><section className="hero-shortcut">
         <div>
           <p>可以直接选择官方示例歌曲片段展示功能</p>
@@ -557,6 +559,7 @@ function ProfileView({
         sentences={profile.sentences}
         vocalParts={profile.vocalParts}
         accompanimentUrl={profile.audio.accompanimentUrl}
+        sourceUrl={profile.audio.sourceUrl}
         onTimelineChange={setCurrentTime}
         onRecordingStart={() => onModeChange("technique")}
         onRecordingFinished={() => onModeChange("sing")}
@@ -597,18 +600,39 @@ function AudioPlayer({
   playbackRate: number;
   onTimeChange: (time: number, player: HTMLAudioElement) => void;
 }) {
+  const [preparedSrc, setPreparedSrc] = useState<string | null>(null);
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.volume = 0.3;
       audioRef.current.playbackRate = playbackRate;
     }
   }, [audioRef, playbackRate, src]);
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setPreparedSrc(null);
+    void fetch(src).then((response) => {
+      if (!response.ok) throw new Error("读取音频失败");
+      return response.blob();
+    }).then((blob) => {
+      if (cancelled) return;
+      objectUrl = URL.createObjectURL(blob);
+      setPreparedSrc(objectUrl);
+    }).catch(() => {
+      if (!cancelled) setPreparedSrc(src);
+    });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [src]);
+  if (!preparedSrc) return <span className="audio-loading">正在准备音频…</span>;
   return (
     <audio
       ref={audioRef}
       controls
       preload="metadata"
-      src={src}
+      src={preparedSrc}
       onLoadedMetadata={(event) => {
         event.currentTarget.volume = 0.3;
         event.currentTarget.playbackRate = playbackRate;
@@ -803,7 +827,10 @@ function AnnotatedLine({
   compact?: boolean;
 }) {
   const marksAt = new Map<number, { mark: CharacterMark; hint: LanguageHint }[]>();
-  for (const hint of sentence.languageHints) {
+  const visibleHints = sentence.languageHints.filter(
+    (hint) => !crossesParentheticalLane(sentence, hint),
+  );
+  for (const hint of visibleHints) {
     for (const mark of hint.marks) {
       const values = marksAt.get(mark.startCharIndex) ?? [];
       values.push({ mark, hint });
@@ -838,7 +865,7 @@ function AnnotatedLine({
       tabIndex={0}
       onClick={() => {
         onSeek(sentence.startSeconds);
-        if (sentence.languageHints[0]) onSelect(sentence.languageHints[0]);
+        if (visibleHints[0]) onSelect(visibleHints[0]);
       }}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") onSeek(sentence.startSeconds);
@@ -895,14 +922,29 @@ function normalizeWord(value: string) {
   return value.toLowerCase().replaceAll("’", "'").replace(/[^a-z']/g, "");
 }
 
+function crossesParentheticalLane(sentence: SongSentence, hint: LanguageHint) {
+  if (hint.startWordIndex === undefined || hint.endWordIndex === undefined
+    || hint.startWordIndex === hint.endWordIndex) return false;
+  const words = Array.from(sentence.lyrics.matchAll(/[A-Za-z]+(?:['’][A-Za-z]+)*/g));
+  const start = words[hint.startWordIndex]?.index;
+  const end = words[hint.endWordIndex]?.index;
+  if (start === undefined || end === undefined) return false;
+  const laneAt = (index: number) => {
+    const prefix = sentence.lyrics.slice(0, index);
+    return prefix.lastIndexOf("(") > prefix.lastIndexOf(")") ? "secondary" : "primary";
+  };
+  return laneAt(start) !== laneAt(end);
+}
+
 function HintDetail({ sentence, initialHintId }: {
   sentence?: SongSentence; initialHintId: string;
 }) {
-  const initialIndex = Math.max(0, sentence?.languageHints.findIndex((hint) => hint.id === initialHintId) ?? 0);
+  const hints = sentence?.languageHints.filter((hint) => !crossesParentheticalLane(sentence, hint)) ?? [];
+  const initialIndex = Math.max(0, hints.findIndex((hint) => hint.id === initialHintId));
   const [index, setIndex] = useState(initialIndex);
   useEffect(() => setIndex(initialIndex), [initialHintId, initialIndex]);
-  if (!sentence?.languageHints.length) return null;
-  const hint = sentence.languageHints[index % sentence.languageHints.length];
+  if (!sentence || !hints.length) return null;
+  const hint = hints[index % hints.length];
   const detail = hint.details.find((item) => item.locale === "zh-CN") ?? hint.details[0];
   if (!detail) return null;
   const mark = hint.marks[0];
@@ -913,7 +955,7 @@ function HintDetail({ sentence, initialHintId }: {
   const technique = displayMark === "×"
     ? `${before?.[0] ?? "目标音"}${displayMark}`
     : `${before?.[0] ?? ""}${displayMark}${after?.[0] ?? ""}`;
-  const count = sentence.languageHints.length;
+  const count = hints.length;
   return (
     <aside className="hint-detail">
       <button className="hint-arrow" type="button" aria-label="上一个语言点"
@@ -945,6 +987,7 @@ function TechniqueDisplay({ value, symbol }: { value: string; symbol: string }) 
         && <i className={`character-mark below ${markClass}`}>
         {symbol}</i>}
     </span>)}
+    {after.length > 0 && <span className="technique-gap"> </span>}
     {after.map((character, index) => <span className="lyric-character" key={`after-${index}`}>{character}</span>)}
   </strong>;
 }

@@ -19,6 +19,7 @@ class FixedLexicon:
         "you": ["Y", "UW"],
         "our": ["AW", "ER"],
         "innocence": ["IH", "N", "AH", "S", "AH", "N", "S"],
+        "but": ["B", "AH", "T"],
     }
 
     def phonemes(self, word: str) -> list[str]:
@@ -66,6 +67,23 @@ def test_candidate_generation_checks_every_word_boundary_and_uses_phonemes() -> 
         [rhotic_sentence], lexicon=FixedLexicon()
     )[0]
     assert rhotic.boundary_kind == "rhotic_to_vowel"
+
+
+def test_candidates_never_cross_primary_and_parenthetical_secondary_lanes() -> None:
+    sentence = SongSentence(
+        id="sentence_lanes",
+        start_seconds=0,
+        end_seconds=1,
+        lyrics="up (But)",
+        words=[
+            WordTiming(id="up", text="up", start_seconds=0, end_seconds=0.4),
+            WordTiming(id="but", text="But", start_seconds=0.4, end_seconds=0.8),
+        ],
+    )
+
+    candidates = generate_language_candidates([sentence], lexicon=FixedLexicon())
+
+    assert candidates == []
 
 
 def test_verified_observations_become_compact_marks_and_expandable_details() -> None:
