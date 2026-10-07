@@ -14,6 +14,12 @@ type RecordingVocalPart = {
   lyrics: string;
   startSeconds: number;
   endSeconds: number;
+  sentenceIds?: string[];
+};
+
+type PracticeOption = {
+  id: string; label: string; startSeconds: number; endSeconds: number;
+  sentenceIds: string[]; vocalPartId?: string;
 };
 
 type RecordingTake = {
@@ -132,17 +138,34 @@ export function RecordingStudio({
   const mixContextRef = useRef<AudioContext | null>(null);
   const sessionId = useMemo(() => getOrCreateSessionId(songId), [songId]);
 
-  const safeStartIndex = Math.min(startIndex, Math.max(sentences.length - 1, 0));
-  const safeEndIndex = Math.max(safeStartIndex, Math.min(endIndex, Math.max(sentences.length - 1, 0)));
-  const selectedSentences = sentences.slice(safeStartIndex, safeEndIndex + 1);
+  const practiceOptions = useMemo<PracticeOption[]>(() => {
+    const laneParts = vocalParts.filter((part) => part.lane === lane)
+      .sort((left, right) => left.startSeconds - right.startSeconds);
+    if (laneParts.length) return laneParts.map((part) => ({
+      id: part.id, label: part.lyrics.replace(/^\(|\)$/g, ""),
+      startSeconds: part.startSeconds, endSeconds: part.endSeconds,
+      sentenceIds: part.sentenceIds?.length ? part.sentenceIds : sentences
+        .filter((sentence) => sentence.startSeconds < part.endSeconds
+          && sentence.endSeconds > part.startSeconds).map((sentence) => sentence.id),
+      vocalPartId: part.id,
+    }));
+    if (lane === "secondary") return [];
+    return sentences.map((sentence) => ({ id: sentence.id, label: sentence.lyrics,
+      startSeconds: sentence.startSeconds, endSeconds: sentence.endSeconds,
+      sentenceIds: [sentence.id] }));
+  }, [lane, sentences, vocalParts]);
+  const safeStartIndex = Math.min(startIndex, Math.max(practiceOptions.length - 1, 0));
+  const safeEndIndex = Math.max(safeStartIndex, Math.min(endIndex, Math.max(practiceOptions.length - 1, 0)));
+  const selectedOptions = practiceOptions.slice(safeStartIndex, safeEndIndex + 1);
   const selectionType = safeStartIndex === safeEndIndex ? "sentence" : "segment";
-  const selectionStart = selectedSentences[0]?.startSeconds ?? 0;
-  const selectionEnd = selectedSentences.at(-1)?.endSeconds ?? 0;
+  const selectionStart = selectedOptions[0]?.startSeconds ?? 0;
+  const selectionEnd = selectedOptions.at(-1)?.endSeconds ?? 0;
   const activePreviewUrl = previewUrl ?? selectedTake?.audioUrl ?? null;
   const activePreviewStart = selectedTake?.selectionStartSeconds ?? selectionStart;
   const activePreviewEnd = selectedTake?.selectionEndSeconds ?? selectionEnd;
-  const selectedVocalPart = vocalParts.find((part) => part.lane === lane
-    && part.startSeconds < selectionEnd && part.endSeconds > selectionStart);
+  const selectedVocalPartId = selectedOptions.length === 1 ? selectedOptions[0]?.vocalPartId : undefined;
+
+  useEffect(() => { setStartIndex(0); setEndIndex(0); }, [lane, songId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -217,7 +240,7 @@ export function RecordingStudio({
       setError("当前浏览器不支持麦克风录音，请使用新版 Safari 或 Chrome。");
       return;
     }
-    if (!selectedSentences.length || selectionEnd <= selectionStart) {
+    if (!selectedOptions.length || selectionEnd <= selectionStart) {
       setError("请先选择有效的单句或片段。");
       return;
     }
@@ -294,7 +317,7 @@ export function RecordingStudio({
     if (!previewBlob) return;
     setState("uploading");
     setError(null);
-    const selectedIds = selectedSentences.map((sentence) => sentence.id);
+    const selectedIds = Array.from(new Set(selectedOptions.flatMap((option) => option.sentenceIds)));
     const form = new FormData();
     form.set(
       "audio",
@@ -313,7 +336,7 @@ export function RecordingStudio({
     form.set("timeline_start_seconds", String(selectionStart));
     form.set("save_mode", "overdub_append");
     form.set("client_duration_seconds", String(selectionEnd - selectionStart));
-    if (selectedVocalPart) form.set("vocal_part_id", selectedVocalPart.id);
+    if (selectedVocalPartId) form.set("vocal_part_id", selectedVocalPartId);
 
     try {
       const response = await fetch(`/api/v1/songs/${songId}/takes`, {
@@ -456,30 +479,31 @@ export function RecordingStudio({
             setStartIndex(next);
             if (endIndex < next) setEndIndex(next);
           }}>
-            {sentences.map((sentence, index) => <option value={index} key={sentence.id}>
-              {index + 1}. {sentence.lyrics}
+            {practiceOptions.map((option, index) => <option value={index} key={option.id}>
+              {index + 1}. {option.label}
             </option>)}
           </select>
         </label>
         <label>
           <span>结束句</span>
           <select value={safeEndIndex} onChange={(event) => setEndIndex(Number(event.target.value))}>
-            {sentences.map((sentence, index) => <option value={index} disabled={index < safeStartIndex}
-              key={sentence.id}>{index + 1}. {sentence.lyrics}</option>)}
+            {practiceOptions.map((option, index) => <option value={index} disabled={index < safeStartIndex}
+              key={option.id}>{index + 1}. {option.label}</option>)}
           </select>
         </label>
       </div>
 
       <p className="recording-selection-summary">
         {lane === "primary" ? "主轨" : "次轨"} · {formatTime(selectionStart)} – {formatTime(selectionEnd)}
-        · {selectedSentences.length === 1 ? "单句" : `${selectedSentences.length} 句`}
+        · {selectedOptions.length === 1 ? "单句" : `${selectedOptions.length} 句`}
       </p>
+      {practiceOptions.length === 0 && <p className="recording-warning">这首歌没有可练习的次轨歌词。</p>}
       <p className="headphone-note">建议戴耳机录制，避免伴奏被麦克风再次收录。</p>
 
       <div className="recording-actions">
         {state !== "recording"
-          ? <button type="button" className="primary-button" disabled={state === "requesting" || state === "uploading"}
-              onClick={() => void startRecording()}>
+          ? <button type="button" className="primary-button"
+              onClick={() => void startRecording()} disabled={state === "requesting" || state === "uploading" || practiceOptions.length === 0}>
               {state === "requesting" ? "正在请求麦克风…" : "开始录音"}
             </button>
           : <button type="button" className="record-stop-button" onClick={stopRecording}>停止录音</button>}

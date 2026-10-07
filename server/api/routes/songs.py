@@ -35,10 +35,12 @@ def has_expected_audio_signature(suffix: str, header: bytes) -> bool:
 async def analyze_song(
     background_tasks: BackgroundTasks,
     audio: UploadFile = File(...),  # noqa: B008
-    title: str | None = Form(default=None),
-    artist: str | None = Form(default=None),
+    title: str = Form(...),
+    artist: str = Form(...),
     lyrics: str | None = Form(default=None),
 ) -> AnalysisJob:
+    if not title.strip() or not artist.strip():
+        raise HTTPException(status_code=422, detail="Song title and artist are required")
     suffix = Path(audio.filename or "").suffix.lower()
     expected_content_types = ALLOWED_CONTENT_TYPES.get(suffix)
     if expected_content_types is None or audio.content_type not in expected_content_types:

@@ -109,6 +109,8 @@ const HERO_SONGS = [
 ] as const;
 
 const ACTIVE_JOB_KEY = "verseviva.activeJobId";
+const CACHED_SONGS_KEY = "verseviva.cachedSongs";
+type CachedSong = { songId: string; title: string; artist?: string | null };
 
 function App() {
   const [job, setJob] = useState<AnalysisJob | null>(null);
@@ -119,15 +121,27 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
+  const [pageMode, setPageMode] = useState<"upload" | "sing">("upload");
+  const [cachedSongs, setCachedSongs] = useState<CachedSong[]>(() => {
+    try { return JSON.parse(window.localStorage.getItem(CACHED_SONGS_KEY) ?? "[]") as CachedSong[]; }
+    catch { return []; }
+  });
+
+  function rememberSong(item: CachedSong) {
+    setCachedSongs((current) => {
+      const next = [item, ...current.filter((cached) => cached.songId !== item.songId)].slice(0, 20);
+      window.localStorage.setItem(CACHED_SONGS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
 
   useEffect(() => {
     const jobId = window.localStorage.getItem(ACTIVE_JOB_KEY);
     let cancelled = false;
     void (async () => {
       try {
-        const response = await fetch(
-          jobId ? `/api/v1/songs/jobs/${jobId}` : "/api/v1/songs/jobs/latest",
-        );
+        if (!jobId) return;
+        const response = await fetch(`/api/v1/songs/jobs/${jobId}`);
         if (!response.ok) {
           if (response.status === 404) window.localStorage.removeItem(ACTIVE_JOB_KEY);
           if (response.status === 404 && !jobId) return;
@@ -136,11 +150,18 @@ function App() {
         const restoredJob = (await response.json()) as AnalysisJob;
         if (cancelled) return;
         setJob(restoredJob);
+        setTitle(restoredJob.title);
+        setArtist(restoredJob.artist ?? "");
         if (restoredJob.status === "completed") {
           const profileResponse = await fetch(`/api/v1/songs/${restoredJob.song_id}`);
           if (!profileResponse.ok) throw new Error("恢复上次分析结果失败");
           const restoredProfile = (await profileResponse.json()) as SongProfile;
-          if (!cancelled) setProfile(restoredProfile);
+          if (!cancelled) {
+            setProfile(restoredProfile);
+            setPageMode("sing");
+            rememberSong({ songId: restoredProfile.songId, title: restoredProfile.title,
+              artist: restoredJob.artist });
+          }
         }
       } catch (restoreError) {
         if (!cancelled) {
@@ -169,6 +190,8 @@ function App() {
           const profileResponse = await fetch(`/api/v1/songs/${nextJob.song_id}`);
           if (!profileResponse.ok) throw new Error("读取歌曲标注失败");
           setProfile((await profileResponse.json()) as SongProfile);
+          setPageMode("sing");
+          rememberSong({ songId: nextJob.song_id, title: nextJob.title, artist: nextJob.artist });
         } else if (nextJob.status === "failed") {
           setError(nextJob.error?.message ?? "歌曲分析失败");
         }
@@ -194,8 +217,6 @@ function App() {
       }
       const createdJob = (await response.json()) as AnalysisJob;
       setJob(createdJob);
-      setTitle("");
-      setArtist("");
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "上传失败");
     } finally {
@@ -231,6 +252,7 @@ function App() {
       if (!response.ok) throw new Error("Hero 歌曲缓存尚未生成");
       setProfile((await response.json()) as SongProfile);
       setJob(null);
+      setPageMode("sing");
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "读取叠唱 Hero 失败");
     }
@@ -250,31 +272,39 @@ function App() {
         <p className="intro">
           点击上传歌曲文件，输入歌曲名 + 人名，系统自动解析歌词教学并支持多轨叠唱
         </p>
+        <div className="page-mode-switch" role="group" aria-label="功能切换">
+          <button type="button" className={pageMode === "upload" ? "active" : ""}
+            onClick={() => setPageMode("upload")}>上传歌曲</button>
+          <button type="button" className={pageMode === "sing" ? "active" : ""}
+            onClick={() => setPageMode("sing")} disabled={!profile}>演唱</button>
+        </div>
       </header>
 
-      <form className="upload-card" onSubmit={submit}>
+      {pageMode === "upload" && <form className="upload-card" onSubmit={submit}>
         <label>
           <span>歌曲文件</span>
           <input name="audio" type="file" accept=".mp3,.wav,.flac,audio/*" required />
         </label>
         <label>
-          <span>歌曲名</span>
+          <span>歌曲名（必填，请区分大小写）</span>
           <input
             name="title"
             type="text"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            placeholder="例如：Abracadabra（可选）"
+            placeholder="例如：Poker Face"
+            required
           />
         </label>
         <label>
-          <span>歌手</span>
+          <span>歌手（必填，请区分大小写）</span>
           <input
             name="artist"
             type="text"
             value={artist}
             onChange={(event) => setArtist(event.target.value)}
-            placeholder="例如：Lady Gaga（可选）"
+            placeholder="例如：Lady Gaga"
+            required
           />
         </label>
         <details>
@@ -287,9 +317,9 @@ function App() {
         <button className="primary-button" disabled={submitting}>
           {submitting ? "正在上传…" : "上传并分析"}
         </button>
-      </form>
+      </form>}
 
-      <section className="hero-shortcut">
+      {pageMode === "upload" && <section className="hero-shortcut">
         <div>
           <strong>示例歌曲</strong>
           <p>直接打开示例，体验语言标记与左右双轨歌词。</p>
@@ -299,7 +329,15 @@ function App() {
             打开 {song.label}
           </button>
         ))}
-      </section>
+      </section>}
+
+      {pageMode === "upload" && cachedSongs.length > 0 && <section className="song-cache">
+        <strong>这台设备已缓存的歌曲</strong>
+        <div>{cachedSongs.map((song) => <button className="secondary-button" type="button"
+          key={song.songId} onClick={() => void loadHero(song.songId)}>
+          {song.title}{song.artist ? ` · ${song.artist}` : ""}
+        </button>)}</div>
+      </section>}
 
       {job && !profile && (
         <section className="status-card" aria-live="polite">
@@ -346,7 +384,7 @@ function App() {
 
       {error && !job?.error && <p className="error-card">{error}</p>}
 
-      {profile && (
+      {profile && pageMode === "sing" && (
         <ProfileView profile={profile} selectedHint={selectedHint} onSelect={setSelectedHint} />
       )}
     </main>
@@ -366,12 +404,14 @@ function ProfileView({
   const [lyricsMode, setLyricsMode] = useState<"standard" | "layers">("standard");
   const [playbackRate, setPlaybackRate] = useState<0.75 | 1>(1);
   const [loopSentenceId, setLoopSentenceId] = useState<string | null>(null);
+  const [audioMode, setAudioMode] = useState<"source" | "vocal">("source");
   const sourceAudioRef = useRef<HTMLAudioElement>(null);
   const vocalAudioRef = useRef<HTMLAudioElement>(null);
   useEffect(() => {
     setCurrentTime(0);
     setPlaybackRate(1);
     setLoopSentenceId(null);
+    setAudioMode("source");
     setLyricsMode(profile.sentences.length === 0 && profile.vocalParts.length > 0 ? "layers" : "standard");
   }, [profile.songId, profile.sentences.length, profile.vocalParts.length]);
   const activeSentence = profile.sentences.find(
@@ -419,15 +459,21 @@ function ProfileView({
           <p className="eyebrow">分析结果</p>
           <h2>{displaySongTitle(profile.title)}</h2>
         </div>
+        <div className="audio-mode-switch" role="group" aria-label="参考音轨">
+          <button type="button" className={audioMode === "source" ? "active" : ""}
+            onClick={() => setAudioMode("source")}>原曲</button>
+          {profile.audio.vocalUrl && <button type="button" className={audioMode === "vocal" ? "active" : ""}
+            onClick={() => setAudioMode("vocal")}>人声</button>}
+        </div>
       </div>
 
       <div className="players">
-        <label>
+        {audioMode === "source" && <label>
           <span>原曲</span>
           <AudioPlayer audioRef={sourceAudioRef} src={profile.audio.sourceUrl}
             playbackRate={playbackRate} onTimeChange={handleTimeChange} />
-        </label>
-        {profile.audio.vocalUrl && (
+        </label>}
+        {audioMode === "vocal" && profile.audio.vocalUrl && (
           <label>
             <span>人声</span>
             <AudioPlayer audioRef={vocalAudioRef} src={profile.audio.vocalUrl}
@@ -482,8 +528,10 @@ function ProfileView({
       {lyricsMode === "layers" && profile.vocalParts.length > 0
         ? <VocalLayers
             vocalParts={profile.vocalParts}
+            sentences={profile.sentences}
             currentTime={currentTime}
             onSeek={seekTo}
+            onSelect={onSelect}
           />
         : <KaraokeLyrics
             sentences={profile.sentences}
@@ -587,12 +635,16 @@ function KaraokeLyrics({
 
 function VocalLayers({
   vocalParts,
+  sentences,
   currentTime,
   onSeek,
+  onSelect,
 }: {
   vocalParts: VocalPart[];
+  sentences: SongSentence[];
   currentTime: number;
   onSeek: (time: number) => void;
+  onSelect: (hint: LanguageHint) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const primary = vocalParts
@@ -604,6 +656,7 @@ function VocalLayers({
   const assignedSecondary = new Set<string>();
   const rows = primary.map((part) => {
     const overlapping = secondary.filter((candidate) => {
+      if (assignedSecondary.has(candidate.id)) return false;
       const overlaps = candidate.startSeconds < part.endSeconds
         && candidate.endSeconds > part.startSeconds;
       if (overlaps) assignedSecondary.add(candidate.id);
@@ -637,15 +690,15 @@ function VocalLayers({
             <React.Fragment key={`vocal-row-${rowIndex}`}>
               <div className="vocal-lane-cell primary" data-vocal-row={rowIndex}>
                 {row.primary.length > 0
-                  ? row.primary.map((part) => <ProgressivePartLyrics part={part}
+                  ? row.primary.map((part) => <AnnotatedVocalPart part={part} sentences={sentences}
                       lyrics={withoutParenthetical(part.lyrics)} currentTime={currentTime}
-                      onSeek={onSeek} key={part.id} />)
+                      onSeek={onSeek} onSelect={onSelect} key={part.id} />)
                   : null}
               </div>
               <div className="vocal-lane-cell secondary">
                 {row.secondary.length > 0
-                  ? row.secondary.map((part) => <ProgressivePartLyrics part={part}
-                      currentTime={currentTime} onSeek={onSeek} key={part.id} />)
+                  ? row.secondary.map((part) => <AnnotatedVocalPart part={part} sentences={sentences}
+                      currentTime={currentTime} onSeek={onSeek} onSelect={onSelect} key={part.id} />)
                   : null}
               </div>
             </React.Fragment>
@@ -656,24 +709,48 @@ function VocalLayers({
   );
 }
 
-function ProgressivePartLyrics({ part, lyrics = part.lyrics, currentTime, onSeek }: {
-  part: VocalPart;
-  lyrics?: string;
-  currentTime: number;
-  onSeek: (time: number) => void;
+function AnnotatedVocalPart({ part, sentences, lyrics = part.lyrics, currentTime, onSeek, onSelect }: {
+  part: VocalPart; sentences: SongSentence[]; lyrics?: string; currentTime: number;
+  onSeek: (time: number) => void; onSelect: (hint: LanguageHint) => void;
 }) {
-  const characters = Array.from(lyrics);
-  const progress = Math.max(0, Math.min(1,
-    (currentTime - part.startSeconds) / Math.max(part.endSeconds - part.startSeconds, 0.01),
-  ));
-  const highlighted = Math.floor(characters.length * progress);
-  return <p className="progressive-part-lyrics clickable" role="button" tabIndex={0}
-    onClick={() => onSeek(part.startSeconds)}
-    onKeyDown={(event) => {
-      if (event.key === "Enter" || event.key === " ") onSeek(part.startSeconds);
-    }}>{characters.map((character, index) => (
-    <span className={index < highlighted ? "sung" : ""} key={`${index}-${character}`}>{character}</span>
-  ))}</p>;
+  const source = sentences.find((sentence) => part.sentenceIds.includes(sentence.id))
+    ?? sentences.find((sentence) => sentence.startSeconds < part.endSeconds
+      && sentence.endSeconds > part.startSeconds);
+  const projected = source ? projectSentence(source, lyrics, part) : {
+    id: part.id, lyrics, startSeconds: part.startSeconds, endSeconds: part.endSeconds,
+    words: [], languageHints: [],
+  };
+  return <AnnotatedLine sentence={projected} currentTime={currentTime}
+    active={currentTime >= part.startSeconds && currentTime < part.endSeconds}
+    past={currentTime >= part.endSeconds} onSelect={onSelect} onSeek={onSeek} compact />;
+}
+
+function projectSentence(source: SongSentence, lyrics: string, part: VocalPart): SongSentence {
+  const sourceChars = Array.from(source.lyrics);
+  const targetChars = Array.from(lyrics);
+  const targetToSource = new Map<number, number>();
+  const exactStart = source.lyrics.toLocaleLowerCase().indexOf(lyrics.toLocaleLowerCase());
+  if (exactStart >= 0) {
+    targetChars.forEach((_, target) => targetToSource.set(target, exactStart + target));
+  } else {
+    let cursor = 0;
+    for (let target = 0; target < targetChars.length; target += 1) {
+      const wanted = targetChars[target].toLocaleLowerCase();
+      const found = sourceChars.findIndex((character, index) => index >= cursor
+        && character.toLocaleLowerCase() === wanted);
+      if (found >= 0) { targetToSource.set(target, found); cursor = found + 1; }
+    }
+  }
+  const sourceToTarget = new Map(Array.from(targetToSource, ([target, original]) => [original, target]));
+  const languageHints = source.languageHints.flatMap((hint) => {
+    const marks = hint.marks.flatMap((mark) => {
+      const mapped = sourceToTarget.get(mark.startCharIndex);
+      return mapped === undefined ? [] : [{ ...mark, startCharIndex: mapped, endCharIndex: mapped }];
+    });
+    return marks.length ? [{ ...hint, marks }] : [];
+  });
+  return { ...source, id: part.id, lyrics, startSeconds: part.startSeconds,
+    endSeconds: part.endSeconds, words: [], languageHints };
 }
 
 function withoutParenthetical(lyrics: string) {

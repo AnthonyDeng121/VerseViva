@@ -28,7 +28,7 @@ def test_upload_creates_independent_ids_and_isolated_task_directory(upload_clien
     response = client.post(
         "/api/v1/songs/analyze",
         files={"audio": ("Demo.MP3", b"ID3-valid-demo", "audio/mpeg")},
-        data={"title": "  Demo Song  ", "lyrics": "hello"},
+        data={"title": "  Demo Song  ", "artist": "Demo Artist", "lyrics": "hello"},
     )
 
     assert response.status_code == 202
@@ -70,6 +70,7 @@ def test_upload_rejects_invalid_audio(
     response = client.post(
         "/api/v1/songs/analyze",
         files={"audio": (filename, content, content_type)},
+        data={"title": "Demo", "artist": "Artist"},
     )
 
     assert response.status_code == expected_status
@@ -81,12 +82,13 @@ def test_recognized_extension_accepts_generic_browser_content_type(upload_client
     response = client.post(
         "/api/v1/songs/analyze",
         files={"audio": ("demo.flac", b"fLaC-demo", "application/octet-stream")},
+        data={"title": "Demo", "artist": "Artist"},
     )
 
     assert response.status_code == 202
 
 
-def test_upload_infers_artist_and_title_from_filename(upload_client) -> None:
+def test_upload_requires_artist_and_title_even_when_filename_contains_them(upload_client) -> None:
     client, _ = upload_client
     response = client.post(
         "/api/v1/songs/analyze",
@@ -99,9 +101,7 @@ def test_upload_infers_artist_and_title_from_filename(upload_client) -> None:
         },
     )
 
-    assert response.status_code == 202
-    assert response.json()["title"] == "Juno"
-    assert response.json()["artist"] == "Sabrina Carpenter"
+    assert response.status_code == 422
 
 
 def test_missing_or_malformed_job_id_returns_404(upload_client) -> None:
@@ -116,6 +116,7 @@ def test_latest_job_endpoint_restores_most_recent_upload(upload_client) -> None:
     uploaded = client.post(
         "/api/v1/songs/analyze",
         files={"audio": ("demo.mp3", b"ID3-demo", "audio/mpeg")},
+        data={"title": "Demo", "artist": "Artist"},
     ).json()
 
     response = client.get("/api/v1/songs/jobs/latest")
@@ -141,6 +142,7 @@ def test_upload_starts_automatic_pipeline(
         response = client.post(
             "/api/v1/songs/analyze",
             files={"audio": ("demo.mp3", b"ID3-demo", "audio/mpeg")},
+            data={"title": "Demo", "artist": "Artist"},
         )
     get_settings.cache_clear()
 
@@ -186,6 +188,7 @@ def test_api_exposes_model_failure_after_background_pipeline(
         upload = client.post(
             "/api/v1/songs/analyze",
             files={"audio": ("demo.mp3", b"ID3-demo", "audio/mpeg")},
+            data={"title": "Demo", "artist": "Artist"},
         )
         queried = client.get(f"/api/v1/songs/jobs/{upload.json()['job_id']}")
     get_settings.cache_clear()
@@ -214,6 +217,7 @@ def test_failed_job_can_retry_with_original_audio(
     upload = client.post(
         "/api/v1/songs/analyze",
         files={"audio": ("demo.mp3", b"ID3-demo", "audio/mpeg")},
+        data={"title": "Demo", "artist": "Artist"},
     ).json()
     store = JobStore(data_dir)
     job = store.get(upload["job_id"])

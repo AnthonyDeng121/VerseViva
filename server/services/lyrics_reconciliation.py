@@ -8,6 +8,7 @@ WORD_PATTERN = re.compile(r"[A-Za-z]+(?:['’][A-Za-z]+)*")
 PARENTHETICAL = re.compile(r"\([^()]*\)")
 MIN_FUZZY_SCORE = 0.68
 MIN_ASR_COVERAGE = 0.60
+LRC_LINE = re.compile(r"^\[(\d{2}):(\d{2}(?:\.\d+)?)\]\s*(.*)$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +61,72 @@ def reconcile_provided_lyrics(
     timed_words = _transfer_timings(selected_tokens, aligned_words)
     reconciled = _build_sentences(lines, line_tokens, selected_tokens, timed_words)
     return (reconciled, True) if reconciled else (aligned_sentences, False)
+
+
+def reconcile_synced_lyrics_excerpt(
+    synced_lyrics: str,
+    aligned_sentences: list[SongSentence],
+) -> tuple[list[SongSentence], bool]:
+    """Recover a short excerpt when ASR is too inaccurate for plain-text matching.
+
+    LRCLIB timestamps are used only to choose a similarly-sized contiguous lyric
+    window. WhisperX remains the source of timings in the uploaded excerpt.
+    """
+    parsed: list[tuple[float, str]] = []
+    for raw_line in synced_lyrics.splitlines():
+        match = LRC_LINE.match(raw_line.strip())
+        if match and match.group(3).strip():
+            parsed.append(
+                (int(match.group(1)) * 60 + float(match.group(2)), match.group(3).strip())
+            )
+    aligned_words = [word for sentence in aligned_sentences for word in sentence.words]
+    if len(parsed) < 2 or len(aligned_words) < 3:
+        return aligned_sentences, False
+
+    duration = aligned_words[-1].end_seconds - aligned_words[0].start_seconds
+    asr_tokens = [_normalize(word.text) for word in aligned_words]
+    asr_set = set(asr_tokens)
+    best: tuple[float, int, int] | None = None
+    for start in range(len(parsed)):
+        for end in range(start + 1, len(parsed) + 1):
+            window_end = parsed[end][0] if end < len(parsed) else parsed[-1][0] + 4.0
+            window_duration = window_end - parsed[start][0]
+            if window_duration < max(2.0, duration - 3.0):
+                continue
+            if window_duration > duration + 3.0:
+                break
+            text = "\n".join(line for _, line in parsed[start:end])
+            candidate = [
+                _normalize(token)
+                for token in WORD_PATTERN.findall(PARENTHETICAL.sub("", text))
+            ]
+            if not candidate:
+                continue
+            sequence = SequenceMatcher(None, candidate, asr_tokens, autojunk=False).ratio()
+            overlap = len(asr_set.intersection(candidate)) / max(1, len(asr_set))
+            duration_score = max(0.0, 1.0 - abs(window_duration - duration) / 3.0)
+            score = sequence * 0.45 + overlap * 0.35 + duration_score * 0.20
+            if best is None or score > best[0]:
+                best = (score, start, end)
+    if best is None or best[0] < 0.28:
+        return aligned_sentences, False
+    excerpt = "\n".join(line for _, line in parsed[best[1] : best[2]])
+    return _reconcile_selected_lines(excerpt, aligned_sentences)
+
+
+def _reconcile_selected_lines(
+    lyrics: str, aligned_sentences: list[SongSentence]
+) -> tuple[list[SongSentence], bool]:
+    lines = [line.strip() for line in lyrics.splitlines() if line.strip()]
+    line_tokens = [WORD_PATTERN.findall(line) for line in lines]
+    aligned_words = [word for sentence in aligned_sentences for word in sentence.words]
+    if not lines or any(not tokens for tokens in line_tokens) or not aligned_words:
+        return aligned_sentences, False
+    selected = [_LyricsToken(token, line_index) for line_index, tokens in enumerate(line_tokens)
+                for token in tokens]
+    timed = _transfer_timings(selected, aligned_words)
+    result = _build_sentences(lines, line_tokens, selected, timed)
+    return (result, True) if result else (aligned_sentences, False)
 
 
 def _find_best_window(haystack: list[str], needle: list[str]) -> tuple[int, int] | None:

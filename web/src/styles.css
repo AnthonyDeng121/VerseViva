@@ -26,6 +26,10 @@ h2 { font-size: 21px; white-space: nowrap; overflow: hidden; text-overflow: elli
 h3 { margin: 0; font-size: 21px; }
 p { line-height: 1.7; color: #526067; }
 .intro { max-width: 760px; font-size: clamp(15px, 2.2vw, 18px); line-height: 1.5; }
+.page-mode-switch, .audio-mode-switch { display: inline-flex; width: fit-content; padding: 3px; border-radius: 11px; background: #e2ebe6; }
+.page-mode-switch button, .audio-mode-switch button { min-height: 36px; border: 0; border-radius: 8px; padding: 6px 18px; color: #52615a; background: transparent; cursor: pointer; }
+.page-mode-switch button.active, .audio-mode-switch button.active { color: #fff; background: #087e6b; font-weight: 800; }
+.page-mode-switch button:disabled { opacity: .45; cursor: not-allowed; }
 
 .upload-card, .status-card, .profile-card, .error-card {
   border: 1px solid #dce5df;
@@ -74,6 +78,8 @@ input:focus, textarea:focus { outline: 3px solid rgba(8, 126, 107, .14); border-
 .hero-shortcut { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 16px; border: 1px solid #d8e4de; border-radius: 14px; background: #edf6f2; }
 .hero-shortcut > div { display: grid; gap: 4px; }
 .hero-shortcut p { font-size: 13px; }
+.song-cache { display: grid; gap: 10px; padding: 14px 16px; border: 1px solid #d8e4de; border-radius: 14px; background: #fff; }
+.song-cache > div { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .status-card { display: grid; gap: 12px; padding: 22px; }
 .status-line, .profile-heading, .detail-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
@@ -106,7 +112,7 @@ input:focus, textarea:focus { outline: 3px solid rgba(8, 126, 107, .14); border-
 .profile-title-line { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
 .profile-title-line .eyebrow { flex: none; }
 .profile-heading > span { color: #087e6b; font-weight: 800; }
-.players { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.players { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .players label { padding: 9px 11px; border-radius: 12px; background: #f3f7f4; }
 .players audio { height: 36px; }
 audio { width: 100%; }
@@ -133,8 +139,8 @@ audio { width: 100%; }
 .progressive-part-lyrics span { color: #718078; transition: color .15s ease; }
 .progressive-part-lyrics span.sung { color: #0b9b81; }
 .progressive-part-lyrics.clickable { cursor: pointer; }
-.legend { display: flex; flex-wrap: wrap; gap: 10px; }
-.legend span { padding: 7px 11px; border-radius: 99px; color: #56635d; background: #f0f3f1; font-size: 13px; }
+.legend { display: flex; flex-wrap: nowrap; gap: 5px; }
+.legend span { min-width: 0; padding: 5px 7px; border-radius: 99px; color: #56635d; background: #f0f3f1; font-size: 11px; white-space: nowrap; }
 .legend b { margin-right: 5px; color: #087e6b; }
 
 .lyrics-stage-heading { display: flex; justify-content: space-between; align-items: end; gap: 18px; }
@@ -169,11 +175,11 @@ audio { width: 100%; }
   cursor: pointer;
 }
 .character-mark { position: absolute; left: 50%; transform: translateX(-50%); font-size: 12px; line-height: 1; }
-.character-mark.below { bottom: -.38em; white-space: nowrap; }
+.character-mark.below { bottom: -.22em; white-space: nowrap; }
 .character-mark.above { top: -.25em; }
-.character-mark.boundary { left: 100%; transform: translateX(-.08em); text-align: left; }
+.character-mark.boundary { left: 100%; transform: translateX(-.12em); text-align: left; }
 .character-mark.boundary.link { width: .9em; }
-.character-mark.boundary.merge { width: max-content; min-width: 1.8em; overflow: visible; font-size: 10px; letter-spacing: -.12em; }
+.character-mark.boundary.merge { width: 1.8em; overflow: visible; font-family: monospace; font-size: 10px; letter-spacing: -.18em; transform: translateX(-.16em); }
 
 .hint-detail { display: grid; gap: 10px; padding: 18px; border-left: 4px solid #087e6b; border-radius: 12px; background: #f0f7f4; }
 .detail-heading span { color: #6b7771; font-size: 12px; text-transform: uppercase; }
@@ -191,6 +197,7 @@ audio { width: 100%; }
   .learning-playback-controls { align-items: stretch; }
   .sentence-loop-button { flex: 1 1 100%; max-width: 100%; min-height: 42px; }
   .profile-heading { align-items: flex-start; }
+  .legend { overflow-x: auto; padding-bottom: 2px; }
   .lyrics-stage-heading { align-items: stretch; flex-direction: column; }
   .lyrics-mode-switch { align-self: flex-start; }
   .hero-shortcut { display: grid; grid-template-columns: 1fr 1fr; align-items: stretch; }

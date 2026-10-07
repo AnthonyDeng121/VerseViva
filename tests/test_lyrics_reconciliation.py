@@ -1,5 +1,8 @@
 from server.models.song import SongSentence, WordTiming
-from server.services.lyrics_reconciliation import reconcile_provided_lyrics
+from server.services.lyrics_reconciliation import (
+    reconcile_provided_lyrics,
+    reconcile_synced_lyrics_excerpt,
+)
 
 
 def aligned_sentence() -> SongSentence:
@@ -169,6 +172,38 @@ def test_reconciliation_keeps_complete_online_lyrics_boundary_line() -> None:
     assert matched is True
     assert sentences[-1].lyrics == "Tell me I'm the only, only, only, only one"
     assert [word.text for word in sentences[-1].words][-4:] == ["only", "only", "only", "one"]
+
+
+def test_synced_lyrics_recovers_excerpt_when_whisper_transcript_is_bad() -> None:
+    asr = aligned_sentence().model_copy(update={
+        "lyrics": "Heard it live no we can't breathe in my poker face she is gonna let nobody",
+        "end_seconds": 16.0,
+        "words": [word.model_copy(update={
+            "start_seconds": index * 0.8,
+            "end_seconds": (index + 1) * 0.8,
+            "text": token,
+        }) for index, (word, token) in enumerate(zip(
+            (aligned_sentence().words * 8)[:16],
+            "Heard it live no we can't breathe in my poker face she is gonna let nobody".split(),
+            strict=True,
+        ))],
+    })
+    synced = """[00:24.00] I wanna hold em like they do in Texas please
+[00:40.00] Oh whoa oh oh
+[00:56.00] Can't read my can't read my
+[00:59.00] No he can't read my poker face
+[01:03.00] (She's got me like nobody)
+[01:07.00] Can't read my can't read my
+[01:10.00] No he can't read my poker face
+[01:13.00] (She's got me like nobody)
+[01:16.00] Poker face
+"""
+
+    sentences, matched = reconcile_synced_lyrics_excerpt(synced, [asr])
+
+    assert matched is True
+    assert all("Heard it live" not in sentence.lyrics for sentence in sentences)
+    assert any(sentence.lyrics == "(She's got me like nobody)" for sentence in sentences)
 
 
 def test_fuzzy_match_still_rejects_unrelated_song() -> None:

@@ -30,7 +30,10 @@ from server.services.language import apply_language_observations, generate_langu
 from server.services.language.models import LanguageObservationBatch
 from server.services.lyrics import DisabledLyricsProvider, LrclibLyricsProvider
 from server.services.lyrics.models import LyricsLookupResult
-from server.services.lyrics_reconciliation import reconcile_provided_lyrics
+from server.services.lyrics_reconciliation import (
+    reconcile_provided_lyrics,
+    reconcile_synced_lyrics_excerpt,
+)
 from server.services.song_profile_builder import build_song_profile
 from server.services.vocal_parts import GeminiVocalPartAnalyzer
 from server.services.vocal_parts.arrangement import (
@@ -139,6 +142,14 @@ class SongAnalysisPipeline:
                     lyrics_source = LyricsSource.provided
             elif lyrics_lookup is not None:
                 sentences, lyrics_matched = reconcile_provided_lyrics(lyrics, sentences)
+                if (
+                    not lyrics_matched
+                    and lyrics_lookup.synced_lyrics
+                    and lyrics_lookup.match_confidence >= 0.90
+                ):
+                    sentences, lyrics_matched = reconcile_synced_lyrics_excerpt(
+                        lyrics_lookup.synced_lyrics, sentences
+                    )
                 if lyrics_matched:
                     lyrics_source = LyricsSource.lrclib
                 else:
