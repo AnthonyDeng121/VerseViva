@@ -165,7 +165,8 @@ export function RecordingStudio({
   const sessionId = useMemo(() => getOrCreateSessionId(songId), [songId]);
 
   const practiceOptions = useMemo<PracticeOption[]>(() => {
-    const laneParts = vocalParts.filter((part) => part.lane === lane)
+    const laneParts = vocalParts.filter((part) => part.lane === lane
+      && (part.lane === "secondary" || part.lyrics.replace(/\s*\([^)]*\)/g, "").trim().length > 0))
       .sort((left, right) => left.startSeconds - right.startSeconds);
     if (laneParts.length) return laneParts.map((part) => ({
       id: part.id, label: part.lane === "primary"
@@ -197,11 +198,19 @@ export function RecordingStudio({
     setResourcesReady(false);
     void Promise.all([accompanimentUrl, sourceUrl].map(async (url) => {
       if (!url) return null;
-      const response = await fetch(url);
-      if (!response.ok) throw new Error("读取演唱音频资源失败");
-      const objectUrl = URL.createObjectURL(await response.blob());
-      objectUrls.push(objectUrl);
-      return objectUrl;
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 20_000);
+      try {
+        const response = await fetch(url, { signal: controller.signal });
+        if (!response.ok) throw new Error("读取演唱音频资源失败");
+        const objectUrl = URL.createObjectURL(await response.blob());
+        objectUrls.push(objectUrl);
+        return objectUrl;
+      } catch {
+        return url;
+      } finally {
+        window.clearTimeout(timeout);
+      }
     })).then(([accompaniment, source]) => {
       if (cancelled) return;
       setPreparedAccompanimentUrl(accompaniment);
@@ -593,7 +602,7 @@ export function RecordingStudio({
         </span>
       </div>
 
-      <div className="recording-mode-switch" role="group" aria-label="演唱轨道">
+      <div className="recording-switch-row"><div className="recording-mode-switch" role="group" aria-label="演唱轨道">
         <button type="button" className={lane === "primary" ? "active" : ""}
           onClick={() => setLane("primary")}>主轨</button>
         <button type="button" className={lane === "secondary" ? "active" : ""}
@@ -602,10 +611,10 @@ export function RecordingStudio({
 
       <div className="recording-mode-switch purpose-switch" role="group" aria-label="录音用途">
         <button type="button" className={purpose === "guided_practice" ? "active" : ""}
-          onClick={() => setPurpose("guided_practice")}>指导练唱</button>
+          onClick={() => setPurpose("guided_practice")}>分析</button>
         <button type="button" className={purpose === "free_overdub" ? "active" : ""}
-          onClick={() => setPurpose("free_overdub")}>清唱叠录</button>
-      </div>
+          onClick={() => setPurpose("free_overdub")}>纯唱</button>
+      </div></div>
       <p className="recording-purpose-note">{purpose === "guided_practice"
         ? "上传后分析语言技巧，并计入个人练唱记忆。"
         : "自由选择句子并保存为叠录音轨，不分析，也不计入个人练唱记忆。"}</p>

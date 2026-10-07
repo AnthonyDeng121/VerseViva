@@ -114,7 +114,6 @@ const STAGE_LABELS: Record<string, string> = {
 };
 
 const HERO_SONGS = [
-  { id: "song_00000000000000000000000000000002", label: "Juno" },
   { id: "song_00000000000000000000000000000003", label: "get him back!" },
   { id: "song_00000000000000000000000000000004", label: "AS IF IT'S YOUR LAST · 한국어" },
   { id: "song_00000000000000000000000000000005", label: "動物園は大変だ · 日本語" },
@@ -122,6 +121,7 @@ const HERO_SONGS = [
 
 const ACTIVE_JOB_KEY = "verseviva.activeJobId";
 const CACHED_SONGS_KEY = "verseviva.cachedSongs";
+const RETIRED_SONG_IDS = new Set(["song_00000000000000000000000000000002"]);
 type CachedSong = { songId: string; title: string; artist?: string | null };
 
 function App() {
@@ -130,12 +130,14 @@ function App() {
   const [selectedHint, setSelectedHint] = useState<LanguageHint | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [loadingHeroId, setLoadingHeroId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
   const [pageMode, setPageMode] = useState<"upload" | "technique" | "sing">("upload");
   const [cachedSongs, setCachedSongs] = useState<CachedSong[]>(() => {
-    try { return JSON.parse(window.localStorage.getItem(CACHED_SONGS_KEY) ?? "[]") as CachedSong[]; }
+    try { return (JSON.parse(window.localStorage.getItem(CACHED_SONGS_KEY) ?? "[]") as CachedSong[])
+      .filter((song) => !RETIRED_SONG_IDS.has(song.songId)); }
     catch { return []; }
   });
 
@@ -257,6 +259,7 @@ function App() {
   }
 
   async function loadHero(songId: string) {
+    setLoadingHeroId(songId);
     setError(null);
     setSelectedHint(null);
     try {
@@ -267,6 +270,8 @@ function App() {
       setPageMode("technique");
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "读取叠唱 Hero 失败");
+    } finally {
+      setLoadingHeroId(null);
     }
   }
 
@@ -288,9 +293,9 @@ function App() {
           <button type="button" className={pageMode === "upload" ? "active" : ""}
             onClick={() => setPageMode("upload")}>选择歌曲</button>
           <button type="button" className={pageMode === "technique" ? "active" : ""}
-            onClick={() => setPageMode("technique")} disabled={!profile}>技巧分析</button>
+            onClick={() => setPageMode("technique")}>技巧分析</button>
           <button type="button" className={pageMode === "sing" ? "active" : ""}
-            onClick={() => setPageMode("sing")} disabled={!profile}>演唱</button>
+            onClick={() => setPageMode("sing")}>演唱</button>
         </div>
       </header>
 
@@ -341,10 +346,14 @@ function App() {
           <p>可以直接选择官方示例歌曲片段展示功能</p>
         </div>
         {HERO_SONGS.map((song) => (
-          <button className="secondary-button" type="button" key={song.id} onClick={() => loadHero(song.id)}>
-            打开 {song.label}
+          <button className="secondary-button" type="button" key={song.id}
+            disabled={loadingHeroId !== null} onClick={() => void loadHero(song.id)}>
+            {loadingHeroId === song.id ? `正在读取 ${song.label}…` : `打开 ${song.label}`}
           </button>
         ))}
+        {loadingHeroId && <p className="hero-loading" aria-live="polite">
+          正在读取示例歌词和音频索引，请稍候；首次打开可能需要几秒。
+        </p>}
       </section></details>}
 
       {pageMode === "upload" && <details className="home-collapsible">
@@ -400,6 +409,14 @@ function App() {
       )}
 
       {error && !job?.error && <p className="error-card">{error}</p>}
+
+      {!profile && pageMode !== "upload" && <section className="empty-mode-card">
+        <strong>请先选择歌曲</strong>
+        <p>选择示例歌曲或自行上传歌曲后，才能使用技巧分析和演唱功能。</p>
+        <button className="primary-button" type="button" onClick={() => setPageMode("upload")}>
+          去选择歌曲
+        </button>
+      </section>}
 
       {profile && pageMode !== "upload" && (
         <ProfileView profile={profile} selectedHint={selectedHint} onSelect={setSelectedHint}
@@ -610,39 +627,18 @@ function AudioPlayer({
   playbackRate: number;
   onTimeChange: (time: number, player: HTMLAudioElement) => void;
 }) {
-  const [preparedSrc, setPreparedSrc] = useState<string | null>(null);
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.volume = 0.3;
       audioRef.current.playbackRate = playbackRate;
     }
   }, [audioRef, playbackRate, src]);
-  useEffect(() => {
-    let cancelled = false;
-    let objectUrl: string | null = null;
-    setPreparedSrc(null);
-    void fetch(src).then((response) => {
-      if (!response.ok) throw new Error("读取音频失败");
-      return response.blob();
-    }).then((blob) => {
-      if (cancelled) return;
-      objectUrl = URL.createObjectURL(blob);
-      setPreparedSrc(objectUrl);
-    }).catch(() => {
-      if (!cancelled) setPreparedSrc(src);
-    });
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [src]);
-  if (!preparedSrc) return <span className="audio-loading">正在准备音频…</span>;
   return (
     <audio
       ref={audioRef}
       controls
       preload="metadata"
-      src={preparedSrc}
+      src={src}
       onLoadedMetadata={(event) => {
         event.currentTarget.volume = 0.3;
         event.currentTarget.playbackRate = playbackRate;
@@ -710,7 +706,7 @@ function VocalLayers({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const primary = vocalParts
-    .filter((part) => part.lane === "primary")
+    .filter((part) => part.lane === "primary" && withoutParenthetical(part.lyrics).length > 0)
     .sort((left, right) => left.startSeconds - right.startSeconds);
   const secondary = vocalParts
     .filter((part) => part.lane === "secondary")
@@ -954,7 +950,10 @@ function crossesParentheticalLane(sentence: SongSentence, hint: LanguageHint) {
 function HintDetail({ sentence, initialHintId }: {
   sentence?: SongSentence; initialHintId: string;
 }) {
-  const hints = sentence?.languageHints.filter((hint) => !crossesParentheticalLane(sentence, hint)) ?? [];
+  const initialHint = sentence?.languageHints.find((hint) => hint.id === initialHintId);
+  const selectedLane = sentence && initialHint ? laneForHint(sentence, initialHint) : null;
+  const hints = sentence?.languageHints.filter((hint) => !crossesParentheticalLane(sentence, hint)
+    && (selectedLane === null || laneForHint(sentence, hint) === selectedLane)) ?? [];
   const initialIndex = Math.max(0, hints.findIndex((hint) => hint.id === initialHintId));
   const [index, setIndex] = useState(initialIndex);
   useEffect(() => setIndex(initialIndex), [initialHintId, initialIndex]);
@@ -968,7 +967,7 @@ function HintDetail({ sentence, initialHintId }: {
   const before = [...words].reverse().find((word) => (word.index ?? 0) <= (mark?.startCharIndex ?? 0));
   const after = words.find((word) => (word.index ?? 0) > (mark?.startCharIndex ?? 0));
   const technique = displayMark === "×"
-    ? `${before?.[0] ?? "目标音"}${displayMark}`
+    ? `${before?.[0] ?? "目标音"}${displayMark}${after ? ` ${after[0]}` : ""}`
     : `${before?.[0] ?? ""}${displayMark}${after?.[0] ?? ""}`;
   const count = hints.length;
   return (
@@ -991,6 +990,12 @@ function HintDetail({ sentence, initialHintId }: {
       {hint.evidence.needsHumanReview && <p className="review-note">这条候选需要人工复核。</p>}
     </aside>
   );
+}
+
+function laneForHint(sentence: SongSentence, hint: LanguageHint) {
+  const index = hint.marks[0]?.startCharIndex ?? 0;
+  const prefix = sentence.lyrics.slice(0, index);
+  return prefix.lastIndexOf("(") > prefix.lastIndexOf(")") ? "secondary" : "primary";
 }
 
 function TechniqueDisplay({ value, symbol }: { value: string; symbol: string }) {
