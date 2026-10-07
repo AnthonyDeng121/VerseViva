@@ -37,6 +37,8 @@ type RecordingTake = {
   audioUrl: string;
   mimeType: string;
   gain?: number;
+  latencyCompensationMs?: number;
+  manualOffsetMs?: number;
   muted?: boolean;
   isCurrent: boolean;
   supersededByTakeId?: string | null;
@@ -129,6 +131,10 @@ export function RecordingStudio({
   const [analyzingTakeId, setAnalyzingTakeId] = useState<string | null>(null);
   const [accompanimentVolume, setAccompanimentVolume] = useState(0.55);
   const [mixVoiceVolume, setMixVoiceVolume] = useState(1);
+  const [previewVoiceVolume, setPreviewVoiceVolume] = useState(1);
+  const [previewOffsetMs, setPreviewOffsetMs] = useState(0);
+  const [editingTakeId, setEditingTakeId] = useState<string | null>(null);
+  const [editingAll, setEditingAll] = useState(false);
   const [playingLabel, setPlayingLabel] = useState<string | null>(null);
   const [playingTakeId, setPlayingTakeId] = useState<string | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -339,6 +345,7 @@ export function RecordingStudio({
     form.set("timeline_start_seconds", String(selectionStart));
     form.set("save_mode", "overdub_append");
     form.set("client_duration_seconds", String(selectionEnd - selectionStart));
+    form.set("latency_compensation_ms", String(previewOffsetMs));
     if (selectedVocalPartId) form.set("vocal_part_id", selectedVocalPartId);
 
     try {
@@ -399,6 +406,9 @@ export function RecordingStudio({
       if (accompanimentRef.current && accompanimentUrl) {
         accompanimentRef.current.currentTime = take.timelineStartSeconds;
         accompanimentRef.current.volume = accompanimentVolume;
+        const offsetSeconds = ((take.latencyCompensationMs ?? 0) + (take.manualOffsetMs ?? 0)) / 1000;
+        if (offsetSeconds < 0) audio.currentTime = Math.min(-offsetSeconds, audio.duration || -offsetSeconds);
+        if (offsetSeconds > 0) accompanimentRef.current.currentTime += offsetSeconds;
         await Promise.all([audio.play(), accompanimentRef.current.play()]);
       } else {
         await audio.play();
@@ -441,7 +451,8 @@ export function RecordingStudio({
         mixGainNodesRef.current.set(take.takeId, gain);
         source.buffer = buffer;
         source.connect(gain).connect(context.destination);
-        source.start(audioStart + Math.max(0, take.timelineStartSeconds - timelineStart));
+        const offset = ((take.latencyCompensationMs ?? 0) + (take.manualOffsetMs ?? 0)) / 1000;
+        source.start(audioStart + Math.max(0, take.timelineStartSeconds - timelineStart + offset));
       });
       if (accompanimentRef.current && accompanimentUrl) {
         accompanimentRef.current.currentTime = timelineStart;
@@ -473,7 +484,9 @@ export function RecordingStudio({
     setPlayingTakeId(null);
   }
 
-  async function updateTake(takeId: string, update: { displayName?: string; gain?: number }) {
+  async function updateTake(takeId: string, update: {
+    displayName?: string; gain?: number; manualOffsetMs?: number;
+  }) {
     try {
       const response = await fetch(`/api/v1/takes/${takeId}`, {
         method: "PATCH",
@@ -539,6 +552,32 @@ export function RecordingStudio({
       {practiceOptions.length === 0 && <p className="recording-warning">这首歌没有可练习的次轨歌词。</p>}
       <p className="headphone-note">建议戴耳机录制，避免伴奏被麦克风再次收录。</p>
 
+      {state === "preview" && previewUrl && <div className="recording-preview preview-editor">
+        <audio controls src={previewUrl}
+          onVolumeChange={(event) => setPreviewVoiceVolume(event.currentTarget.volume)}
+          onPlay={(event) => {
+            event.currentTarget.volume = previewVoiceVolume;
+            if (previewOffsetMs < 0) event.currentTarget.currentTime = -previewOffsetMs / 1000;
+            if (accompanimentRef.current && accompanimentUrl) {
+              accompanimentRef.current.currentTime = selectionStart + Math.max(0, previewOffsetMs / 1000);
+              accompanimentRef.current.volume = accompanimentVolume;
+              void accompanimentRef.current.play().catch(() => undefined);
+            }
+          }}
+          onPause={() => accompanimentRef.current?.pause()}
+          onTimeUpdate={(event) => onTimelineChange?.(selectionStart + event.currentTarget.currentTime)}
+          onEnded={() => accompanimentRef.current?.pause()} />
+        <div className="preview-mix-controls">
+          <label><span>伴奏音量</span><input type="range" min="0" max="1" step="0.01"
+            value={accompanimentVolume} onChange={(event) => setAccompanimentVolume(Number(event.target.value))} /></label>
+          <label><span>人声音量</span><input type="range" min="0" max="1" step="0.01"
+            value={previewVoiceVolume} onChange={(event) => setPreviewVoiceVolume(Number(event.target.value))} /></label>
+          <label><span>人声延迟 {previewOffsetMs > 0 ? "+" : ""}{previewOffsetMs} ms</span>
+            <input type="range" min="-1000" max="1000" step="10" value={previewOffsetMs}
+              onChange={(event) => setPreviewOffsetMs(Number(event.target.value))} /></label>
+        </div>
+      </div>}
+
       <div className="recording-actions">
         {(state === "idle" || state === "requesting" || state === "uploaded") &&
           <button type="button" className="primary-button"
@@ -552,7 +591,7 @@ export function RecordingStudio({
           <button type="button" className="primary-button analyzing-button"
             disabled={state === "uploading"} onClick={() => void uploadRecording()}>
             {state === "uploading" && <span className="button-spinner" aria-hidden="true" />}
-            {state === "uploading" ? "正在上传并分析…" : "保留并分析"}
+            {state === "uploading" ? "正在上传并分析…" : "分析并上传"}
           </button>
           <button type="button" className="secondary-button"
             disabled={state === "uploading"} onClick={resetPreview}>重录</button>
@@ -565,20 +604,6 @@ export function RecordingStudio({
 
       {attempts.length > 0 && <PracticeFeedback attempt={attempts.at(-1)!} memory={memory} />}
 
-      {state === "preview" && previewUrl && <div className="recording-preview">
-        <audio controls src={previewUrl}
-          onPlay={() => {
-            if (accompanimentRef.current && accompanimentUrl) {
-              accompanimentRef.current.currentTime = selectionStart;
-              accompanimentRef.current.volume = accompanimentVolume;
-              void accompanimentRef.current.play().catch(() => undefined);
-            }
-          }}
-          onPause={() => accompanimentRef.current?.pause()}
-          onTimeUpdate={(event) => onTimelineChange?.(selectionStart + event.currentTarget.currentTime)}
-          onEnded={() => accompanimentRef.current?.pause()} />
-      </div>}
-
       {accompanimentUrl
         ? <audio ref={accompanimentRef} src={accompanimentUrl} preload="metadata"
             onTimeUpdate={(event) => {
@@ -589,17 +614,19 @@ export function RecordingStudio({
       {takes.length > 0 && <div className="take-history">
         <div className="take-history-heading">
           <h4>已保存音轨</h4>
-          <button type="button" className="primary-button" onClick={() => void playAllTakes()}>
-            全部轨道试听
+          <button type="button" className="primary-button" onClick={() => {
+            setEditingAll((current) => !current); void playAllTakes();
+          }}>
+            全部轨道试听与编辑
           </button>
         </div>
         {playingLabel && <p className="now-playing">正在播放：{playingLabel}</p>}
-        <label className="global-volume"><span>伴奏音量 {Math.round(accompanimentVolume * 100)}%</span>
+        {editingAll && <div className="all-track-editor"><label className="global-volume"><span>整体伴奏音量</span>
           <input type="range" min="0" max="1" step="0.01" value={accompanimentVolume}
             onChange={(event) => setAccompanimentVolume(Number(event.target.value))} /></label>
-        <label className="global-volume"><span>全部人声音量 {Math.round(mixVoiceVolume * 100)}%</span>
+        <label className="global-volume"><span>整体人声音量</span>
           <input type="range" min="0" max="1" step="0.01" value={mixVoiceVolume}
-            onChange={(event) => setMixVoiceVolume(Number(event.target.value))} /></label>
+            onChange={(event) => setMixVoiceVolume(Number(event.target.value))} /></label></div>}
         {[...takes].reverse().map((take) => <article key={take.takeId}
           className={`take-row ${take.isCurrent ? "current" : "history"}`}>
           <div className="take-details">
@@ -614,9 +641,10 @@ export function RecordingStudio({
                 const displayName = event.target.value.trim();
                 if (displayName) void updateTake(take.takeId, { displayName });
               }} />
-            <small>{take.isCurrent ? "当前采用" : "历史版本"} · {formatTime(take.selectionStartSeconds)}
-              – {formatTime(take.selectionEndSeconds)}</small>
-            <label className="track-volume"><span>人声音量 {Math.round((take.gain ?? 1) * 100)}%</span>
+            <small>{formatTime(take.selectionStartSeconds)}–{formatTime(take.selectionEndSeconds)} · {takeLyricSummary(take, sentences)}</small>
+          </div>
+          <div className="take-inline-controls">
+            <label className="track-volume" aria-label="人声音量">
               <input type="range" min="0" max="1" step="0.01" value={take.gain ?? 1}
                 onChange={(event) => {
                   const gain = Number(event.target.value);
@@ -634,21 +662,39 @@ export function RecordingStudio({
                 onKeyUp={(event) => void updateTake(take.takeId, {
                   gain: Number(event.currentTarget.value),
                 })} /></label>
-          </div>
-          <div className="take-row-actions">
             <button type="button" className="secondary-button"
-              onClick={() => void playTake(take)}>试听</button>
-            {attempts.some((item) => item.takeId === take.takeId && item.status !== "analyzed") &&
-              <button type="button" className="secondary-button"
-                disabled={analyzingTakeId === take.takeId}
-                onClick={() => void analyzeTake(take.takeId)}>
-                {analyzingTakeId === take.takeId ? "分析中…" : "重新分析"}
-              </button>}
+              onClick={() => { setEditingTakeId(editingTakeId === take.takeId ? null : take.takeId);
+                void playTake(take); }}>编辑</button>
+            <button type="button" className="secondary-button"
+              disabled={analyzingTakeId === take.takeId}
+              onClick={() => void analyzeTake(take.takeId)}>
+              {analyzingTakeId === take.takeId ? "分析中…" : "重分析"}
+            </button>
           </div>
+          {editingTakeId === take.takeId && <div className="take-offset-editor">
+            <label><span>人声延迟 {(take.manualOffsetMs ?? 0) > 0 ? "+" : ""}{take.manualOffsetMs ?? 0} ms</span>
+              <input type="range" min="-1000" max="1000" step="10" value={take.manualOffsetMs ?? 0}
+                onChange={(event) => {
+                  const manualOffsetMs = Number(event.target.value);
+                  setTakes((current) => current.map((item) => item.takeId === take.takeId
+                    ? { ...item, manualOffsetMs } : item));
+                }}
+                onPointerUp={(event) => void updateTake(take.takeId, {
+                  manualOffsetMs: Number(event.currentTarget.value),
+                })} /></label>
+          </div>}
         </article>)}
       </div>}
     </section>
   );
+}
+
+function takeLyricSummary(take: RecordingTake, sentences: RecordingSentence[]) {
+  const text = sentences.filter((sentence) => take.sentenceIds.includes(sentence.id))
+    .map((sentence) => sentence.lyrics).join(" ").trim();
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length <= 4) return words.join(" ");
+  return `${words.slice(0, 2).join(" ")} … ${words.slice(-2).join(" ")}`;
 }
 
 function PracticeFeedback({ attempt, memory }: {

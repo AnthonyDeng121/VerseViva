@@ -274,13 +274,15 @@ function App() {
         </p>
         <div className="page-mode-switch" role="group" aria-label="功能切换">
           <button type="button" className={pageMode === "upload" ? "active" : ""}
-            onClick={() => setPageMode("upload")}>上传歌曲</button>
+            onClick={() => setPageMode("upload")}>选择歌曲</button>
           <button type="button" className={pageMode === "sing" ? "active" : ""}
             onClick={() => setPageMode("sing")} disabled={!profile}>演唱</button>
         </div>
       </header>
 
-      {pageMode === "upload" && <form className="upload-card" onSubmit={submit}>
+      {pageMode === "upload" && <details className="home-collapsible" open>
+        <summary>自行上传歌曲</summary>
+      <form className="upload-card" onSubmit={submit}>
         <label>
           <span>歌曲文件</span>
           <input name="audio" type="file" accept=".mp3,.wav,.flac,audio/*" required />
@@ -317,27 +319,28 @@ function App() {
         <button className="primary-button" disabled={submitting}>
           {submitting ? "正在上传…" : "上传并分析"}
         </button>
-      </form>}
+      </form></details>}
 
-      {pageMode === "upload" && <section className="hero-shortcut">
+      {pageMode === "upload" && <details className="home-collapsible" open>
+        <summary>示例歌曲</summary><section className="hero-shortcut">
         <div>
-          <strong>示例歌曲</strong>
-          <p>直接打开示例，体验语言标记与左右双轨歌词。</p>
+          <p>可以直接选择官方示例歌曲片段展示功能</p>
         </div>
         {HERO_SONGS.map((song) => (
           <button className="secondary-button" type="button" key={song.id} onClick={() => loadHero(song.id)}>
             打开 {song.label}
           </button>
         ))}
-      </section>}
+      </section></details>}
 
-      {pageMode === "upload" && cachedSongs.length > 0 && <section className="song-cache">
-        <strong>这台设备已缓存的歌曲</strong>
+      {pageMode === "upload" && <details className="home-collapsible">
+        <summary>已缓存歌曲</summary><section className="song-cache">
         <div>{cachedSongs.map((song) => <button className="secondary-button" type="button"
           key={song.songId} onClick={() => void loadHero(song.songId)}>
           {song.title}{song.artist ? ` · ${song.artist}` : ""}
         </button>)}</div>
-      </section>}
+        {cachedSongs.length === 0 && <p>还没有这台设备上传过的歌曲片段。</p>}
+      </section></details>}
 
       {job && !profile && (
         <section className="status-card" aria-live="polite">
@@ -456,7 +459,6 @@ function ProfileView({
     <section className="profile-card">
       <div className="profile-heading">
         <div className="profile-title-line">
-          <p className="eyebrow">分析结果</p>
           <h2>{displaySongTitle(profile.title)}</h2>
         </div>
         <div className="audio-mode-switch" role="group" aria-label="参考音轨">
@@ -489,15 +491,15 @@ function ProfileView({
         </div>
         <button className={`sentence-loop-button ${loopSentence ? "active" : ""}`}
           type="button" disabled={profile.sentences.length === 0} onClick={toggleSentenceLoop}>
-          {loopSentence ? `循环中：${loopSentence.lyrics}` : "循环当前句"}
+          {loopSentence ? "停止循环" : "循环当前句"}
         </button>
         <span>点击歌词可跳到该句</span>
       </div>
 
       <div className="legend" aria-label="标记说明">
-        <span><b>×</b>：吞音（不发该音）</span>
-        <span><b>‿</b>：连读（读音二合一）</span>
-        <span><b>└─┘</b>：连读（读音改变）</span>
+        <span><b>×</b>：吞音（不发音）</span>
+        <span><b>‿</b>：连读（二合一）</span>
+        <span><b>└┘</b>：连读（读改音）</span>
       </div>
 
       <div className="lyrics-stage-heading">
@@ -519,7 +521,7 @@ function ProfileView({
               onClick={() => setLyricsMode("layers")}
               type="button"
             >
-              叠唱歌词
+              双轨歌词
             </button>
           </div>
         )}
@@ -540,7 +542,9 @@ function ProfileView({
             onSeek={seekTo}
           />}
 
-      {selectedHint && <HintDetail hint={selectedHint} />}
+      {selectedHint && <HintDetail sentence={profile.sentences.find((sentence) =>
+        sentence.languageHints.some((hint) => hint.id === selectedHint.id))}
+        initialHintId={selectedHint.id} />}
 
       <RecordingStudio
         songId={profile.songId}
@@ -780,6 +784,21 @@ function AnnotatedLine({
       const values = marksAt.get(mark.startCharIndex) ?? [];
       values.push({ mark, hint });
       marksAt.set(mark.startCharIndex, values);
+      if (mark.symbol === "×") {
+        const text = sentence.lyrics.toLowerCase();
+        const index = mark.startCharIndex;
+        if (text[index] === "k" && text[index + 1] === "e"
+          && !/[a-z]/.test(text[index + 2] ?? "")) {
+          const next = marksAt.get(index + 1) ?? [];
+          next.push({ mark: { ...mark, startCharIndex: index + 1, endCharIndex: index + 1 }, hint });
+          marksAt.set(index + 1, next);
+        } else if (text[index] === "e" && text[index - 1] === "k"
+          && !/[a-z]/.test(text[index + 1] ?? "")) {
+          const previous = marksAt.get(index - 1) ?? [];
+          previous.push({ mark: { ...mark, startCharIndex: index - 1, endCharIndex: index - 1 }, hint });
+          marksAt.set(index - 1, previous);
+        }
+      }
     }
   }
   const wordRanges = findWordRanges(sentence);
@@ -793,7 +812,10 @@ function AnnotatedLine({
       data-sentence-id={sentence.id}
       role="button"
       tabIndex={0}
-      onClick={() => onSeek(sentence.startSeconds)}
+      onClick={() => {
+        onSeek(sentence.startSeconds);
+        if (sentence.languageHints[0]) onSelect(sentence.languageHints[0]);
+      }}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") onSeek(sentence.startSeconds);
       }}
@@ -818,7 +840,7 @@ function AnnotatedLine({
                   }}
                   title="查看解释"
                 >
-                  {mark.symbol}
+                  {mark.symbol === "└─┘" ? "└┘" : mark.symbol}
                 </button>
               ))}
           </span>
@@ -849,17 +871,36 @@ function normalizeWord(value: string) {
   return value.toLowerCase().replaceAll("’", "'").replace(/[^a-z']/g, "");
 }
 
-function HintDetail({ hint }: { hint: LanguageHint }) {
+function HintDetail({ sentence, initialHintId }: {
+  sentence?: SongSentence; initialHintId: string;
+}) {
+  const initialIndex = Math.max(0, sentence?.languageHints.findIndex((hint) => hint.id === initialHintId) ?? 0);
+  const [index, setIndex] = useState(initialIndex);
+  useEffect(() => setIndex(initialIndex), [initialHintId, initialIndex]);
+  if (!sentence?.languageHints.length) return null;
+  const hint = sentence.languageHints[index % sentence.languageHints.length];
   const detail = hint.details.find((item) => item.locale === "zh-CN") ?? hint.details[0];
   if (!detail) return null;
+  const mark = hint.marks[0];
+  const displayMark = mark?.symbol === "└─┘" ? "└┘" : mark?.symbol ?? "";
+  const words = Array.from(sentence.lyrics.matchAll(/[A-Za-z]+(?:['’][A-Za-z]+)*/g));
+  const before = [...words].reverse().find((word) => (word.index ?? 0) <= (mark?.startCharIndex ?? 0));
+  const after = words.find((word) => (word.index ?? 0) > (mark?.startCharIndex ?? 0));
+  const technique = displayMark === "×"
+    ? `${before?.[0] ?? "目标音"}${displayMark}`
+    : `${before?.[0] ?? ""}${displayMark}${after?.[0] ?? ""}`;
+  const count = sentence.languageHints.length;
   return (
     <aside className="hint-detail">
-      <div className="detail-heading">
-        <strong>{hint.marks.map((mark) => mark.symbol).join(" ")} · {hint.phenomenon}</strong>
-        <span>{hint.evidence.evidenceStrength ?? "unknown"}</span>
+      <button className="hint-arrow" type="button" aria-label="上一个语言点"
+        disabled={count < 2} onClick={() => setIndex((index - 1 + count) % count)}>‹</button>
+      <div className="hint-content">
+        <div className="detail-heading"><strong>{technique}</strong><span>{index + 1}/{count}</span></div>
+        <p className="action"><b>建议：</b>{detail.action}</p>
+        <p><b>专业分析：</b>{detail.explanation}</p>
       </div>
-      <p>{detail.explanation}</p>
-      <p className="action"><b>下一遍：</b>{detail.action}</p>
+      <button className="hint-arrow" type="button" aria-label="下一个语言点"
+        disabled={count < 2} onClick={() => setIndex((index + 1) % count)}>›</button>
       {hint.evidence.needsHumanReview && <p className="review-note">这条候选需要人工复核。</p>}
     </aside>
   );

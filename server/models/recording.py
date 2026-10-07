@@ -70,10 +70,11 @@ class RecordingTake(RecordingModel):
 class RecordingTakeUpdate(RecordingModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=40)
     gain: float | None = Field(default=None, ge=0, le=2)
+    manual_offset_ms: float | None = Field(default=None, ge=-2000, le=2000)
 
     @model_validator(mode="after")
     def require_update(self) -> "RecordingTakeUpdate":
-        if self.display_name is None and self.gain is None:
+        if self.display_name is None and self.gain is None and self.manual_offset_ms is None:
             raise ValueError("at least one take field must be updated")
         if self.display_name is not None:
             self.display_name = self.display_name.strip()

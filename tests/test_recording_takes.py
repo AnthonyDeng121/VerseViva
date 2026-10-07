@@ -141,16 +141,17 @@ def test_take_upload_rejects_unknown_sentence_and_mismatched_media(take_client) 
     assert list((data_dir / "takes").glob("take_*/take.json")) == []
 
 
-def test_take_can_be_renamed_and_its_gain_persists(take_client) -> None:
+def test_take_can_be_renamed_and_its_mix_settings_persist(take_client) -> None:
     client, _, song_id = take_client
     created = _webm_upload(client, song_id).json()
 
     response = client.patch(
         f"/api/v1/takes/{created['takeId']}",
-        json={"displayName": "我的和声", "gain": 0.72},
+        json={"displayName": "我的和声", "gain": 0.72, "manualOffsetMs": -120},
     )
 
     assert response.status_code == 200
     assert response.json()["displayName"] == "我的和声"
     assert response.json()["gain"] == 0.72
+    assert response.json()["manualOffsetMs"] == -120
     assert client.get(f"/api/v1/takes/{created['takeId']}").json()["gain"] == 0.72

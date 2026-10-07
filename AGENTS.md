@@ -1031,6 +1031,62 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
 - 单轨试听显示当前音轨名称；全部轨道试听使用同一按钮开始/停止，不再额外显示停止按钮。
 - 伴奏音量对单轨与全部轨道播放全局生效；每轨人声音量只影响该 Take，全部人声音量作为混合回放总线影响所有 Take。
 
+### 2026-10-07 本轮接力总结与验收
+
+#### 本轮产品决定
+
+- 练唱诊断不加入 `timing_deviation`，因为浏览器录音延迟和设备差异会制造不可靠的时间结论。
+- 一次只展示最值得改的少量问题，当前上限为 3 条；问题不足时不得凑数。
+- 声学核查使用现有 Gemini API；文本教学建议使用 GLM-4.7-Flash，GLM 只能改写已确认的结构化声学事实，不能自行生成问题、音高判断、节奏偏差或毫秒数据。
+- Gemini 不可用、API 额度失败、录音被伴奏遮蔽或证据不足时，保存 `insufficient_data`，不计入可靠 Memory；GLM 失败时使用规则模板降级。
+- 练唱长期记忆只能来自真实 PracticeAttempt；同一 song/session/track slot 的相邻可靠 Attempt 才能比较 improved / unchanged / regressed。
+
+#### 练唱记忆与诊断已实现
+
+- 新增 `server/models/practice.py`：PracticeAttempt、LanguageIssue、PracticeRecommendation、AttemptComparison、PracticeMemory 等结构化模型。
+- 新增 `server/storage/practice_store.py`：SQLite `practice_attempts` 表，保存每次 Take 的诊断、建议、比较和分析版本，并聚合可靠历史记忆。
+- 新增 `server/services/practice/analyzer.py`：Gemini 只核查所选 primary 句子已有 LanguageHint；支持 expected elision、相同辅音分开、融合缺失和目标音遗漏等受限类型。
+- 新增 secondary 专用 Gemini 对比：使用已确认 Vocal Part 歌词、参考 `vocals.wav` 和用户次轨录音；不能可靠辨认次轨时返回 `insufficient_data`，不得套用 primary LanguageHint。
+- 新增 `server/services/practice/coach.py`：GLM-4.7-Flash 结构化输出 1–3 条中文动作建议，并在无 Key/调用失败时模板降级。
+- 新增 `server/services/practice/service.py` 与接口：`POST /api/v1/takes/{take_id}/analyze`、`GET /api/v1/songs/{song_id}/attempts`、`GET /api/v1/practice/memory`。
+- 用户点击“保留并分析”后自动上传、分析、保存 Attempt；刷新页面可以恢复 Attempts 和 Memory；`insufficient_data` Take 可重新分析，可靠 Attempt 幂等不重复计数。
+
+#### 已保存音轨与手机录音界面已实现
+
+- 录音按钮按状态互斥：初始只显示“开始录音”；录制中只显示“停止录音”；录制结束只显示“保留并分析”和“重录”。
+- “保留并分析”在上传和 Gemini 分析过程中显示旋转状态及“正在上传并分析…”/“正在分析，请保持页面打开…”，完成后清理临时录音，避免重复保存。
+- 删除重复的“伴奏 + 用户人声混合试听”标题、混合试听按钮和额外停止按钮；临时录音直接使用原生进度条播放。
+- 历史区域改为“已保存音轨”；每个 Take 自动命名“轨道 N”，支持通过 `PATCH /api/v1/takes/{take_id}` 持久化重命名和 gain。
+- 每条已保存音轨只保留“试听”；分析状态不是 analyzed 时才显示“重新分析”。单轨播放时显示“正在播放：音轨名称”。
+- “全部轨道试听”再次点击即可停止；同一共享 AudioContext 调度当前采用的多条 Take，并同步伴奏。
+- 伴奏音量为全局设置；每轨人声音量只作用于对应 Take；全部轨道试听另有“全部人声音量”总线控制。
+- 旧 Take 读取时自动补默认 `displayName`，不会因新增字段破坏既有录音数据。
+
+#### 实际运行与公网预览验收
+
+- `scripts/start_public_preview.ps1` 构建成功后启动同源 FastAPI 和 Cloudflare Quick Tunnel。
+- 2026-10-07 一次启动日志出现 Cloudflare UDP/部分边缘节点连接超时，但随后自动重试；本地 `http://127.0.0.1:8001/api/v1/health` 返回 200，公网 Quick Tunnel health 也返回 200。该类日志不表示 VerseViva 后端启动失败。
+- Quick Tunnel 网址每次重启都会变化；电脑开机、不休眠、联网且 PowerShell 窗口和隧道进程持续运行时，手机可从其他网络访问，不要求与电脑处于同一 Wi-Fi。关闭终端、电脑休眠、断网或隧道失败即不可访问。
+- `.env` 已加入实际练唱配置：`VERSEVIVA_PRACTICE_ACOUSTIC_PROVIDER=gemini`、Gemini 阈值、GLM 模型/地址/超时；`VERSEVIVA_GLM_API_KEY` 需要在本机填入，不能写入仓库或前端。
+- `.env` 中遗留的 `VERSEVIVA_BASIC_PITCH_EXECUTABLE` 已删除；项目继续禁止恢复 Basic Pitch、音高评分或音准主流程。
+
+#### 本轮验证结果
+
+- 后端全量测试：`83 passed`，另有 1 条第三方 Starlette/httpx 弃用 Warning。
+- Ruff：通过。
+- ESLint：通过。
+- TypeScript 编译与 Vite 生产构建：通过。
+- 新增录音重命名/gain 接口测试，以及 Practice Memory 测试均通过。
+- 本轮代码和配置均未提交、未推送；工作区修改属于待用户确认的本地变更。
+
+#### 下一轮必须继续验证
+
+- 用真实手机 HTTPS 反复录制 primary 和 secondary，确认 MediaRecorder 格式、权限、自动停止、原生进度条和“保留并分析”状态。
+- 填入 GLM API Key 后验证真实 GLM 建议；没有 Key 时只能验收模板降级，不代表 GLM 已真实调用。
+- 验证 Gemini 对真实手机录音的语言差异判断质量；模型认为证据不足时必须保持 `insufficient_data`。
+- 验证多条已保存音轨的单轨试听、全部轨道叠唱、伴奏全局音量、单轨 gain、全部人声总线音量和重命名在刷新后仍然恢复。
+- 继续完成用户录音词级对齐、浏览器录音延迟校准、manual offset、mute、精确多 Take AudioContext 同步和至少三首英文歌泛化验收。
+
 ## 14.1 本轮已经完成
 
 ### 括号歌词与双轨语义
