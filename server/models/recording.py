@@ -31,6 +31,7 @@ class RecordingTake(RecordingModel):
     """One immutable user recording plus mutable selection/playback metadata."""
 
     take_id: str
+    display_name: str = Field(default="未命名轨道", min_length=1, max_length=40)
     session_id: str = Field(min_length=1, max_length=128)
     song_id: str
     track_slot_id: str = Field(min_length=1, max_length=128)
@@ -63,4 +64,19 @@ class RecordingTake(RecordingModel):
             raise ValueError("sentence selection must contain exactly one sentence ID")
         if self.save_mode == TakeSaveMode.overdub_append and not self.is_current:
             raise ValueError("new overdub takes must remain independently current")
+        return self
+
+
+class RecordingTakeUpdate(RecordingModel):
+    display_name: str | None = Field(default=None, min_length=1, max_length=40)
+    gain: float | None = Field(default=None, ge=0, le=2)
+
+    @model_validator(mode="after")
+    def require_update(self) -> "RecordingTakeUpdate":
+        if self.display_name is None and self.gain is None:
+            raise ValueError("at least one take field must be updated")
+        if self.display_name is not None:
+            self.display_name = self.display_name.strip()
+            if not self.display_name:
+                raise ValueError("display_name must not be blank")
         return self

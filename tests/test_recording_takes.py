@@ -55,6 +55,7 @@ def test_mobile_webm_sentence_take_uploads_and_restores(take_client) -> None:
     assert response.status_code == 201
     payload = response.json()
     assert payload["selectionType"] == "sentence"
+    assert payload["displayName"] == "轨道1"
     assert payload["sentenceIds"] == ["sentence_001"]
     assert payload["isCurrent"] is True
     assert (data_dir / "takes" / payload["takeId"] / "original.webm").is_file()
@@ -138,3 +139,18 @@ def test_take_upload_rejects_unknown_sentence_and_mismatched_media(take_client) 
     assert unknown.status_code == 422
     assert mismatched.status_code == 415
     assert list((data_dir / "takes").glob("take_*/take.json")) == []
+
+
+def test_take_can_be_renamed_and_its_gain_persists(take_client) -> None:
+    client, _, song_id = take_client
+    created = _webm_upload(client, song_id).json()
+
+    response = client.patch(
+        f"/api/v1/takes/{created['takeId']}",
+        json={"displayName": "我的和声", "gain": 0.72},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["displayName"] == "我的和声"
+    assert response.json()["gain"] == 0.72
+    assert client.get(f"/api/v1/takes/{created['takeId']}").json()["gain"] == 0.72

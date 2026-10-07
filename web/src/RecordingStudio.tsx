@@ -24,6 +24,7 @@ type PracticeOption = {
 
 type RecordingTake = {
   takeId: string;
+  displayName: string;
   sessionId: string;
   trackSlotId: string;
   selectionType: "sentence" | "segment";
@@ -126,16 +127,18 @@ export function RecordingStudio({
   const [attempts, setAttempts] = useState<PracticeAttempt[]>([]);
   const [memory, setMemory] = useState<PracticeMemory | null>(null);
   const [analyzingTakeId, setAnalyzingTakeId] = useState<string | null>(null);
-  const [selectedTake, setSelectedTake] = useState<RecordingTake | null>(null);
   const [accompanimentVolume, setAccompanimentVolume] = useState(0.55);
-  const [voiceVolume, setVoiceVolume] = useState(1);
+  const [mixVoiceVolume, setMixVoiceVolume] = useState(1);
+  const [playingLabel, setPlayingLabel] = useState<string | null>(null);
+  const [playingTakeId, setPlayingTakeId] = useState<string | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const stopTimerRef = useRef<number | null>(null);
   const accompanimentRef = useRef<HTMLAudioElement>(null);
-  const voiceRef = useRef<HTMLAudioElement>(null);
+  const singleTakeAudioRef = useRef<HTMLAudioElement | null>(null);
   const mixContextRef = useRef<AudioContext | null>(null);
+  const mixGainNodesRef = useRef<Map<string, GainNode>>(new Map());
   const sessionId = useMemo(() => getOrCreateSessionId(songId), [songId]);
 
   const practiceOptions = useMemo<PracticeOption[]>(() => {
@@ -160,9 +163,6 @@ export function RecordingStudio({
   const selectionType = safeStartIndex === safeEndIndex ? "sentence" : "segment";
   const selectionStart = selectedOptions[0]?.startSeconds ?? 0;
   const selectionEnd = selectedOptions.at(-1)?.endSeconds ?? 0;
-  const activePreviewUrl = previewUrl ?? selectedTake?.audioUrl ?? null;
-  const activePreviewStart = selectedTake?.selectionStartSeconds ?? selectionStart;
-  const activePreviewEnd = selectedTake?.selectionEndSeconds ?? selectionEnd;
   const selectedVocalPartId = selectedOptions.length === 1 ? selectedOptions[0]?.vocalPartId : undefined;
 
   useEffect(() => { setStartIndex(0); setEndIndex(0); }, [lane, songId]);
@@ -210,6 +210,7 @@ export function RecordingStudio({
     streamRef.current?.getTracks().forEach((track) => track.stop());
     if (stopTimerRef.current !== null) window.clearTimeout(stopTimerRef.current);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
+    singleTakeAudioRef.current?.pause();
     void mixContextRef.current?.close();
   }, [previewUrl]);
 
@@ -218,14 +219,16 @@ export function RecordingStudio({
   }, [accompanimentVolume]);
 
   useEffect(() => {
-    if (voiceRef.current) voiceRef.current.volume = voiceVolume;
-  }, [voiceVolume]);
+    for (const take of takes) {
+      const node = mixGainNodesRef.current.get(take.takeId);
+      if (node) node.gain.value = (take.gain ?? 1) * mixVoiceVolume;
+    }
+  }, [mixVoiceVolume, takes]);
 
   function resetPreview() {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
     setPreviewBlob(null);
-    setSelectedTake(null);
     setState("idle");
   }
 
@@ -352,9 +355,8 @@ export function RecordingStudio({
         `/api/v1/songs/${songId}/takes?session_id=${encodeURIComponent(sessionId)}`,
       );
       setTakes(restored.ok ? await restored.json() as RecordingTake[] : [...takes, created]);
-      setSelectedTake(created);
-      setState("uploaded");
       await analyzeTake(created.takeId);
+      resetPreview();
     } catch (reason) {
       setState("preview");
       setError(reason instanceof Error ? reason.message : "录音上传失败");
@@ -382,33 +384,42 @@ export function RecordingStudio({
     }
   }
 
-  async function playMix() {
-    if (!voiceRef.current || !activePreviewUrl) return;
+  async function playTake(take: RecordingTake) {
+    if (playingTakeId === take.takeId) {
+      stopPlayback();
+      return;
+    }
+    stopPlayback();
     setError(null);
-    voiceRef.current.currentTime = 0;
-    voiceRef.current.volume = voiceVolume;
-    const starts: Promise<void>[] = [voiceRef.current.play()];
-    if (accompanimentRef.current && accompanimentUrl) {
-      accompanimentRef.current.currentTime = activePreviewStart;
-      accompanimentRef.current.volume = accompanimentVolume;
-      starts.push(accompanimentRef.current.play());
-    }
+    const audio = new Audio(take.audioUrl);
+    singleTakeAudioRef.current = audio;
+    audio.volume = Math.min(take.gain ?? 1, 1);
+    audio.onended = stopPlayback;
     try {
-      await Promise.all(starts);
+      if (accompanimentRef.current && accompanimentUrl) {
+        accompanimentRef.current.currentTime = take.timelineStartSeconds;
+        accompanimentRef.current.volume = accompanimentVolume;
+        await Promise.all([audio.play(), accompanimentRef.current.play()]);
+      } else {
+        await audio.play();
+      }
+      setPlayingTakeId(take.takeId);
+      setPlayingLabel(take.displayName);
+      onTimelineChange?.(take.timelineStartSeconds);
     } catch {
-      setError("浏览器阻止了播放，请再点一次混合试听。");
+      stopPlayback();
+      setError("浏览器阻止了播放，请再点一次试听。");
     }
-  }
-
-  function stopMix() {
-    voiceRef.current?.pause();
-    accompanimentRef.current?.pause();
   }
 
   async function playAllTakes() {
     const activeTakes = takes.filter((take) => take.isCurrent && !take.muted);
     if (!activeTakes.length) return;
-    stopAllTakes();
+    if (playingLabel === "全部轨道") {
+      stopPlayback();
+      return;
+    }
+    stopPlayback();
     setError(null);
     try {
       const AudioContextClass = window.AudioContext;
@@ -426,7 +437,8 @@ export function RecordingStudio({
         const take = activeTakes[index];
         const source = context.createBufferSource();
         const gain = context.createGain();
-        gain.gain.value = take.gain ?? 1;
+        gain.gain.value = (take.gain ?? 1) * mixVoiceVolume;
+        mixGainNodesRef.current.set(take.takeId, gain);
         source.buffer = buffer;
         source.connect(gain).connect(context.destination);
         source.start(audioStart + Math.max(0, take.timelineStartSeconds - timelineStart));
@@ -437,17 +449,44 @@ export function RecordingStudio({
         await accompanimentRef.current.play();
       }
       onTimelineChange?.(timelineStart);
+      setPlayingLabel("全部轨道");
+      setPlayingTakeId(null);
     } catch (reason) {
-      stopAllTakes();
+      stopPlayback();
       setError(reason instanceof Error ? reason.message : "无法播放全部轨道");
     }
   }
 
-  function stopAllTakes() {
+  function stopPlayback() {
+    const singleAudio = singleTakeAudioRef.current;
+    singleTakeAudioRef.current = null;
+    if (singleAudio) {
+      singleAudio.pause();
+      singleAudio.src = "";
+    }
     accompanimentRef.current?.pause();
     const context = mixContextRef.current;
     mixContextRef.current = null;
+    mixGainNodesRef.current.clear();
     if (context && context.state !== "closed") void context.close();
+    setPlayingLabel(null);
+    setPlayingTakeId(null);
+  }
+
+  async function updateTake(takeId: string, update: { displayName?: string; gain?: number }) {
+    try {
+      const response = await fetch(`/api/v1/takes/${takeId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(update),
+      });
+      if (!response.ok) throw new Error("保存音轨设置失败");
+      const updated = await response.json() as RecordingTake;
+      setTakes((current) => current.map((item) => item.takeId === takeId ? updated : item));
+      if (playingTakeId === takeId && update.displayName) setPlayingLabel(updated.displayName);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "保存音轨设置失败");
+    }
   }
 
   if (!sentences.length) return null;
@@ -501,48 +540,42 @@ export function RecordingStudio({
       <p className="headphone-note">建议戴耳机录制，避免伴奏被麦克风再次收录。</p>
 
       <div className="recording-actions">
-        {state !== "recording"
-          ? <button type="button" className="primary-button"
-              onClick={() => void startRecording()} disabled={state === "requesting" || state === "uploading" || practiceOptions.length === 0}>
-              {state === "requesting" ? "正在请求麦克风…" : "开始录音"}
-            </button>
-          : <button type="button" className="record-stop-button" onClick={stopRecording}>停止录音</button>}
-        {previewBlob && <button type="button" className="secondary-button"
-          disabled={state === "uploading"} onClick={() => void uploadRecording()}>
-          {state === "uploading" ? "正在上传…" : "保留这一遍"}
-        </button>}
-        {previewBlob && <button type="button" className="secondary-button" onClick={resetPreview}>丢弃并重录</button>}
+        {(state === "idle" || state === "requesting" || state === "uploaded") &&
+          <button type="button" className="primary-button"
+            onClick={() => void startRecording()}
+            disabled={state === "requesting" || practiceOptions.length === 0}>
+            {state === "requesting" ? "正在请求麦克风…" : "开始录音"}
+          </button>}
+        {state === "recording" &&
+          <button type="button" className="record-stop-button" onClick={stopRecording}>停止录音</button>}
+        {(state === "preview" || state === "uploading") && previewBlob && <>
+          <button type="button" className="primary-button analyzing-button"
+            disabled={state === "uploading"} onClick={() => void uploadRecording()}>
+            {state === "uploading" && <span className="button-spinner" aria-hidden="true" />}
+            {state === "uploading" ? "正在上传并分析…" : "保留并分析"}
+          </button>
+          <button type="button" className="secondary-button"
+            disabled={state === "uploading"} onClick={resetPreview}>重录</button>
+        </>}
       </div>
 
       {error && <p className="recording-error">{error}</p>}
       {state === "recording" && <p className="recording-live">● 正在录制；到片段结尾会自动停止</p>}
-      {analyzingTakeId && <p className="recording-live">正在听这一遍的语言动作并更新练唱记忆…</p>}
+      {analyzingTakeId && <p className="recording-live">正在分析，请保持页面打开…</p>}
 
       {attempts.length > 0 && <PracticeFeedback attempt={attempts.at(-1)!} memory={memory} />}
 
-      {activePreviewUrl && <div className="mix-preview">
-        <h4>伴奏 + 用户人声混合试听</h4>
-        <div className="volume-controls">
-          <label><span>伴奏 {Math.round(accompanimentVolume * 100)}%</span>
-            <input type="range" min="0" max="1" step="0.01" value={accompanimentVolume}
-              onChange={(event) => setAccompanimentVolume(Number(event.target.value))} /></label>
-          <label><span>用户人声 {Math.round(voiceVolume * 100)}%</span>
-            <input type="range" min="0" max="1" step="0.01" value={voiceVolume}
-              onChange={(event) => setVoiceVolume(Number(event.target.value))} /></label>
-        </div>
-        <div className="recording-actions">
-          <button type="button" className="secondary-button" onClick={() => void playMix()}>混合试听</button>
-          <button type="button" className="secondary-button" onClick={stopMix}>停止试听</button>
-        </div>
-        <audio controls ref={voiceRef} src={activePreviewUrl}
+      {state === "preview" && previewUrl && <div className="recording-preview">
+        <audio controls src={previewUrl}
           onPlay={() => {
             if (accompanimentRef.current && accompanimentUrl) {
-              accompanimentRef.current.currentTime = activePreviewStart + (voiceRef.current?.currentTime ?? 0);
+              accompanimentRef.current.currentTime = selectionStart;
+              accompanimentRef.current.volume = accompanimentVolume;
               void accompanimentRef.current.play().catch(() => undefined);
             }
           }}
           onPause={() => accompanimentRef.current?.pause()}
-          onTimeUpdate={(event) => onTimelineChange?.(activePreviewStart + event.currentTarget.currentTime)}
+          onTimeUpdate={(event) => onTimelineChange?.(selectionStart + event.currentTarget.currentTime)}
           onEnded={() => accompanimentRef.current?.pause()} />
       </div>}
 
@@ -555,42 +588,65 @@ export function RecordingStudio({
 
       {takes.length > 0 && <div className="take-history">
         <div className="take-history-heading">
-          <h4>本次演唱的 Take</h4>
-          <div className="recording-actions">
-            <button type="button" className="primary-button" onClick={() => void playAllTakes()}>
-              全部轨道试听
-            </button>
-            <button type="button" className="secondary-button" onClick={stopAllTakes}>停止</button>
-          </div>
+          <h4>已保存音轨</h4>
+          <button type="button" className="primary-button" onClick={() => void playAllTakes()}>
+            全部轨道试听
+          </button>
         </div>
+        {playingLabel && <p className="now-playing">正在播放：{playingLabel}</p>}
+        <label className="global-volume"><span>伴奏音量 {Math.round(accompanimentVolume * 100)}%</span>
+          <input type="range" min="0" max="1" step="0.01" value={accompanimentVolume}
+            onChange={(event) => setAccompanimentVolume(Number(event.target.value))} /></label>
+        <label className="global-volume"><span>全部人声音量 {Math.round(mixVoiceVolume * 100)}%</span>
+          <input type="range" min="0" max="1" step="0.01" value={mixVoiceVolume}
+            onChange={(event) => setMixVoiceVolume(Number(event.target.value))} /></label>
         {[...takes].reverse().map((take) => <article key={take.takeId}
           className={`take-row ${take.isCurrent ? "current" : "history"}`}>
-          <div><strong>{take.saveMode === "overdub_append" ? "叠唱 Take" : "普通练唱"}</strong>
+          <div className="take-details">
+            <input className="track-name-input" value={take.displayName}
+              aria-label="音轨名称"
+              onChange={(event) => {
+                const displayName = event.target.value;
+                setTakes((current) => current.map((item) =>
+                  item.takeId === take.takeId ? { ...item, displayName } : item));
+              }}
+              onBlur={(event) => {
+                const displayName = event.target.value.trim();
+                if (displayName) void updateTake(take.takeId, { displayName });
+              }} />
             <small>{take.isCurrent ? "当前采用" : "历史版本"} · {formatTime(take.selectionStartSeconds)}
-              – {formatTime(take.selectionEndSeconds)}</small></div>
+              – {formatTime(take.selectionEndSeconds)}</small>
+            <label className="track-volume"><span>人声音量 {Math.round((take.gain ?? 1) * 100)}%</span>
+              <input type="range" min="0" max="1" step="0.01" value={take.gain ?? 1}
+                onChange={(event) => {
+                  const gain = Number(event.target.value);
+                  if (playingTakeId === take.takeId && singleTakeAudioRef.current) {
+                    singleTakeAudioRef.current.volume = gain;
+                  }
+                  const mixNode = mixGainNodesRef.current.get(take.takeId);
+                  if (mixNode) mixNode.gain.value = gain * mixVoiceVolume;
+                  setTakes((current) => current.map((item) =>
+                    item.takeId === take.takeId ? { ...item, gain } : item));
+                }}
+                onPointerUp={(event) => void updateTake(take.takeId, {
+                  gain: Number(event.currentTarget.value),
+                })}
+                onKeyUp={(event) => void updateTake(take.takeId, {
+                  gain: Number(event.currentTarget.value),
+                })} /></label>
+          </div>
           <div className="take-row-actions">
-            <button type="button" className="secondary-button" onClick={() => {
-              if (previewUrl) URL.revokeObjectURL(previewUrl);
-              setPreviewUrl(null);
-              setPreviewBlob(null);
-              setSelectedTake(take);
-            }}>加载混合试听</button>
-            {attempts.find((item) => item.takeId === take.takeId)?.status !== "analyzed" &&
+            <button type="button" className="secondary-button"
+              onClick={() => void playTake(take)}>试听</button>
+            {attempts.some((item) => item.takeId === take.takeId && item.status !== "analyzed") &&
               <button type="button" className="secondary-button"
                 disabled={analyzingTakeId === take.takeId}
                 onClick={() => void analyzeTake(take.takeId)}>
-                {analyzingTakeId === take.takeId
-                  ? "分析中…"
-                  : attempts.some((item) => item.takeId === take.takeId)
-                    ? "重新分析并记住"
-                    : "分析并记住"}
+                {analyzingTakeId === take.takeId ? "分析中…" : "重新分析"}
               </button>}
           </div>
         </article>)}
       </div>}
-      {selectedTake && <p className="recording-selection-summary">
-        正在试听已保留 Take：{formatTime(activePreviewStart)} – {formatTime(activePreviewEnd)}
-      </p>}
     </section>
   );
 }

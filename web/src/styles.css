@@ -227,6 +227,11 @@ audio { width: 100%; }
 .recording-error, .recording-warning { color: #9c3f32; }
 .recording-live { color: #b0302c; font-weight: 700; }
 .record-stop-button { padding: 10px 16px; border: 0; border-radius: 12px; color: #fff; background: #b0302c; }
+.analyzing-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.button-spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.45); border-top-color: #fff; border-radius: 50%; animation: button-spin .75s linear infinite; }
+@keyframes button-spin { to { transform: rotate(360deg); } }
+.recording-preview { margin-top: 12px; }
+.recording-preview audio { width: 100%; }
 .mix-preview, .take-history { margin-top: 18px; padding-top: 16px; border-top: 1px solid rgba(74,54,43,.14); }
 .volume-controls { align-items: end; margin: 14px 0; }
 .volume-controls label { flex: 1; }
@@ -237,6 +242,14 @@ audio { width: 100%; }
 .take-history-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .mix-preview audio { display: block; margin-top: 10px; }
 .take-row-actions { display: flex !important; flex-wrap: wrap; justify-content: flex-end; gap: 7px !important; }
+.take-details { flex: 1; min-width: 0; }
+.track-name-input { width: min(100%, 260px); border: 0; border-bottom: 1px solid transparent; padding: 4px 2px; color: #2c352f; background: transparent; font: inherit; font-weight: 800; }
+.track-name-input:focus { border-bottom-color: #087e6b; outline: none; }
+.global-volume, .track-volume { display: grid; gap: 5px; color: #69766f; font-size: 12px; }
+.global-volume { margin: 12px 0; }
+.global-volume input, .track-volume input { width: 100%; }
+.track-volume { margin-top: 8px; }
+.now-playing { margin: 10px 0; color: #087e6b; font-weight: 750; }
 .practice-feedback { margin: 14px 0; padding: 14px; border: 1px solid rgba(14,159,134,.24); border-radius: 14px; background: rgba(236,249,245,.78); }
 .practice-feedback-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .practice-feedback-heading h4, .practice-feedback-heading p { margin: 0; }

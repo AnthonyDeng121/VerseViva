@@ -10,6 +10,7 @@ from server.models.practice import PracticeAttempt, PracticeMemory
 from server.models.recording import (
     RecordingSelectionType,
     RecordingTake,
+    RecordingTakeUpdate,
     TakeSaveMode,
 )
 from server.services.practice.service import analyze_practice_take
@@ -139,8 +140,13 @@ async def upload_take(
                 detail="Recording content does not match its extension",
             )
 
+        existing_takes = TakeStore(settings.data_dir).list_for_song(
+            song_id,
+            session_id=session_id,
+        )
         take = RecordingTake(
             take_id=take_id,
+            display_name=f"轨道{len(existing_takes) + 1}",
             session_id=session_id,
             song_id=song_id,
             track_slot_id=track_slot_id,
@@ -188,6 +194,18 @@ async def get_take(take_id: str) -> RecordingTake:
     if take is None:
         raise HTTPException(status_code=404, detail="Recording Take not found")
     return take
+
+
+@router.patch("/takes/{take_id}", response_model=RecordingTake)
+async def update_take(take_id: str, update: RecordingTakeUpdate) -> RecordingTake:
+    store = TakeStore(get_settings().data_dir)
+    take = store.get(take_id)
+    if take is None:
+        raise HTTPException(status_code=404, detail="Recording Take not found")
+    changes = update.model_dump(exclude_none=True)
+    updated = take.model_copy(update=changes)
+    store.save(updated)
+    return updated
 
 
 @router.get("/takes/{take_id}/audio", response_class=FileResponse)

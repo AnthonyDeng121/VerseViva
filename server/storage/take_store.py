@@ -50,7 +50,9 @@ class TakeStore:
         if not source.is_file():
             return None
         try:
-            return RecordingTake.model_validate_json(source.read_text(encoding="utf-8"))
+            payload = json.loads(source.read_text(encoding="utf-8"))
+            payload.setdefault("displayName", "未命名轨道")
+            return RecordingTake.model_validate(payload)
         except (OSError, ValueError):
             return None
 
@@ -58,7 +60,9 @@ class TakeStore:
         takes: list[RecordingTake] = []
         for source in self.takes_dir.glob("take_*/take.json"):
             try:
-                take = RecordingTake.model_validate_json(source.read_text(encoding="utf-8"))
+                payload = json.loads(source.read_text(encoding="utf-8"))
+                payload.setdefault("displayName", f"轨道{len(takes) + 1}")
+                take = RecordingTake.model_validate(payload)
             except (OSError, ValueError):
                 continue
             if take.song_id == song_id and (session_id is None or take.session_id == session_id):
