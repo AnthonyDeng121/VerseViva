@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse
 from server.config import get_settings
 from server.models.song import AnalysisJob, AnalysisStage, AnalysisStatus, SongProfile
 from server.pipelines.song_analysis import build_default_pipeline
+from server.services.language import add_pronunciation_guides
 from server.storage.job_store import JobStore
 from server.storage.profile_store import ProfileStore
 
@@ -173,9 +174,18 @@ async def retry_analysis_job(job_id: str, background_tasks: BackgroundTasks) -> 
 
 @router.get("/{song_id}", response_model=SongProfile)
 async def get_song_profile(song_id: str) -> SongProfile:
-    profile = ProfileStore(get_settings().data_dir).get(song_id)
+    store = ProfileStore(get_settings().data_dir)
+    profile = store.get(song_id)
     if profile is None:
         raise HTTPException(status_code=404, detail="Song profile not found")
+    if profile.language in {"ja", "ko"} and any(
+        sentence.pronunciation is None
+        or sentence.pronunciation.text.strip() == sentence.lyrics.strip()
+        for sentence in profile.sentences
+    ):
+        upgraded = add_pronunciation_guides(profile.sentences, profile.language)
+        profile = profile.model_copy(update={"sentences": upgraded})
+        store.save(profile)
     return profile
 
 

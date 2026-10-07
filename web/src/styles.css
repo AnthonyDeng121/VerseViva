@@ -121,6 +121,8 @@ input[type="range"] { min-height: 24px; padding: 0; border: 0; background: trans
 .players { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .players label { grid-template-columns: 34px minmax(0,1fr); align-items: center; padding: 5px 8px; border-radius: 10px; background: #f3f7f4; font-size: 10px; }
 .players audio { height: 30px; }
+.audio-player-state { display: grid; min-width: 0; }
+.audio-playback-message { margin-top: 2px; color: #748078; font-size: 10px; }
 audio { width: 100%; }
 .learning-playback-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; padding: 10px 12px; border-radius: 13px; background: #f3f7f4; }
 .learning-playback-controls > span { color: #69766f; font-size: 12px; }
@@ -235,7 +237,15 @@ audio { width: 100%; }
 .singing-secondary { color: #087e6b; }
 .recording-page.hidden { display: none; }
 
-.recording-studio { margin-top: 12px; padding: 14px; border: 1px solid rgba(74,54,43,.16); border-radius: 16px; background: linear-gradient(145deg, #fffaf4, #f6ede4); font-size: 13px; }
+.recording-studio { display: flex; flex-direction: column; margin-top: 12px; padding: 14px; border: 1px solid rgba(74,54,43,.16); border-radius: 16px; background: linear-gradient(145deg, #fffaf4, #f6ede4); font-size: 13px; }
+.recording-studio > * { order: 10; }
+.recording-studio > .recording-heading { order: 1; }
+.recording-studio > .recording-switch-row { order: 2; }
+.recording-studio > .recording-purpose-note { order: 3; }
+.recording-studio > .recording-selectors { order: 4; }
+.recording-studio > .recording-selection-summary { order: 5; }
+.recording-studio > .headphone-note, .recording-studio > .recording-warning { order: 6; }
+.recording-studio > .current-track-editor { order: 7; }
 .recording-heading, .recording-actions, .volume-controls, .take-row { display: flex; align-items: center; gap: 12px; }
 .recording-heading, .take-row { justify-content: space-between; }
 .recording-heading h3, .mix-preview h4, .take-history h4 { margin: 2px 0 0; }
@@ -246,18 +256,18 @@ audio { width: 100%; }
 .recording-mode-switch { display: inline-flex; margin: 12px 0 9px; padding: 3px; border-radius: 10px; background: rgba(82,62,49,.08); }
 .recording-mode-switch button { min-width: 58px; padding: 6px 9px; border: 0; border-radius: 8px; color: #5e5148; background: transparent; font-size: 11px; }
 .recording-mode-switch button.active { color: #fff; background: #9f4e3d; }
-.recording-switch-row { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; }
+.recording-switch-row { display: flex; flex-wrap: nowrap; align-items: center; gap: 5px; overflow-x: auto; }
 .purpose-switch { margin-left: 0; }
 .empty-mode-card { padding: 22px; border: 1px solid #dce5e0; border-radius: 16px; text-align: center; background: #fff; }
 .empty-mode-card p, .hero-loading { color: #68756f; font-size: 13px; }
 .recording-purpose-note { margin: 0 0 12px; color: #6f7774; font-size: .76rem; }
 .recording-success { color: #0d7e6a; font-size: .82rem; }
 .take-purpose { color: #0d7e6a; }
-.recording-selectors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.recording-selectors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
 .recording-selectors label, .volume-controls label { display: grid; gap: 7px; }
-.recording-selectors select { width: 100%; min-height: 42px; padding: 8px 10px; border: 1px solid rgba(70,49,37,.2); border-radius: 10px; background: #fff; }
+.recording-selectors select { width: 100%; min-height: 32px; padding: 5px 7px; border: 1px solid rgba(70,49,37,.2); border-radius: 8px; background: #fff; font-size: 11px; }
 .recording-selection-summary, .headphone-note, .recording-error, .recording-live, .recording-warning { margin: 10px 0; }
-.headphone-note, .recording-selection-summary { color: #75665d; font-size: 14px; }
+.headphone-note, .recording-selection-summary, .recording-purpose-note { color: #75665d; font-size: 12px; }
 .recording-error, .recording-warning { color: #9c3f32; }
 .recording-live { color: #b0302c; font-weight: 700; }
 .record-stop-button { padding: 10px 16px; border: 0; border-radius: 12px; color: #fff; background: #b0302c; }
@@ -312,7 +322,7 @@ audio { width: 100%; }
 @media (max-width: 680px) {
   .recording-studio { padding: 16px; }
   .recording-heading, .recording-actions, .volume-controls { align-items: stretch; flex-direction: column; }
-  .recording-selectors { grid-template-columns: 1fr; }
+  .recording-selectors { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .recording-actions button { width: 100%; min-height: 40px; }
   .take-row { grid-template-columns: 1fr; }
   .take-inline-controls { grid-template-columns: minmax(90px,1fr) auto auto !important; }

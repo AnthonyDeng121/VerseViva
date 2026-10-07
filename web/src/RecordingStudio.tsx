@@ -129,6 +129,7 @@ export function RecordingStudio({
   const [endIndex, setEndIndex] = useState(0);
   const [lane, setLane] = useState<"primary" | "secondary">("primary");
   const [purpose, setPurpose] = useState<"guided_practice" | "free_overdub">("guided_practice");
+  const [recordingReference, setRecordingReference] = useState<"accompaniment" | "source">("accompaniment");
   const [state, setState] = useState<RecorderState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
@@ -351,10 +352,12 @@ export function RecordingStudio({
       recorder.start(250);
       setState("recording");
       onRecordingStart?.();
-      if (accompanimentRef.current && preparedAccompanimentUrl) {
-        accompanimentRef.current.currentTime = selectionStart;
-        accompanimentRef.current.volume = accompanimentVolume;
-        await accompanimentRef.current.play();
+      const referencePlayer = recordingReference === "source"
+        ? sourceRef.current : accompanimentRef.current;
+      if (referencePlayer) {
+        referencePlayer.currentTime = selectionStart;
+        referencePlayer.volume = recordingReference === "source" ? 0.3 : accompanimentVolume;
+        await referencePlayer.play();
       }
       stopTimerRef.current = window.setTimeout(
         () => stopRecording(),
@@ -381,16 +384,7 @@ export function RecordingStudio({
     const recorder = recorderRef.current;
     if (recorder?.state === "recording") recorder.stop();
     accompanimentRef.current?.pause();
-  }
-
-  async function playReference() {
-    const player = sourceRef.current;
-    if (!player || !preparedSourceUrl) return;
-    if (!player.paused) { player.pause(); return; }
-    player.currentTime = selectionStart;
-    player.volume = 0.3;
-    try { await player.play(); }
-    catch { setError("浏览器阻止了原唱播放，请再点一次。"); }
+    sourceRef.current?.pause();
   }
 
   async function uploadRecording() {
@@ -614,6 +608,12 @@ export function RecordingStudio({
           onClick={() => setPurpose("guided_practice")}>分析</button>
         <button type="button" className={purpose === "free_overdub" ? "active" : ""}
           onClick={() => setPurpose("free_overdub")}>纯唱</button>
+      </div>
+      <div className="recording-mode-switch reference-switch" role="group" aria-label="录制参考音源">
+        <button type="button" className={recordingReference === "accompaniment" ? "active" : ""}
+          onClick={() => setRecordingReference("accompaniment")}>听伴奏</button>
+        <button type="button" className={recordingReference === "source" ? "active" : ""}
+          onClick={() => setRecordingReference("source")}>听原唱</button>
       </div></div>
       <p className="recording-purpose-note">{purpose === "guided_practice"
         ? "上传后分析语言技巧，并计入个人练唱记忆。"
@@ -715,8 +715,6 @@ export function RecordingStudio({
             disabled={state === "requesting" || practiceOptions.length === 0 || !resourcesReady}>
             {!resourcesReady ? "正在准备音频…" : state === "requesting" ? "正在请求麦克风…" : "开始录音"}
           </button>}
-        <button type="button" className="secondary-button" disabled={!resourcesReady}
-          onClick={() => void playReference()}>听原唱</button>
         {state === "recording" &&
           <button type="button" className="record-stop-button" onClick={stopRecording}>停止录音</button>}
         {(state === "preview" || state === "uploading") && previewBlob && <>
@@ -760,7 +758,7 @@ export function RecordingStudio({
         <div className="take-history-heading">
           <h4>已保存音轨</h4>
           <button type="button" className="primary-button" onClick={() => {
-            setEditingTakeId(null); setEditingAll((current) => !current); void playAllTakes();
+            setEditingTakeId(null); setEditingAll(true); void playAllTakes();
           }}>
             全部轨道试听与编辑
           </button>
@@ -785,7 +783,7 @@ export function RecordingStudio({
           </div>
           <div className="take-inline-controls">
             <button type="button" className="secondary-button"
-              onClick={() => { setEditingAll(false); setEditingTakeId(editingTakeId === take.takeId ? null : take.takeId);
+              onClick={() => { setEditingAll(false); setEditingTakeId(take.takeId);
                 void playTake(take); }}>编辑</button>
             {take.purpose === "guided_practice" && <button type="button" className="secondary-button"
               disabled={analyzingTakeId === take.takeId}

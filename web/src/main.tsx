@@ -114,9 +114,9 @@ const STAGE_LABELS: Record<string, string> = {
 };
 
 const HERO_SONGS = [
-  { id: "song_00000000000000000000000000000003", label: "get him back!" },
-  { id: "song_00000000000000000000000000000004", label: "AS IF IT'S YOUR LAST · 한국어" },
-  { id: "song_00000000000000000000000000000005", label: "動物園は大変だ · 日本語" },
+  { id: "song_00000000000000000000000000000003", label: "get him back!（英语）" },
+  { id: "song_00000000000000000000000000000004", label: "AS IF IT'S YOUR LAST（韩语）" },
+  { id: "song_00000000000000000000000000000005", label: "動物園は大変だ (日语)" },
 ] as const;
 
 const ACTIVE_JOB_KEY = "verseviva.activeJobId";
@@ -348,7 +348,7 @@ function App() {
         {HERO_SONGS.map((song) => (
           <button className="secondary-button" type="button" key={song.id}
             disabled={loadingHeroId !== null} onClick={() => void loadHero(song.id)}>
-            {loadingHeroId === song.id ? `正在读取 ${song.label}…` : `打开 ${song.label}`}
+            {loadingHeroId === song.id ? `正在读取 ${song.label}…` : song.label}
           </button>
         ))}
         {loadingHeroId && <p className="hero-loading" aria-live="polite">
@@ -627,13 +627,14 @@ function AudioPlayer({
   playbackRate: number;
   onTimeChange: (time: number, player: HTMLAudioElement) => void;
 }) {
+  const [playbackMessage, setPlaybackMessage] = useState("正在连接音频资源…");
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.volume = 0.3;
       audioRef.current.playbackRate = playbackRate;
     }
   }, [audioRef, playbackRate, src]);
-  return (
+  return (<div className="audio-player-state">
     <audio
       ref={audioRef}
       controls
@@ -642,11 +643,20 @@ function AudioPlayer({
       onLoadedMetadata={(event) => {
         event.currentTarget.volume = 0.3;
         event.currentTarget.playbackRate = playbackRate;
+        setPlaybackMessage("音频已就绪");
       }}
+      onLoadStart={() => setPlaybackMessage("正在连接音频资源…")}
+      onWaiting={() => setPlaybackMessage("网络或服务器供给较慢，正在缓冲音频…")}
+      onCanPlay={() => setPlaybackMessage("音频已就绪")}
+      onPlaying={() => setPlaybackMessage("正在播放")}
+      onPause={() => setPlaybackMessage("播放已暂停")}
+      onStalled={() => setPlaybackMessage("音频传输暂时中断，正在重新缓冲…")}
+      onError={() => setPlaybackMessage("音频读取失败，请刷新后重试")}
       onTimeUpdate={(event) => onTimeChange(event.currentTarget.currentTime, event.currentTarget)}
       onSeeked={(event) => onTimeChange(event.currentTarget.currentTime, event.currentTarget)}
     />
-  );
+    <small className="audio-playback-message">{playbackMessage}</small>
+  </div>);
 }
 
 function KaraokeLyrics({
