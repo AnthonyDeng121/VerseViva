@@ -111,8 +111,10 @@ async def analyze_practice_take(
     try:
         if is_secondary and secondary_part is not None:
             reference_vocal_path = (
-                settings.data_dir / "songs" / profile.song_id / "audio" / "vocals.wav"
+                settings.data_dir / "songs" / profile.song_id / "audio" / "vocals.mp3"
             )
+            if not reference_vocal_path.is_file():
+                reference_vocal_path = reference_vocal_path.with_suffix(".wav")
             if not reference_vocal_path.is_file():
                 raise FileNotFoundError("参考整体人声资产不存在")
             batch = await analyzer.analyze_secondary(
@@ -122,8 +124,10 @@ async def analyze_practice_take(
             )
         else:
             reference_vocal_path = (
-                settings.data_dir / "songs" / profile.song_id / "audio" / "vocals.wav"
+                settings.data_dir / "songs" / profile.song_id / "audio" / "vocals.mp3"
             )
+            if not reference_vocal_path.is_file():
+                reference_vocal_path = reference_vocal_path.with_suffix(".wav")
             batch = await analyzer.analyze(
                 audio_path,
                 sentences,

@@ -198,9 +198,11 @@ async def get_song_audio(song_id: str, asset: str) -> FileResponse:
 
     audio_dir = settings.data_dir / "songs" / song_id / "audio"
     if asset == "vocals":
-        source = audio_dir / "vocals.wav"
+        compact = audio_dir / "vocals.mp3"
+        source = compact if compact.is_file() else audio_dir / "vocals.wav"
     elif asset == "accompaniment":
-        source = audio_dir / "accompaniment.wav"
+        compact = audio_dir / "accompaniment.mp3"
+        source = compact if compact.is_file() else audio_dir / "accompaniment.wav"
     elif asset == "source":
         matches = sorted(audio_dir.glob("source.*"))
         source = matches[0] if matches else audio_dir / "source"

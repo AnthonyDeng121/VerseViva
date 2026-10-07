@@ -276,10 +276,14 @@ def test_song_audio_assets_are_served_only_for_existing_profiles(upload_client) 
     (audio_dir / "source.mp3").write_bytes(b"ID3-source")
     (audio_dir / "vocals.wav").write_bytes(b"RIFF-vocals")
     (audio_dir / "accompaniment.wav").write_bytes(b"RIFF-accompaniment")
+    (audio_dir / "vocals.mp3").write_bytes(b"ID3-compact-vocals")
+    (audio_dir / "accompaniment.mp3").write_bytes(b"ID3-compact-accompaniment")
 
     assert client.get(f"/api/v1/songs/{song_id}/audio/source").content == b"ID3-source"
-    assert client.get(f"/api/v1/songs/{song_id}/audio/vocals").content == b"RIFF-vocals"
+    assert client.get(f"/api/v1/songs/{song_id}/audio/vocals").content == (
+        b"ID3-compact-vocals"
+    )
     assert client.get(f"/api/v1/songs/{song_id}/audio/accompaniment").content == (
-        b"RIFF-accompaniment"
+        b"ID3-compact-accompaniment"
     )
     assert client.get(f"/api/v1/songs/{song_id}/audio/unknown").status_code == 404

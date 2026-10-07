@@ -1,5 +1,6 @@
 import hashlib
 import json
+import subprocess
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -98,6 +99,10 @@ class SongAnalysisPipeline:
             duration = await self.duration_probe.duration_seconds(source)
             self._advance(job, AnalysisStage.separating_vocals)
             separation = await self.separator.separate(source, job_dir / "separation")
+            analysis_vocals = job_dir / "separation" / "analysis-vocals.mp3"
+            _create_web_audio(separation.vocals, analysis_vocals)
+            if not analysis_vocals.is_file():
+                analysis_vocals = separation.vocals
 
             provided_lyrics_path = job_dir / "input" / "lyrics.txt"
             if provided_lyrics_path.is_file():
@@ -141,7 +146,7 @@ class SongAnalysisPipeline:
                 else ""
             )
             alignment_artifacts = await self.lyrics_aligner.align(
-                separation.vocals,
+                analysis_vocals,
                 job_dir / "alignment",
                 language=alignment_language_hint,
             )
@@ -191,7 +196,7 @@ class SongAnalysisPipeline:
                     dual_pipeline = DualTrackArrangementPipeline(self.vocal_part_analyzer)
                     try:
                         vocal_parts = await dual_pipeline.analyze(
-                            vocal_audio=separation.vocals,
+                            vocal_audio=analysis_vocals,
                             duration_seconds=duration,
                             transcript=transcript,
                             sentences=sentences,
@@ -206,7 +211,7 @@ class SongAnalysisPipeline:
                         )
                         self.job_store.save(job)
                         vocal_parts = await DualTrackArrangementPipeline().analyze(
-                            vocal_audio=separation.vocals,
+                            vocal_audio=analysis_vocals,
                             duration_seconds=duration,
                             transcript=transcript,
                             sentences=sentences,
@@ -217,7 +222,7 @@ class SongAnalysisPipeline:
                     )
             else:
                 vocal_parts = await SingleTrackArrangementPipeline().analyze(
-                    vocal_audio=separation.vocals,
+                    vocal_audio=analysis_vocals,
                     duration_seconds=duration,
                     transcript={},
                     sentences=sentences,
@@ -238,7 +243,7 @@ class SongAnalysisPipeline:
             observations = _load_observations(observations_path)
             if observations is None:
                 observations = await self.language_coach.analyze(
-                    separation.vocals, lyrics, sentences, candidates
+                    analysis_vocals, lyrics, sentences, candidates
                 )
                 _save_json(
                     observations_path,
@@ -376,6 +381,34 @@ def _publish_audio_assets(
     copy2(source, audio_dir / f"source{source.suffix.lower()}")
     copy2(vocals, audio_dir / "vocals.wav")
     copy2(accompaniment, audio_dir / "accompaniment.wav")
+    _create_web_audio(vocals, audio_dir / "vocals.mp3")
+    _create_web_audio(accompaniment, audio_dir / "accompaniment.mp3")
+
+
+def _create_web_audio(source: Path, destination: Path) -> None:
+    """Create a compact browser asset while retaining WAV for analysis."""
+    try:
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-loglevel",
+                "error",
+                "-i",
+                str(source),
+                "-vn",
+                "-codec:a",
+                "libmp3lame",
+                "-b:a",
+                "128k",
+                str(destination),
+            ],
+            check=True,
+            capture_output=True,
+            timeout=120,
+        )
+    except (OSError, subprocess.SubprocessError):
+        destination.unlink(missing_ok=True)
 
 
 def _save_json(path: Path, payload: object) -> None:
