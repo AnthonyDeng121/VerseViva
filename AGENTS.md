@@ -1188,3 +1188,268 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
   API；Gemini 放独立 Worker，CPU 模型 Pipeline 放 Linux Worker 或预缓存 Hero。
 - 不要把 Quick Tunnel 临时 URL 写入产品配置或提交材料。
 - 不要提交、推送或覆盖用户无关修改。
+
+---
+
+# 15. 2026-10-07 日韩语音变教学线路接力记录
+
+> 本章是当前最新的多语言状态。若与前文“第一阶段只正式承诺英文”或“首页只写英文歌”
+> 等历史记录冲突，以本章为准。当前产品已具备英语、韩语和日语的歌词教学展示与候选音变核查骨架，
+> 但日韩语规则覆盖率仍是第一版，不得宣称已覆盖所有音变。
+
+## 15.1 产品范围决定
+
+- 日韩语线路只聚焦“歌词写法 / 辅助读音”与“这次原唱实际唱法”之间的可听音变，
+  不扩展为完整日语、韩语课程。
+- 对用户统一为四种可执行动作：
+  - 吞掉：该音没有清楚出现，底层使用 `delete`。
+  - 收住：完成口型、闭塞或舌位，但不单独释放，底层使用 `unreleased`。
+  - 连过去：前一个尾音直接带到后一个元音，底层使用 `resegment`。
+  - 合起来 / 变音：多个写出来的音共享一个动作或形成新听感，底层使用
+    `merge` / `substitute`。
+- 用户不需理解“再音节化”、“音节末塞音不释放”、“拨音同化”等语言学名词；
+  `phenomenon` 仍保留专业名称，中文技巧卡只解释嘴巴、舌位与气流动作。
+- 日韩语歌词主区固定展示“原文 + 罗马音”，`×`、`‿`、`└─┘` 只锚定在罗马音行。
+  点击句子或标记后，技巧卡再展示原文、辅助读音、演唱提示、中文解释和下一遍动作。
+- 不为展示功能故意使用错误辅助读音。日语 `ち + ゃ` 直接生成正确的 `cha`，
+  不展示或教学错误的 `chi ya`。
+
+## 15.2 已实现的多语言数据与 Pipeline
+
+- `SongSentence` 新增可选 `pronunciation`，保存学习者可读文本、scheme 和来源；
+  原文 `lyrics` 与辅助读音始终分离。
+- `LanguageHint` 新增可选 `canonicalPronunciation` 和 `observedPronunciation`，
+  用于技巧卡对比“辅助读音”与“演唱提示”。
+- 新增 `server/services/language/pronunciation.py`：
+  - 韩语将 Hangul 音节块分解为适合中国用户跟唱的 Revised Romanization 风格辅助读音。
+  - 日语使用 `pykakasi` 生成 Hepburn 风格辅助读音，按拍拆分以便跟唱。
+  - 日语显式助词 `は / へ / を` 在辅助读音中显示为 `wa / e / o`。
+  - 日语长音符按可唱读法合并，例如 `シャワー` 显示为 `sha waa`。
+- `generate_language_candidates` 已可按 `en / ko / ja` 分流：
+  - 韩语第一版生成词尾辅音收住不释放与后续元音连读重组候选。
+  - 日语第一版生成 `ん` 在 `b / m / p / k / g` 前的鼻音位置变化候选。
+  - 规则只生成 `text_rule_candidate`语义的候选，Gemini 仍必须核查这次原唱音频；
+    弱证据或不确定不进入歌词 UI。
+- Gemini Prompt 已增加日韩语约束：罗马音不是声学真值，不得仅根据 `g/k`、`d/t`
+  或规则经验确认音变。
+- 候选现象名只在与 Gemini 实际 verdict 兼容时沿用；如 Gemini 把“词尾收住”候选
+  听成合并 / 同化，Profile 会改用通用 `segment_merger_or_assimilation`，避免名称与符号矛盾。
+- 新增歌词脚本检测：韩文字符占主导时使用 `ko`，日文假名与汉字占主导时使用 `ja`。
+  该结果优先于混合英语开头造成的 WhisperX 错误语言标签，也会在有歌词时作为 WhisperX 语言提示。
+- LRCLIB 匹配归一化已从 ASCII-only 改为保留全部 Unicode 字母和数字，
+  不再把日文、韩文歌名清空。
+- 歌词对齐 tokenizer 已支持英文、Hangul、平假名、片假名与日文汉字；
+  日语 WhisperX 较长文本单元可按字符均分时间作为对齐回退，不伪装成真实字级声学对齐。
+- 修复 `_load_observations()` 只检查文件却不反序列化的旧 Bug；修复前重建 Profile 会重复调用 Gemini。
+- 语言 observation 缓存升级为 `observations-v6-<fingerprint>.json`，指纹由歌词与全部候选内容生成。
+  人工校正歌词或规则输出变化后不得读取旧 Gemini 结果冒充新分析。
+
+## 15.3 歌词来源与 Gemini 能力结论
+
+- Gemini 官方音频转写能力明确支持 `ko-KR` 和 `ja-JP`，当前项目使用的通用音频输入与
+  Structured Output 也能对日韩候选返回受限 JSON。这只证明能力入口可用，
+  不代表所有细粒度音变都可靠；每个 Hero 提示仍需听感验收。
+- LRCLIB 当前 API 稳定字段只有 `plainLyrics` 与 `syncedLyrics`，没有可依赖的日韩罗马音字段。
+  原文可从 LRCLIB 取得，罗马音必须由本地 Language Adapter 生成并允许 Hero 人工校正。
+- 韩语 Hero 在 LRCLIB 能搜到完整韩文歌词；日语 Hero 在 LRCLIB 无可用结果，
+  且一次真实请求返回 503。日语 Hero 使用用户提供的音频进行 WhisperX 转写后人工校正文本，
+  Profile 中诚实记录 `lyricsSource=provided`。
+
+## 15.4 真实 Hero 验收
+
+### 韩语 Hero：BLACKPINK《AS IF IT'S YOUR LAST》片段
+
+- 原始素材：`data/day4/input/AS IF IT'S YOUR LAST.mp3`，约 31.6 秒。
+- 真实分析 job：`job_837eaeeb7ecb49f3bf24052a3d822308`。
+- 原始随机 song：`song_fc95d42d348940e59a11b04bf60ecc76`。
+- 稳定 Hero song：`song_00000000000000000000000000000004`。
+- Demucs、LRCLIB、WhisperX、Vocal Part Gemini、日韩语 Language Adapter、语言 Gemini 和 Profile 构建均真实运行。
+- 首次 WhisperX 因开头英语把整段标为 `en`；新增脚本检测后 Profile 正确为 `ko`。
+- 最终 Profile：8 句歌词、8 条罗马音、13 条 Gemini 核查后语言提示、9 个 Vocal Part。
+- 已真实验证：
+  - `geot cheo` 的词尾 `t` 收住不单独释放，使用 `×`。
+  - `an a` 重组为接近 `a-na`，使用 `‿`。
+  - `gak hae` 被 Gemini 判为合并 / 同化时，最终 Profile 改用
+    `segment_merger_or_assimilation + └─┘`，不再冒充 `final_stop_unreleased`。
+
+### 日语 Hero：TUNE'S《動物園は大変だ》片段
+
+- 原始素材：`data/day4/input/動物園は大変だ.mp3`，约 24.5 秒。
+- 真实分析 job：`job_f1975fd286e84677a443b244cca1d227`。
+- 原始随机 song：`song_42430bbff9c2491a9fb6f8dba5a24f78`。
+- 稳定 Hero song：`song_00000000000000000000000000000005`。
+- LRCLIB 无可用歌词；WhisperX 输出日文文本但错误标记 `language=en`，且动物名称与部分动作词有误。
+  本 Hero 根据用户提供的音频人工校正为 6 句文本，复用 WhisperX 时间证据后重建。
+- 最终 Profile：`language=ja`、`lyricsSource=provided`、6 句原文、6 条罗马音、1 条 Gemini 保留的可靠音变提示。
+- 已验收读音：
+  - `街の動物園は　忙しい` → `ma chi no do u bu tsu e n wa i so ga shi i`。
+  - `ハナ水の　シャワーだゾウ` → `ha na mi zu no sha waa da zo u`。
+  - `忘れちゃう` 的规则测试输出 `wa su re cha u`，明确不产生 `chi ya`。
+  - `さん + カ` 在本次原唱中经 Gemini 保留为 `n ka → ng ka` 的鼻音位置变化，
+    使用合并 / 变音标记。
+- 没有为了增加展示数量而强行保留其他日语提示；Gemini 只保留 1 条时，UI 就只展示 1 条。
+
+## 15.5 当前前端与验证基线
+
+- 首页文案已从“教你学唱英文歌”改为“教你学唱外语歌”。
+- “示例歌曲”已新增：
+  - `AS IF IT'S YOUR LAST · 한국어` → `song_00000000000000000000000000000004`。
+  - `動物園は大変だ · 日本語` → `song_00000000000000000000000000000005`。
+- 英语旧 Profile 没有 `pronunciation` 时保持原单行渲染和原字符标记语义，新字段向后兼容。
+- 新增 `pykakasi>=2.3,<3` 运行依赖。WSL 的 `.venv-whisperx` 原本只有模型依赖，
+  本轮已安装当前项目的可编辑包与 FastAPI / Gemini / `pykakasi` 等轻量应用依赖，
+  `server.scripts.run_analysis_job` 现可从该解释器启动，仍调用独立 Demucs 可执行文件。
+- 本轮最终回归基线：
+  - 后端全量测试：`91 passed`，另有 1 条第三方 Starlette/httpx 弃用 Warning。
+  - Ruff：通过。
+  - ESLint：通过。
+  - TypeScript 编译与 Vite 生产构建：通过。
+  - `git diff --check`：通过。
+- 代码和配置仍未提交、未推送。`data/` 按 `.gitignore` 不进入 Git；
+  两个日韩 Hero Profile 与音频资产已存在当前机器，比赛机器或云端部署必须另行预置。
+
+## 15.6 下一轮日韩语优先项与注意事项
+
+1. 先在手机 HTTPS H5 真实打开两个日韩 Hero，验收原文 / 罗马音排版、标记锚点、
+   点句跳转和技巧卡三层信息，特别检查小屏换行。
+2. 人工听感复核韩语 Hero 的 13 条提示和日语 Hero 的 1 条提示；
+   Gemini 的 moderate/strong 证据不等于人工真值。
+3. 韩语下一批规则可扩展鼻音化、流音化、紧音化、送气化和腭化；
+   日语可扩展促音、母音无声化 / 弱化和更完整的 `ん` 环境。扩展时继续复用通用 transformation，
+   不在核心 Schema 为每条语言规则新增固定枚举。
+4. 当前韩语罗马音是程序生成的学习辅助，不是 IPA；不得把 `g/k`、`j/ch`
+   的拉丁字母差异直接当成声学错误。
+5. 日语汉字读音由 `pykakasi` 生成，Hero 必须人工校对多音字、人名、特殊拟声词和歌词创作性写法。
+6. LRCLIB 503 与“查无结果”是两种状态；前者是网络 / 服务失败，后者是来源缺失。
+   通用上传仍应对 429 / 503 做有限重试，不得将一次 503 宣称为歌词站确定没有该歌。
+7. 长时间 Demucs / WhisperX 任务启动并确认后，不需持续轮询；可结束当前回合，
+   等用户发“继续”后再查任务 JSON、模型进程与产物，以减少无效轮询。
+
+---
+
+# 16. 2026-10-07 手机验收后的最新实现状态
+
+> 本节记录本轮连续手机验收与代码修改的最终事实。若与 14 节或更早的“当前状态”描述冲突，
+> 以本节为准。不要依据旧截图、旧 Hero 缓存或旧回归数字覆盖这些结论。
+
+## 16.1 页面结构与加载反馈
+
+- 首页一级功能为“选择歌曲 / 技巧分析 / 演唱”；未选择歌曲时进入后两项会显示“请先选择歌曲”，
+  不再只出现浏览器禁用符号。
+- “自行上传歌曲”“示例歌曲”“已缓存歌曲”默认收起；折叠后不保留大块空白。
+- 示例歌曲当前顺序与名称：
+  1. `get him back!（英语）`
+  2. `AS IF IT'S YOUR LAST（韩语）`
+  3. `動物園は大変だ (日语)`
+- Juno 已从示例入口移除，固定示例缓存 `song_00000000000000000000000000000002`
+  已删除；浏览器缓存列表也过滤该 retired song ID。
+- 首次选择示例歌曲时按钮显示“正在读取……”，并说明正在读取歌词和音频索引。
+- 浏览器音频播放器直接使用服务端媒体地址，不再强制完整下载 WAV 后才渲染播放器。
+- 播放器向用户显示连接、就绪、播放、暂停、缓冲、传输中断和读取失败状态。Cloudflare 临时隧道、
+  手机网络和大媒体文件都可能造成缓冲；不能再把无响应伪装成已经就绪。
+
+## 16.2 网页与模型音频格式
+
+- Demucs 仍产出并保留 `vocals.wav` / `accompaniment.wav` 作为可恢复的分析母文件。
+- Pipeline 会额外使用 FFmpeg 生成 128 kbps：
+  - `analysis-vocals.mp3`：模型分析代理文件；
+  - `vocals.mp3`：网页整体人声播放文件；
+  - `accompaniment.mp3`：网页伴奏播放文件。
+- 网页 `/audio/vocals` 与 `/audio/accompaniment` 优先返回 MP3，MP3 不存在时回退 WAV。
+- WhisperX、Gemini 语言核查、Vocal Part 核查和单轨编排优先使用 `analysis-vocals.mp3`；转码失败时
+  回退 Demucs WAV。练唱 Gemini 的参考整体人声同样优先使用 `vocals.mp3`。
+- 用户浏览器录音继续使用浏览器提供的 WebM/Opus、M4A、OGG 或 WAV，不强制转成 WAV。
+- 当前工作区已将 28 个缓存人声/伴奏 WAV（约 120.35 MB）转为约 10.94 MB 的网页 MP3。
+  `data/` 通常不入 Git，因此部署时仍必须预置这些 MP3，或让部署环境运行新版 Pipeline 生成。
+
+## 16.3 歌词、标记与技巧卡片
+
+- 普通歌词和双轨歌词使用更紧凑的字号、行距和容器；移动端双轨仍保持左右 lane 语义。
+- 主轨歌词会剔除括号 secondary 文本；剔除后为空的 primary Vocal Part 不再渲染空白行，也不会
+  出现在练唱起止句选项中。
+- 点击双轨中的主轨，只在技巧卡片中浏览主轨语言点；点击次轨同理。不得在同一技巧卡片轮播另一 lane。
+- 候选生成、Gemini Prompt、练唱输入和前端旧缓存过滤均禁止跨主/次轨边界构造语言现象。
+  尤其不得将 primary 的 `up` 与括号 secondary 的 `But` 建立连读或吞音关系。
+- `×` 技巧卡片显示包含目标音的词和后一个词，并保留歌词原始大小写；词间保留真实空格。
+- `└┘` 已进一步向右微调；`×`、`‿`、`└┘` 继续显示在字符下方。
+- 以 `e` 结尾的英文单词若检测到词尾吞音，末尾 `e` 与前一个辅音都显示 `×`。
+- 技巧详情只显示面向用户的解释、建议和专业分析，不展示 `cross_word_linking` 等内部枚举。
+- 不在整页英文歌词下常驻 IPA。若以后增加英语音标，应作为点击单词/技巧后的可选详情，区分词典 IPA
+  与本次原唱实际实现，避免挤占歌词和误导用户逐字清晰发音。
+
+## 16.4 录音、分析与多轨编辑
+
+- 录音顶部紧凑控制保持一行：`主轨 / 次轨`、`分析 / 纯唱`、`听伴奏 / 听原唱`。
+- “听伴奏 / 听原唱”是录制过程的参考音源选择，不是跳转或单独试听按钮。开始录音时播放所选音源，
+  手动停止或到达片段结尾时同步停止。
+- 起始句/结束句位于上述开关下方，移动端尽量保持同一行；选择框、摘要、耳机提示和用途说明使用统一小字号。
+- `分析` 对应 `guided_practice`：上传后运行语言诊断并允许进入 Practice Memory。
+- `纯唱` 对应 `free_overdub`：仍可自由选句、选择主/次轨、上传、保存、试听、调音量与偏移、参与多轨混音，
+  但不调用 Gemini、不生成 PracticeAttempt、不进入长期 Memory，也不显示“重分析”。后端分析接口会对
+  `free_overdub` 返回 409，防止前端误调用污染记忆。
+- 开始录音前会准备原曲和伴奏；完整预缓存最多等待 20 秒，失败或超时回退流式地址，不再无限显示
+  “正在准备音频”。
+- 点击“分析并上传”会同时停止临时录音预览、原唱、伴奏、单轨和全部轨道回放。
+- 只有一个共享轨道编辑区：点击“全部轨道试听与编辑”显示整体进度、整体伴奏音量和整体人声音量；
+  点击某一单轨“编辑”时，同一位置替换为该轨进度、音量和 manual offset，不在轨道卡片下另开编辑器。
+- 保存的 Take 持久化显示名称、用途、gain、manual offset、latency compensation、时间范围和歌词摘要。
+- 没有听到可靠演唱内容、只有静音或全部 findings 为 uncertain 时必须返回 `insufficient_data`，不得把
+  “没有发现可靠差异”保存为成功记录。
+
+## 16.5 Gemini 练唱核查修复
+
+- Gemini Files 上传完成不等于可推理。上传用户录音和参考音频后必须轮询文件状态，等待 `ACTIVE`；
+  `FAILED` 或 60 秒超时返回明确错误。此项修复了 `File ... is not in an ACTIVE state` 的 400。
+- primary 练唱会同时提交参考整体人声和用户录音；用户录音是诊断对象，参考人声只用于核对原唱实际处理。
+- primary 练唱会移除括号 secondary 文本与落在括号区间的提示，不得把未唱 secondary 判为漏唱。
+- secondary Take 优先按 `vocalPartId` 绑定；旧 Take 缺 ID 时按录制时间范围回退匹配 overlapping secondary。
+- secondary 仍使用整体 vocals stem，并不代表已取得独立和声音源；无法可靠辨认时返回
+  `insufficient_data`，不得借主唱听感推断次轨。
+
+## 16.6 多语言与人工校验 Hero
+
+### get him back!
+
+- 固定 Hero：`song_00000000000000000000000000000003`，保持双轨。
+- 已按产品负责人本轮意见移除指定的不正确连读，保留其他未点名标记。
+- `Then be the one to stitch it up` 的 `up` 仍保留 `×`，并人工标记与下一条 primary `Wanna` 的跨句衔接；
+  该衔接绝不能跨到括号 secondary 的 `But`。
+- 人工增加 primary 跨句 `sucks → Oh`、`mom → And`。
+- `I wanna break his heart, stitch it right back up` 已修正为
+  `Don't wanna break his heart, stitch it right back up`，相关字符标记索引同步平移。
+
+### AS IF IT'S YOUR LAST
+
+- 固定 Hero：`song_00000000000000000000000000000004`。
+- 删除重复的 `BLACKPINK in your area (BLACKPINK in your area)`，整个示例改为 single track。
+- 保留韩语罗马音与已有 `reom an` 连音提示。
+- 补回末句 `내일 따윈 없는 것처럼, love`，罗马音为
+  `nae il tta win eop neun geot cheo reom, love`。
+
+### 動物園は大変だ
+
+- 固定 Hero：`song_00000000000000000000000000000005`。
+- 六句日语原文与 Hepburn 学习读音已人工确认。
+- 人工提示位置：`e n‿wa`、`sa n‿te`，以及末句两次 `ta i‿he n‿da`。
+- 可重复执行 `python -m server.scripts.curate_demo_profiles` 应用当前三首 Hero 的人工校验；脚本必须保持幂等。
+
+## 16.7 日语、韩语与中文上传边界
+
+- 上传 Pipeline 会优先使用手动歌词，随后进行语言检测、WhisperX 对齐、罗马音和候选生成。
+- 韩语使用 Revised Romanization，日语使用 pykakasi/Hepburn。读取旧 `ja` / `ko` Profile 时，如果
+  pronunciation 缺失或只是原歌词复制，会自动重新生成并保存，避免旧缓存一直显示假罗马音。
+- 日韩语“规则候选”不自动等于原唱事实；没有 Gemini 声学确认或人工校验时，不得伪装成确定技巧。
+- 中文歌曲保持当前边界：可以上传、Demucs 分离、歌词查询/手动歌词、WhisperX 时间轴、播放、录音与
+  多轨 Take；但不正式提供拼音、声调、轻声、儿化、`一/不`变调、三声变调或中文练唱差异诊断。
+- 当前 `_detect_lyrics_language` 主动检测韩语和含假名的日语；纯中文主要依赖 WhisperX 返回 `zh`。
+  中文没有专用 candidate adapter，必须防止未来把 `zh` 错当英语候选。当前产品对中文只能表述为
+  “基础歌词与录音可用，不提供中文语言技巧教学”。
+
+## 16.8 最新验证与接力要求
+
+- 最新后端回归：91 passed，另有 1 条第三方 Starlette/httpx 弃用 Warning。
+- Ruff、ESLint、TypeScript 与 Vite 生产构建通过；`git diff --check` 只有 Windows LF/CRLF 提示。
+- 当前尚未完成真实目标手机上的最终视觉和音频连续性验收；代码构建通过不等于手机网络播放已完全无卡顿。
+- 后续若修改 Hero 数据，优先更新并运行 `server/scripts/curate_demo_profiles.py`；不要恢复已删除的 Juno 示例。
+- 不要删除 WAV 母文件：网页和模型优先 MP3 是 Demo 性能策略，WAV 保留用于回退和未来更精细的声学验证。
+- 不要自行 commit 或 push；交付时提供中文 commit 建议即可。
