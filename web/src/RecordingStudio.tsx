@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { RecorderState } from "./audioTimeline";
+import { summarizeTakeLyrics, type RecorderState } from "./audioTimeline";
 import { MixTimeline } from "./MixTimeline";
 import { PracticeFeedback } from "./PracticeFeedback";
 
@@ -845,11 +845,12 @@ export function RecordingStudio({
 }
 
 function takeLyricSummary(take: RecordingTake, sentences: RecordingSentence[]) {
-  const text = sentences.filter((sentence) => take.sentenceIds.includes(sentence.id))
-    .map((sentence) => sentence.lyrics).join(" ").trim();
-  const words = text.split(/\s+/).filter(Boolean);
-  if (words.length <= 4) return words.join(" ");
-  return `${words.slice(0, 2).join(" ")} … ${words.slice(-2).join(" ")}`;
+  const lane = take.trackSlotId.startsWith("secondary:") ? "secondary" : "primary";
+  return summarizeTakeLyrics(
+    sentences.filter((sentence) => take.sentenceIds.includes(sentence.id))
+      .map((sentence) => sentence.lyrics),
+    lane,
+  );
 }
 
 function formatTime(seconds: number) {

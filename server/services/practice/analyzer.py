@@ -81,9 +81,21 @@ class GeminiPracticeAnalyzer:
         with _gemini_compatible_audio(audio_path) as compatible_audio:
             for attempt in range(3):
                 try:
-                    return self._analyze_once(
+                    batch = self._analyze_once(
                         compatible_audio, sentences, reference_vocal_path
                     )
+                    if batch.recording_usable and batch.findings and all(
+                        finding.result.value == "uncertain" for finding in batch.findings
+                    ):
+                        raise RuntimeError(
+                            "temporarily unavailable: Gemini returned no conclusive "
+                            "target judgments"
+                        )
+                    if batch.recording_usable and not batch.findings:
+                        raise RuntimeError(
+                            "temporarily unavailable: Gemini returned no target judgments"
+                        )
+                    return batch
                 except Exception as exc:
                     last_error = exc
                     if attempt == 2 or not _is_retryable_gemini_error(exc):

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { lyricsForLane } from "./audioTimeline";
 import type { PracticeAttempt, PracticeMemory } from "./RecordingStudio";
 
 type FeedbackSentence = { id: string; lyrics: string };
@@ -9,9 +10,13 @@ export function PracticeFeedback({ attempt, memory, sentences }: {
   memory: PracticeMemory | null;
   sentences: FeedbackSentence[];
 }) {
+  const lane = attempt.trackSlotId.startsWith("secondary:") ? "secondary" : "primary";
   const cards = attempt.sentenceIds.map((sentenceId) => ({
     sentenceId,
-    lyrics: sentences.find((item) => item.id === sentenceId)?.lyrics ?? "所选句子",
+    lyrics: lyricsForLane(
+      sentences.find((item) => item.id === sentenceId)?.lyrics ?? "所选句子",
+      lane,
+    ),
     issues: attempt.issues.filter((issue) => issue.sentenceId === sentenceId),
   }));
   const [index, setIndex] = useState(0);

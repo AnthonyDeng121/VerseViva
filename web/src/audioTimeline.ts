@@ -69,6 +69,22 @@ export function normalizeLoopTime(current: number, start: number, end: number) {
   return current;
 }
 
+export function lyricsForLane(lyrics: string, lane: "primary" | "secondary") {
+  const parenthetical = Array.from(lyrics.matchAll(/\(([^)]*)\)/g), (match) => match[1].trim())
+    .filter(Boolean);
+  if (lane === "secondary") {
+    return parenthetical.length > 0 ? parenthetical.join(" ") : lyrics.replace(/^\(|\)$/g, "").trim();
+  }
+  return lyrics.replace(/\s*\([^)]*\)/g, "").trim();
+}
+
+export function summarizeTakeLyrics(lyrics: string[], lane: "primary" | "secondary") {
+  const text = lyrics.map((item) => lyricsForLane(item, lane)).filter(Boolean).join(" ").trim();
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length <= 4) return words.join(" ");
+  return `${words.slice(0, 2).join(" ")} … ${words.slice(-2).join(" ")}`;
+}
+
 const RECORDER_TRANSITIONS: Record<RecorderState, readonly RecorderState[]> = {
   idle: ["requesting"],
   requesting: ["idle", "recording"],

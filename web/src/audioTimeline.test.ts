@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   calculateTimelinePlacement,
   canTransitionRecorder,
+  lyricsForLane,
   normalizeLoopTime,
   offsetFromDrag,
+  summarizeTakeLyrics,
 } from "./audioTimeline";
 
 describe("shared audio timeline", () => {
@@ -60,5 +62,18 @@ describe("recorder state machine", () => {
   it("rejects impossible jumps", () => {
     expect(canTransitionRecorder("idle", "uploaded")).toBe(false);
     expect(canTransitionRecorder("recording", "uploading")).toBe(false);
+  });
+});
+
+describe("vocal lane lyric projection", () => {
+  const mixed = "I wanna make him lunch (But then I, I want to get him back)";
+
+  it("never leaks a parenthetical secondary lyric into a primary take", () => {
+    expect(lyricsForLane(mixed, "primary")).toBe("I wanna make him lunch");
+    expect(summarizeTakeLyrics([mixed], "primary")).toBe("I wanna … him lunch");
+  });
+
+  it("shows only the parenthetical lyric for a secondary take", () => {
+    expect(lyricsForLane(mixed, "secondary")).toBe("But then I, I want to get him back");
   });
 });
