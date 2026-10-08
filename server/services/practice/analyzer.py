@@ -317,7 +317,19 @@ def _build_prompt(sentences: list[SongSentence]) -> str:
                     "sentenceId": sentence.id,
                     "lyrics": sentence.lyrics,
                     "targetWords": target_words_for_hint(sentence, hint),
+                    "symbol": "└┘" if hint.marks[0].symbol == "└─┘" else hint.marks[0].symbol,
+                    "referenceAction": _reference_action(hint),
                     "referencePhenomenon": hint.phenomenon,
+                    "canonicalPronunciation": hint.canonical_pronunciation,
+                    "observedPronunciation": hint.observed_pronunciation,
+                    "curatedExplanation": next(
+                        (
+                            detail.explanation
+                            for detail in hint.details
+                            if detail.locale == "zh-CN"
+                        ),
+                        hint.details[0].explanation if hint.details else None,
+                    ),
                     "expectedIssueTypeWhenUserDiffers": issue_type.value,
                     "transformations": [
                         item.model_dump(mode="json", by_alias=True)
@@ -329,6 +341,14 @@ def _build_prompt(sentences: list[SongSentence]) -> str:
 你会依次收到参考整体人声（若提供）和用户录音。参考人声仅用于核对本次原唱的实际处理，
 用户录音才是诊断对象；不得把不同 Vocal lane 的声音或歌词互相连接。
 你正在核查一段用户练唱录音，只判断 TARGETS 中已有的语言演唱目标。
+
+三类符号必须按以下含义判断：
+- ×（吞音/未清楚释放）：参考唱法中目标尾音没有独立、清楚地发出或释放。若用户额外清楚发出该音，
+  返回 issue_detected；用户也按参考处理则返回 reference_matched。
+- ‿（改音式连读）：相邻词跨边界连续衔接，并按 TARGET 的 observedPronunciation、transformations
+  或参考音频发生相应声音变化。用户逐词断开或没有实现该变化时返回 issue_detected。
+- └┘（二合一）：边界两侧的输入音共享或融合成一个发音动作。用户把两个音分别完整发出时返回
+  issue_detected；合成一个动作则返回 reference_matched。
 
 规则：
 - 不评价音高、音色、情绪，也不输出 timing_deviation 或任何毫秒级偏差。
@@ -357,6 +377,15 @@ def target_words_for_hint(sentence: SongSentence, hint: LanguageHint) -> str:
     return " ".join(item for item in (left, right) if item)
 
 
+def _reference_action(hint: LanguageHint) -> str:
+    symbol = hint.marks[0].symbol
+    if symbol == "×":
+        return "目标尾音在参考唱法中不独立、清楚地发出或释放"
+    if symbol == "‿":
+        return "相邻词连续衔接，并按参考音频或 observedPronunciation 发生改音"
+    return "边界两侧输入音共享或融合为一个发音动作"
+
+
 def secondary_target_id(part_id: str, issue_type: LanguageIssueType) -> str:
     return f"secondary:{part_id}:{issue_type.value}"
 
@@ -373,6 +402,9 @@ def _build_secondary_prompt(vocal_part: VocalPart) -> str:
 你会依次收到两段音频：第一段是包含多层人声的参考 vocals stem，第二段是用户单独录制的次轨。
 只比较以下已确认 secondary 歌词在参考区间中的语言演唱动作与用户录音，不评价音高、音色、
 情绪，不输出 timing_deviation 或毫秒偏差。
+三类核查含义：expected_elision_realized 检查用户是否把参考中吞掉或未释放的尾音额外清楚发出；
+coalescent_assimilation_missing 检查用户是否漏掉 ‿ 所表示的改音式连续衔接；
+identical_consonants_separated 检查用户是否把 └┘ 所表示的二合一动作拆成两个音。
 
 次轨角色：{vocal_part.role.value}
 确定歌词：{vocal_part.lyrics}

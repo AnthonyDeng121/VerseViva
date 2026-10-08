@@ -1,7 +1,11 @@
 import re
 from pathlib import Path
 
-from server.services.practice.analyzer import issue_type_for_hint, target_words_for_hint
+from server.services.practice.analyzer import (
+    _build_prompt,
+    issue_type_for_hint,
+    target_words_for_hint,
+)
 from server.storage.profile_store import ProfileStore
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -135,3 +139,16 @@ def test_elision_target_does_not_include_the_other_vocal_lane() -> None:
     sentence = _sentence("03", "sentence_003")
     hint = _hints(sentence)["hint_candidate_002_004"]
     assert target_words_for_hint(sentence, hint) == "heart"
+
+
+def test_practice_prompt_defines_all_three_visible_language_actions() -> None:
+    profile = ProfileStore(ROOT / "data").get(f"{SONG_PREFIX}03")
+    assert profile is not None
+    prompt = _build_prompt(profile.sentences)
+    assert "×（吞音/未清楚释放）" in prompt
+    assert "‿（改音式连读）" in prompt
+    assert "└┘（二合一）" in prompt
+    assert '"symbol": "×"' in prompt
+    assert '"symbol": "‿"' in prompt
+    assert '"symbol": "└┘"' in prompt
+    assert '"referenceAction"' in prompt
