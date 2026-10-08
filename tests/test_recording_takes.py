@@ -59,6 +59,7 @@ def test_mobile_webm_sentence_take_uploads_and_restores(take_client) -> None:
     assert payload["sentenceIds"] == ["sentence_001"]
     assert payload["isCurrent"] is True
     assert (data_dir / "takes" / payload["takeId"] / "original.webm").is_file()
+    assert (data_dir / "verseviva.sqlite3").is_file()
     assert client.get(payload["audioUrl"]).content.startswith(b"\x1aE\xdf\xa3")
     restored = client.get(f"/api/v1/songs/{song_id}/takes?session_id=session_mobile_01")
     assert restored.status_code == 200
@@ -138,7 +139,7 @@ def test_take_upload_rejects_unknown_sentence_and_mismatched_media(take_client) 
 
     assert unknown.status_code == 422
     assert mismatched.status_code == 415
-    assert list((data_dir / "takes").glob("take_*/take.json")) == []
+    assert list((data_dir / "takes").glob("take_*/original.*")) == []
 
 
 def test_take_can_be_renamed_and_its_mix_settings_persist(take_client) -> None:

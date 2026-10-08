@@ -15,6 +15,20 @@ type AnalysisJob = {
   error?: { stage: string; message: string; detail?: string } | null;
   warnings?: { stage: string; message: string; detail?: string }[];
   updated_at?: string;
+  audio_duration_seconds?: number | null;
+  estimated_total_seconds?: number | null;
+  estimated_remaining_seconds?: number | null;
+  api_call_count?: number;
+  stage_runtimes?: {
+    stage: string;
+    started_at: string;
+    completed_at?: string | null;
+    elapsed_seconds?: number | null;
+    estimated_seconds?: number | null;
+    api_call_count: number;
+    cache_hit: boolean;
+    run_count: number;
+  }[];
 };
 
 type CharacterMark = {
@@ -101,13 +115,13 @@ type SongProfile = {
 };
 
 const STAGE_LABELS: Record<string, string> = {
-  analyzing_vocal_parts: "正在解析主唱与次 Vocal",
+  analyzing_vocal_parts: "Gemini 正在核查主唱与次 Vocal",
   queued: "等待开始",
   probing_audio: "正在读取音频信息",
-  separating_vocals: "正在分离人声",
+  separating_vocals: "Demucs 正在分离人声",
   fetching_lyrics: "正在从 LRCLIB 匹配歌词",
-  aligning_lyrics: "正在对齐歌词",
-  analyzing_language: "正在核查跨词发音",
+  aligning_lyrics: "WhisperX 正在对齐歌词",
+  analyzing_language: "Gemini 正在核查语言技巧",
   building_profile: "正在生成教学标记",
   completed: "分析完成",
   failed: "分析失败",
@@ -378,7 +392,28 @@ function App() {
           <div className="progress-track">
             <div className="progress-value" style={{ width: `${job.progress}%` }} />
           </div>
-          <p>完整歌曲在 CPU 环境下可能需要较长时间，Hero Song 应优先使用缓存。</p>
+          {job.audio_duration_seconds && job.estimated_total_seconds
+            ? <div className="runtime-summary">
+                <strong>{formatDuration(job.audio_duration_seconds)} 音频预计约需 {formatDuration(job.estimated_total_seconds)}</strong>
+                <span>换算基准：每 30 秒音频约 {formatDuration(
+                  job.estimated_total_seconds / job.audio_duration_seconds * 30,
+                )}</span>
+                <span>按当前 WSL2 + CPU 基准估算；服务器 GPU/CPU 会改变实际速度</span>
+                <span>已记录外部 API 调用批次 {job.api_call_count ?? 0} 次</span>
+              </div>
+            : <p>正在读取音频时长，完成后会换算本次预计用时。</p>}
+          {job.stage_runtimes && job.stage_runtimes.length > 0 && <details className="runtime-details">
+            <summary>查看各阶段实际耗时</summary>
+            <ul>{job.stage_runtimes.map((runtime) => <li key={runtime.stage}>
+              <span>{STAGE_LABELS[runtime.stage] ?? runtime.stage}</span>
+              <span>{runtime.completed_at
+                ? `实际 ${formatDuration(runtime.elapsed_seconds ?? 0)}`
+                : `已运行 ${formatDuration(Math.max(0, (Date.now() - new Date(runtime.started_at).getTime()) / 1000))}`}
+                {runtime.estimated_seconds ? ` / 预计 ${formatDuration(runtime.estimated_seconds)}` : ""}
+                {runtime.cache_hit ? " · 命中缓存" : ""}
+                {runtime.api_call_count ? ` · API ${runtime.api_call_count} 次` : ""}</span>
+            </li>)}</ul>
+          </details>}
           {job.status === "processing" && job.updated_at &&
             Date.now() - new Date(job.updated_at).getTime() > 120_000 && (
               <p className="stale-note">
@@ -1025,6 +1060,13 @@ function TechniqueDisplay({ value, symbol }: { value: string; symbol: string }) 
     {after.length > 0 && <span className="technique-gap"> </span>}
     {after.map((character, index) => <span className="lyric-character" key={`after-${index}`}>{character}</span>)}
   </strong>;
+}
+
+function formatDuration(seconds: number) {
+  if (seconds < 60) return `${Math.max(1, Math.round(seconds))} 秒`;
+  const minutes = Math.floor(seconds / 60);
+  const remaining = Math.round(seconds - minutes * 60);
+  return remaining ? `${minutes} 分 ${remaining} 秒` : `${minutes} 分钟`;
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

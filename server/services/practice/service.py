@@ -139,9 +139,9 @@ async def analyze_practice_take(
     except Exception as exc:
         attempt = PracticeAttempt(
             **base,
-            status=PracticeStatus.insufficient_data,
-            comparison=_comparison(history, []),
-            insufficient_reason=f"Gemini 暂时无法完成本次听感核查：{exc}",
+            status=PracticeStatus.failed,
+            comparison=AttemptComparison(result=ComparisonResult.insufficient_data),
+            insufficient_reason=f"分析服务暂时不可用，请稍后重试：{exc}",
         )
         store.save(attempt)
         return attempt

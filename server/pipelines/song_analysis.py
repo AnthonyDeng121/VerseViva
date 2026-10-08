@@ -14,6 +14,7 @@ from server.models.song import (
     AnalysisWarning,
     AudioAssets,
     LyricsSource,
+    StageRuntime,
     VocalArrangementMode,
     VocalPart,
 )
@@ -61,6 +62,15 @@ STAGE_PROGRESS = {
     AnalysisStage.building_profile: 92,
     AnalysisStage.completed: 100,
 }
+STAGE_ESTIMATE = {
+    AnalysisStage.probing_audio: (2.0, 0.0),
+    AnalysisStage.separating_vocals: (8.0, 3.1),
+    AnalysisStage.fetching_lyrics: (5.0, 0.0),
+    AnalysisStage.aligning_lyrics: (10.0, 9.4),
+    AnalysisStage.analyzing_vocal_parts: (8.0, 1.7),
+    AnalysisStage.analyzing_language: (10.0, 5.0),
+    AnalysisStage.building_profile: (6.0, 0.1),
+}
 
 
 class SongAnalysisPipeline:
@@ -97,6 +107,9 @@ class SongAnalysisPipeline:
             job.attempt_count += 1
             self._advance(job, AnalysisStage.probing_audio)
             duration = await self.duration_probe.duration_seconds(source)
+            job.audio_duration_seconds = duration
+            self._apply_estimates(job, duration)
+            self.job_store.save(job)
             self._advance(job, AnalysisStage.separating_vocals)
             separation = await self.separator.separate(source, job_dir / "separation")
             analysis_vocals = job_dir / "separation" / "analysis-vocals.mp3"
@@ -117,6 +130,8 @@ class SongAnalysisPipeline:
                 self._advance(job, AnalysisStage.fetching_lyrics)
                 if lyrics_lookup is None:
                     try:
+                        if self.lyrics_provider.provider != "disabled":
+                            self._record_api_call(job, AnalysisStage.fetching_lyrics)
                         lyrics_lookup = await self.lyrics_provider.find(
                             title=job.title,
                             artist=job.artist,
@@ -136,6 +151,8 @@ class SongAnalysisPipeline:
                             )
                         )
                         self.job_store.save(job)
+                else:
+                    self._mark_cache_hit(job, AnalysisStage.fetching_lyrics)
 
             self._advance(job, AnalysisStage.aligning_lyrics)
             alignment_language_hint = _detect_lyrics_language(
@@ -188,6 +205,7 @@ class SongAnalysisPipeline:
                 vocal_parts_path = job_dir / "vocal-parts" / "parts-v3.json"
                 cached_vocal_parts = _load_vocal_parts(vocal_parts_path)
                 if cached_vocal_parts is not None:
+                    self._mark_cache_hit(job, AnalysisStage.analyzing_vocal_parts)
                     vocal_parts = cached_vocal_parts
                 else:
                     transcript = json.loads(
@@ -195,6 +213,8 @@ class SongAnalysisPipeline:
                     )
                     dual_pipeline = DualTrackArrangementPipeline(self.vocal_part_analyzer)
                     try:
+                        if self.vocal_part_analyzer is not None:
+                            self._record_api_call(job, AnalysisStage.analyzing_vocal_parts)
                         vocal_parts = await dual_pipeline.analyze(
                             vocal_audio=analysis_vocals,
                             duration_seconds=duration,
@@ -242,6 +262,8 @@ class SongAnalysisPipeline:
             )
             observations = _load_observations(observations_path)
             if observations is None:
+                if self.language_coach.provider != "disabled":
+                    self._record_api_call(job, AnalysisStage.analyzing_language)
                 observations = await self.language_coach.analyze(
                     analysis_vocals, lyrics, sentences, candidates
                 )
@@ -249,6 +271,8 @@ class SongAnalysisPipeline:
                     observations_path,
                     observations.model_dump(mode="json", by_alias=True),
                 )
+            else:
+                self._mark_cache_hit(job, AnalysisStage.analyzing_language)
             annotated_sentences = apply_language_observations(
                 sentences,
                 candidates,
@@ -298,6 +322,7 @@ class SongAnalysisPipeline:
             self._advance(job, AnalysisStage.completed, AnalysisStatus.completed)
         except Exception as exc:
             failed_stage = job.stage
+            self._finish_active_stage(job)
             job.status = AnalysisStatus.failed
             job.stage = AnalysisStage.failed
             job.error = AnalysisError(
@@ -314,11 +339,97 @@ class SongAnalysisPipeline:
         stage: AnalysisStage,
         status: AnalysisStatus = AnalysisStatus.processing,
     ) -> None:
+        previous_stage = job.stage
+        now = datetime.now(UTC)
+        current = next(
+            (item for item in job.stage_runtimes if item.stage == previous_stage),
+            None,
+        )
+        if current is not None and current.completed_at is None and previous_stage != stage:
+            current.completed_at = now
+            current.elapsed_seconds = round(
+                (current.completed_at - current.started_at).total_seconds(), 3
+            )
         job.status = status
         job.stage = stage
         job.progress = STAGE_PROGRESS[stage]
         job.error = None
+        if stage not in {AnalysisStage.completed, AnalysisStage.failed}:
+            target = next((item for item in job.stage_runtimes if item.stage == stage), None)
+            if target is None:
+                base, ratio = STAGE_ESTIMATE.get(stage, (0.0, 0.0))
+                estimated = (
+                    round(base + ratio * job.audio_duration_seconds, 1)
+                    if job.audio_duration_seconds is not None
+                    else None
+                )
+                job.stage_runtimes.append(
+                    StageRuntime(
+                        stage=stage,
+                        started_at=now,
+                        estimated_seconds=estimated,
+                    )
+                )
+            elif target.completed_at is not None:
+                target.started_at = now
+                target.completed_at = None
+                target.run_count += 1
+        job.estimated_remaining_seconds = self._estimated_remaining(job, stage)
         self.job_store.save(job)
+
+    def _apply_estimates(self, job, duration: float) -> None:
+        total = 0.0
+        for stage, (base, ratio) in STAGE_ESTIMATE.items():
+            estimated = round(base + ratio * duration, 1)
+            total += estimated
+            runtime = next((item for item in job.stage_runtimes if item.stage == stage), None)
+            if runtime is not None:
+                runtime.estimated_seconds = estimated
+        job.estimated_total_seconds = round(total, 1)
+        job.estimated_remaining_seconds = round(total, 1)
+
+    def _record_api_call(self, job, stage: AnalysisStage) -> None:
+        runtime = next((item for item in job.stage_runtimes if item.stage == stage), None)
+        if runtime is not None:
+            runtime.api_call_count += 1
+        job.api_call_count += 1
+        self.job_store.save(job)
+
+    def _mark_cache_hit(self, job, stage: AnalysisStage) -> None:
+        runtime = next((item for item in job.stage_runtimes if item.stage == stage), None)
+        if runtime is not None:
+            runtime.cache_hit = True
+        self.job_store.save(job)
+
+    def _estimated_remaining(self, job, current_stage: AnalysisStage) -> float | None:
+        if job.estimated_total_seconds is None:
+            return None
+        remaining = 0.0
+        reached_current = False
+        for stage in STAGE_ESTIMATE:
+            if stage == current_stage:
+                reached_current = True
+            if not reached_current:
+                continue
+            runtime = next((item for item in job.stage_runtimes if item.stage == stage), None)
+            if runtime is not None:
+                remaining += runtime.estimated_seconds or 0
+            elif job.audio_duration_seconds is not None:
+                base, ratio = STAGE_ESTIMATE[stage]
+                remaining += base + ratio * job.audio_duration_seconds
+        return round(remaining, 1)
+
+    def _finish_active_stage(self, job) -> None:
+        runtime = next(
+            (item for item in job.stage_runtimes if item.stage == job.stage),
+            None,
+        )
+        if runtime is None or runtime.completed_at is not None:
+            return
+        runtime.completed_at = datetime.now(UTC)
+        runtime.elapsed_seconds = round(
+            (runtime.completed_at - runtime.started_at).total_seconds(), 3
+        )
 
 
 def build_default_pipeline(settings: Settings) -> SongAnalysisPipeline:

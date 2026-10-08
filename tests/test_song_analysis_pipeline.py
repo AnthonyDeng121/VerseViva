@@ -199,6 +199,13 @@ def test_pipeline_builds_and_persists_song_profile(tmp_path: Path) -> None:
     assert completed.status == AnalysisStatus.completed
     assert completed.stage == AnalysisStage.completed
     assert completed.progress == 100
+    assert completed.audio_duration_seconds == 3.0
+    assert completed.estimated_total_seconds is not None
+    assert completed.estimated_total_seconds > completed.audio_duration_seconds
+    assert completed.estimated_remaining_seconds == 0
+    assert completed.api_call_count == 0
+    assert completed.stage_runtimes
+    assert all(item.elapsed_seconds is not None for item in completed.stage_runtimes)
 
     profile = profile_store.get(job.song_id)
     assert profile is not None
@@ -303,6 +310,13 @@ def test_parentheses_select_dual_pipeline_using_demucs_vocal_stem(tmp_path: Path
     assert secondary.timing_confidence == 0.88
     assert secondary.timing_needs_human_review is True
     assert profile.sentences[0].language_hints
+    completed = job_store.get(job.job_id)
+    assert completed is not None
+    assert completed.api_call_count == 3
+    by_stage = {item.stage: item for item in completed.stage_runtimes}
+    assert by_stage[AnalysisStage.fetching_lyrics].api_call_count == 1
+    assert by_stage[AnalysisStage.analyzing_vocal_parts].api_call_count == 1
+    assert by_stage[AnalysisStage.analyzing_language].api_call_count == 1
 
 
 def test_vocal_timing_failure_keeps_confirmed_provider_lyrics_and_fallback_time(

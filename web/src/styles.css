@@ -90,6 +90,11 @@ input[type="range"] { min-height: 24px; padding: 0; border: 0; background: trans
 .status-line, .profile-heading, .detail-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 .progress-track { height: 9px; overflow: hidden; border-radius: 99px; background: #e5ebe7; }
 .progress-value { height: 100%; border-radius: inherit; background: #0e9f86; transition: width .35s ease; }
+.runtime-summary { display: grid; gap: 4px; padding: 11px 13px; border-radius: 11px; background: #edf6f2; }
+.runtime-summary span { color: #66746d; font-size: 11px; }
+.runtime-details summary { color: #52615a; font-size: 12px; font-weight: 750; cursor: pointer; }
+.runtime-details ul { display: grid; gap: 5px; margin: 9px 0 0; padding: 0; list-style: none; }
+.runtime-details li { display: flex; justify-content: space-between; gap: 12px; color: #66746d; font-size: 11px; }
 .error-card { padding: 18px 22px; color: #a13737; border-color: #efcccc; background: #fff7f7; }
 .failure-detail, .warning-detail { display: grid; gap: 9px; padding: 14px; border-radius: 12px; }
 .failure-detail { color: #8f2f2f; background: #fff1f1; }

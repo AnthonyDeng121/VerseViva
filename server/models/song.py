@@ -39,6 +39,17 @@ class AnalysisWarning(BaseModel):
     detail: str | None = None
 
 
+class StageRuntime(BaseModel):
+    stage: AnalysisStage
+    started_at: datetime
+    completed_at: datetime | None = None
+    elapsed_seconds: float | None = Field(default=None, ge=0)
+    estimated_seconds: float | None = Field(default=None, ge=0)
+    api_call_count: int = Field(default=0, ge=0)
+    cache_hit: bool = False
+    run_count: int = Field(default=1, ge=1)
+
+
 class AnalysisJob(BaseModel):
     job_id: str
     song_id: str
@@ -51,6 +62,11 @@ class AnalysisJob(BaseModel):
     attempt_count: int = Field(default=0, ge=0)
     error: AnalysisError | None = None
     warnings: list[AnalysisWarning] = Field(default_factory=list)
+    audio_duration_seconds: float | None = Field(default=None, ge=0)
+    estimated_total_seconds: float | None = Field(default=None, ge=0)
+    estimated_remaining_seconds: float | None = Field(default=None, ge=0)
+    api_call_count: int = Field(default=0, ge=0)
+    stage_runtimes: list[StageRuntime] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

@@ -171,8 +171,6 @@ async def upload_take(
         return take
     except Exception:
         destination.unlink(missing_ok=True)
-        metadata = take_dir / "take.json"
-        metadata.unlink(missing_ok=True)
         try:
             take_dir.rmdir()
         except OSError:

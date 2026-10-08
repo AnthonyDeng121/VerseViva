@@ -83,6 +83,22 @@ def test_memory_only_aggregates_reliable_attempts(tmp_path):
     assert memory.phenomena[0].issue_count == 1
 
 
+def test_failed_service_attempt_does_not_enter_reliable_memory(tmp_path):
+    store = PracticeStore(tmp_path)
+    store.save(
+        _attempt(
+            1,
+            issue_type=None,
+            status=PracticeStatus.failed,
+        )
+    )
+
+    memory = store.memory("session_test")
+
+    assert memory.total_attempts == 1
+    assert memory.reliable_attempts == 0
+
+
 def test_attempt_payload_round_trips_through_sqlite(tmp_path):
     store = PracticeStore(tmp_path)
     original = _attempt(1, issue_type=LanguageIssueType.coalescent_assimilation_missing)

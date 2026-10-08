@@ -199,15 +199,17 @@ export function RecordingStudio({
     void Promise.all([accompanimentUrl, sourceUrl].map(async (url) => {
       if (!url) return null;
       const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 20_000);
+      const timeout = window.setTimeout(() => controller.abort(), 60_000);
       try {
         const response = await fetch(url, { signal: controller.signal });
         if (!response.ok) throw new Error("读取演唱音频资源失败");
         const objectUrl = URL.createObjectURL(await response.blob());
         objectUrls.push(objectUrl);
         return objectUrl;
-      } catch {
-        return url;
+      } catch (reason) {
+        throw new Error(reason instanceof DOMException && reason.name === "AbortError"
+          ? "演唱资源下载超时，请检查网络后刷新重试。"
+          : "演唱资源未能完整下载，暂不能开始录音。", { cause: reason });
       } finally {
         window.clearTimeout(timeout);
       }
@@ -217,7 +219,10 @@ export function RecordingStudio({
       setPreparedSourceUrl(source);
       setResourcesReady(true);
     }).catch((reason: unknown) => {
-      if (!cancelled) setError(reason instanceof Error ? reason.message : "音频资源准备失败");
+      if (!cancelled) {
+        setResourcesReady(false);
+        setError(reason instanceof Error ? reason.message : "音频资源准备失败");
+      }
     });
     return () => {
       cancelled = true;
@@ -297,7 +302,7 @@ export function RecordingStudio({
       return;
     }
     if (!resourcesReady) {
-      setError("伴奏与原唱还在准备，请稍候。");
+      setError("伴奏与原唱尚未完整下载，为避免录音中途卡顿，请等待准备完成。");
       return;
     }
     if (!selectedOptions.length || selectionEnd <= selectionStart) {
@@ -781,7 +786,9 @@ function PracticeFeedback({ attempt, memory }: {
       </div>
       {memory && <span>{memory.reliableAttempts}/{memory.totalAttempts} 次可靠分析</span>}
     </div>
-    {attempt.status === "insufficient_data"
+    {attempt.status === "failed"
+      ? <p className="recording-error">{attempt.insufficientReason ?? "分析服务暂时不可用，请稍后重试。"}</p>
+      : attempt.status === "insufficient_data"
       ? <p className="recording-warning">{attempt.insufficientReason ?? "本次录音不足以可靠判断，请重录。"}</p>
       : attempt.recommendations.length > 0
         ? <ol className="practice-recommendations">
