@@ -17,6 +17,7 @@ main {
   padding: 34px 24px 72px;
   margin: 0 auto;
   align-content: start;
+  width: 100%;
 }
 
 .hero { display: grid; gap: 8px; }
@@ -85,6 +86,8 @@ input[type="range"] { min-height: 24px; padding: 0; border: 0; background: trans
 .hero-shortcut p { font-size: 13px; }
 .song-cache { display: grid; gap: 10px; padding: 10px 14px 14px; border: 0; border-radius: 0; background: #fff; }
 .song-cache > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.song-cache > p { font-size: 11px; }
+.song-cache .secondary-button { font-size: 12px; }
 
 .status-card { display: grid; gap: 12px; padding: 22px; }
 .status-line, .profile-heading, .detail-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
@@ -99,7 +102,7 @@ input[type="range"] { min-height: 24px; padding: 0; border: 0; background: trans
 .failure-detail, .warning-detail { display: grid; gap: 9px; padding: 14px; border-radius: 12px; }
 .failure-detail { color: #8f2f2f; background: #fff1f1; }
 .warning-detail { color: #765716; background: #fff8e5; }
-.stale-note { padding: 12px 14px; border-radius: 10px; color: #765716; background: #fff8e5; }
+.stale-note { padding: 9px 11px; border-radius: 10px; color: #765716; background: #fff8e5; font-size: 11px; }
 .failure-detail code, .warning-detail code {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
@@ -118,7 +121,7 @@ input[type="range"] { min-height: 24px; padding: 0; border: 0; background: trans
 }
 .retry-button:disabled { opacity: .55; cursor: wait; }
 
-.profile-card { display: grid; gap: 9px; padding: 16px; }
+.profile-card { display: grid; min-width: 0; max-width: 100%; overflow: hidden; gap: 9px; padding: 16px; }
 .profile-title-line { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
 .profile-title-line h2 { font-size: 17px; }
 .profile-title-line .eyebrow { flex: none; }
@@ -158,7 +161,7 @@ audio { width: 100%; }
 
 .lyrics-stage-heading { display: flex; justify-content: space-between; align-items: end; gap: 18px; }
 .lyrics-mode-switch { display: flex; padding: 3px; border-radius: 12px; background: #e9efeb; }
-.lyrics-mode-switch button { border: 0; border-radius: 9px; padding: 8px 12px; color: #59665f; background: transparent; cursor: pointer; }
+.lyrics-mode-switch button { min-height: 30px; border: 0; border-radius: 7px; padding: 4px 12px; color: #59665f; background: transparent; cursor: pointer; font-size: 12px; }
 .lyrics-mode-switch button.active { color: white; background: #087e6b; font-weight: 800; }
 .lyrics-viewport { max-height: min(42vh, 380px); overflow-y: auto; scroll-behavior: smooth; padding: 1px 4px; border-block: 1px solid #e5ebe7; }
 .lyrics-list { display: grid; gap: 0; padding: 4px 0; }
@@ -236,13 +239,14 @@ audio { width: 100%; }
   .vocal-layers-heading > p { display: none; }
 }
 
-.singing-focus { display: grid; gap: 4px; padding: 10px 12px; border-radius: 12px; text-align: center; background: #edf6f2; }
+.singing-focus { display: grid; min-width: 0; gap: 4px; padding: 10px 12px; border-radius: 12px; text-align: center; background: #edf6f2; }
 .singing-focus p { font-size: 14px; line-height: 1.35; }
 .singing-primary { color: #17261f; font-weight: 800; }
 .singing-secondary { color: #087e6b; }
+.recording-page { min-width: 0; max-width: 100%; }
 .recording-page.hidden { display: none; }
 
-.recording-studio { display: flex; flex-direction: column; margin-top: 12px; padding: 14px; border: 1px solid rgba(74,54,43,.16); border-radius: 16px; background: linear-gradient(145deg, #fffaf4, #f6ede4); font-size: 13px; }
+.recording-studio { display: flex; flex-direction: column; min-width: 0; max-width: 100%; overflow: hidden; margin-top: 12px; padding: 14px; border: 1px solid rgba(74,54,43,.16); border-radius: 16px; background: linear-gradient(145deg, #fffaf4, #f6ede4); font-size: 13px; }
 .recording-studio > * { order: 10; }
 .recording-studio > .recording-heading { order: 1; }
 .recording-studio > .recording-switch-row { order: 2; }
@@ -276,6 +280,8 @@ audio { width: 100%; }
 .recording-error, .recording-warning { color: #9c3f32; }
 .recording-live { color: #b0302c; font-weight: 700; }
 .record-stop-button { padding: 10px 16px; border: 0; border-radius: 12px; color: #fff; background: #b0302c; }
+.text-button { border: 0; padding: 5px 10px; color: #75665d; background: transparent; cursor: pointer; text-decoration: underline; }
+.cancel-recording-button { flex-basis: 100%; font-size: 12px; }
 .analyzing-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 .button-spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.45); border-top-color: #fff; border-radius: 50%; animation: button-spin .75s linear infinite; }
 @keyframes button-spin { to { transform: rotate(360deg); } }
@@ -332,6 +338,8 @@ audio { width: 100%; }
 .mix-master-controls label { display: grid; gap: 5px; color: #cbd7d3; font-size: 11px; }
 .mix-modal-footer { padding-top: 12px; border-top: 1px solid rgba(255,255,255,.1); }
 .mix-modal-footer > span { color: #aab8b3; font-variant-numeric: tabular-nums; }
+.mix-progress-control { display: grid; grid-template-columns: auto minmax(140px, 1fr); align-items: center; flex: 1; gap: 10px; color: #aab8b3; font-size: 11px; font-variant-numeric: tabular-nums; }
+.mix-progress-control input { width: 100%; accent-color: #72cbae; }
 .playback-progress { width: 100%; accent-color: #087e6b; }
 .take-details { flex: 1; min-width: 0; }
 .track-name-input { width: min(100%, 260px); border: 0; border-bottom: 1px solid transparent; padding: 4px 2px; color: #2c352f; background: transparent; font: inherit; font-weight: 800; }
@@ -342,9 +350,11 @@ audio { width: 100%; }
 .track-volume { margin-top: 8px; }
 .now-playing { margin: 10px 0; color: #087e6b; font-weight: 750; }
 .practice-feedback { margin: 14px 0; padding: 14px; border: 1px solid rgba(14,159,134,.24); border-radius: 14px; background: rgba(236,249,245,.78); }
-.practice-feedback-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.practice-feedback-heading { display: grid; grid-template-columns: 28px minmax(0,1fr) 28px; align-items: center; gap: 8px; }
 .practice-feedback-heading h4, .practice-feedback-heading p { margin: 0; }
-.practice-feedback-heading > span { color: #69766f; font-size: 12px; white-space: nowrap; }
+.practice-feedback-card { min-width: 0; }
+.feedback-comparison, .feedback-memory-count { color: #69766f; font-size: 12px; }
+.feedback-memory-count { margin-top: 9px; text-align: center; }
 .practice-recommendations { margin: 12px 0 0; padding-left: 20px; }
 .practice-recommendations li + li { margin-top: 12px; }
 .practice-recommendations p { margin: 4px 0 0; }
@@ -371,5 +381,6 @@ audio { width: 100%; }
   .mix-ruler { margin-left: 110px; min-width: 620px; }
   .mix-playhead { margin-left: 110px; }
   .mix-master-controls { grid-template-columns: 1fr; }
-  .practice-feedback-heading { flex-direction: column; }
+  .mix-modal-footer { align-items: stretch; flex-direction: column; }
+  .recording-selectors select, .track-name-input { font-size: 16px; }
 }

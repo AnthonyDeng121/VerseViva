@@ -1,6 +1,10 @@
 import asyncio
 import json
+import subprocess
+import tempfile
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from server.models.practice import LanguageIssueType
@@ -51,18 +55,19 @@ class GeminiPracticeAnalyzer:
         vocal_part: VocalPart,
     ) -> AcousticFindingBatch:
         last_error: Exception | None = None
-        for attempt in range(3):
-            try:
-                return self._analyze_secondary_once(
-                    audio_path,
-                    reference_vocal_path,
-                    vocal_part,
-                )
-            except Exception as exc:
-                last_error = exc
-                if attempt == 2 or not _is_retryable_gemini_error(exc):
-                    raise
-                time.sleep(2 ** (attempt + 1))
+        with _gemini_compatible_audio(audio_path) as compatible_audio:
+            for attempt in range(3):
+                try:
+                    return self._analyze_secondary_once(
+                        compatible_audio,
+                        reference_vocal_path,
+                        vocal_part,
+                    )
+                except Exception as exc:
+                    last_error = exc
+                    if attempt == 2 or not _is_retryable_gemini_error(exc):
+                        raise
+                    time.sleep(2 ** (attempt + 1))
         raise RuntimeError("Gemini secondary practice analysis failed") from last_error
 
     def _analyze_sync(
@@ -72,14 +77,17 @@ class GeminiPracticeAnalyzer:
         reference_vocal_path: Path | None,
     ) -> AcousticFindingBatch:
         last_error: Exception | None = None
-        for attempt in range(3):
-            try:
-                return self._analyze_once(audio_path, sentences, reference_vocal_path)
-            except Exception as exc:
-                last_error = exc
-                if attempt == 2 or not _is_retryable_gemini_error(exc):
-                    raise
-                time.sleep(2 ** (attempt + 1))
+        with _gemini_compatible_audio(audio_path) as compatible_audio:
+            for attempt in range(3):
+                try:
+                    return self._analyze_once(
+                        compatible_audio, sentences, reference_vocal_path
+                    )
+                except Exception as exc:
+                    last_error = exc
+                    if attempt == 2 or not _is_retryable_gemini_error(exc):
+                        raise
+                    time.sleep(2 ** (attempt + 1))
         raise RuntimeError("Gemini practice analysis failed") from last_error
 
     def _analyze_once(
@@ -227,6 +235,40 @@ def _wait_for_active(client, uploaded, timeout_seconds: float = 60.0):
             return current
         current = client.files.get(name=name)
     raise TimeoutError("Gemini 音频文件未在 60 秒内准备完成")
+
+
+@contextmanager
+def _gemini_compatible_audio(audio_path: Path) -> Iterator[Path]:
+    """Keep the original take, but normalize browser containers for Gemini Files."""
+    if audio_path.suffix.lower() in {".mp3", ".wav"}:
+        yield audio_path
+        return
+    with tempfile.TemporaryDirectory(prefix="verseviva-practice-") as directory:
+        converted = Path(directory) / "recording.wav"
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                str(audio_path),
+                "-ac",
+                "1",
+                "-ar",
+                "16000",
+                str(converted),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+        if result.returncode != 0 or not converted.is_file() or converted.stat().st_size == 0:
+            detail = result.stderr.strip()[-500:]
+            raise RuntimeError(f"浏览器录音转为模型兼容格式失败：{detail}")
+        yield converted
 
 
 def _build_prompt(sentences: list[SongSentence]) -> str:

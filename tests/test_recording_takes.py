@@ -66,6 +66,23 @@ def test_mobile_webm_sentence_take_uploads_and_restores(take_client) -> None:
     assert [item["takeId"] for item in restored.json()] == [payload["takeId"]]
 
 
+def test_take_keeps_hidden_latency_compensation_separate_from_manual_offset(
+    take_client,
+) -> None:
+    client, _, song_id = take_client
+
+    response = _webm_upload(
+        client,
+        song_id,
+        latency_compensation_ms="500",
+        manual_offset_ms="0",
+    )
+
+    assert response.status_code == 201
+    assert response.json()["latencyCompensationMs"] == 500
+    assert response.json()["manualOffsetMs"] == 0
+
+
 def test_mobile_webm_accepts_browser_codec_parameter(take_client) -> None:
     client, _, song_id = take_client
 

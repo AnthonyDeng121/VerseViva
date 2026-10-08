@@ -49,6 +49,8 @@ export function MixTimeline({
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const contextRef = useRef<AudioContext | null>(null);
+  const accompanimentGainRef = useRef<GainNode | null>(null);
+  const voiceGainRefs = useRef<Map<string, GainNode>>(new Map());
   const animationRef = useRef<number | null>(null);
   const dragRef = useRef<{
     takeId: string; startX: number; originalOffset: number; latestOffset: number; width: number;
@@ -60,11 +62,26 @@ export function MixTimeline({
     if (context && context.state !== "closed") void context.close();
   }, []);
 
+  useEffect(() => {
+    if (accompanimentGainRef.current) {
+      accompanimentGainRef.current.gain.value = accompanimentVolume;
+    }
+  }, [accompanimentVolume]);
+
+  useEffect(() => {
+    for (const take of currentTakes) {
+      const node = voiceGainRefs.current.get(take.takeId);
+      if (node) node.gain.value = (take.gain ?? 1) * voiceVolume;
+    }
+  }, [currentTakes, voiceVolume]);
+
   function stop() {
     if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
     animationRef.current = null;
     const context = contextRef.current;
     contextRef.current = null;
+    accompanimentGainRef.current = null;
+    voiceGainRefs.current.clear();
     if (context && context.state !== "closed") void context.close();
     setPlaying(false);
   }
@@ -91,26 +108,31 @@ export function MixTimeline({
         if (!response.ok) throw new Error("读取混音资源失败");
         return context.decodeAudioData(await response.arrayBuffer());
       }));
+      const startProgress = progress >= duration - 0.05 ? 0 : progress;
+      const playbackRangeStart = rangeStart + startProgress;
+      const playbackDuration = duration - startProgress;
       const startAt = context.currentTime + 0.08;
       const accompaniment = context.createBufferSource();
       const accompanimentGain = context.createGain();
       accompaniment.buffer = buffers[0];
       accompanimentGain.gain.value = accompanimentVolume;
+      accompanimentGainRef.current = accompanimentGain;
       accompaniment.connect(accompanimentGain).connect(context.destination);
-      accompaniment.start(startAt, rangeStart, duration);
+      accompaniment.start(startAt, playbackRangeStart, playbackDuration);
 
       audibleTakes.forEach((take, index) => {
         const source = context.createBufferSource();
         const gain = context.createGain();
         source.buffer = buffers[index + 1];
         gain.gain.value = (take.gain ?? 1) * voiceVolume;
+        voiceGainRefs.current.set(take.takeId, gain);
         source.connect(gain).connect(context.destination);
         const placement = calculateTimelinePlacement({
           timelineStartSeconds: take.timelineStartSeconds,
           latencyCompensationMs: take.latencyCompensationMs,
           manualOffsetMs: take.manualOffsetMs,
-          rangeStartSeconds: rangeStart,
-          rangeDurationSeconds: duration,
+          rangeStartSeconds: playbackRangeStart,
+          rangeDurationSeconds: playbackDuration,
           bufferDurationSeconds: source.buffer.duration,
         });
         if (placement.availableSeconds > 0) source.start(
@@ -121,12 +143,13 @@ export function MixTimeline({
       });
 
       setPlaying(true);
-      setProgress(0);
+      setProgress(startProgress);
       const tick = () => {
         const elapsed = Math.max(0, context.currentTime - startAt);
-        setProgress(Math.min(elapsed, duration));
-        onTimelineChange?.(rangeStart + Math.min(elapsed, duration));
-        if (elapsed >= duration || context.state === "closed") {
+        const nextProgress = Math.min(startProgress + elapsed, duration);
+        setProgress(nextProgress);
+        onTimelineChange?.(rangeStart + nextProgress);
+        if (elapsed >= playbackDuration || context.state === "closed") {
           stop();
           return;
         }
@@ -230,7 +253,16 @@ export function MixTimeline({
           value={voiceVolume} onChange={(event) => onVoiceVolume(Number(event.target.value))} /></label>
       </div>
       <footer className="mix-modal-footer">
-        <span>{formatTime(progress)} / {formatTime(duration)}</span>
+        <label className="mix-progress-control">
+          <span>{formatTime(progress)} / {formatTime(duration)}</span>
+          <input type="range" min="0" max={duration} step="0.05" value={progress}
+            disabled={playing} aria-label="混音播放起点"
+            onChange={(event) => {
+              const next = Number(event.target.value);
+              setProgress(next);
+              onTimelineChange?.(rangeStart + next);
+            }} />
+        </label>
         <button type="button" className="primary-button" onClick={() => void play()}>
           {playing ? "停止整体试听" : "播放整体混音"}
         </button>

@@ -31,3 +31,9 @@ def test_day3_profile_builds_traceable_multi_part_hero() -> None:
         for left in primary
         for right in secondary
     )
+    sentence_starts = {sentence.id: sentence.start_seconds for sentence in profile.sentences}
+    but_then_parts = [part for part in secondary if part.lyrics.startswith("But then")]
+    assert all(
+        part.start_seconds == sentence_starts[part.sentence_ids[0]]
+        for part in but_then_parts
+    )

@@ -198,6 +198,25 @@ async def analyze_practice_take(
     )
     evaluations = _build_target_evaluations(batch.findings, target_types)
     comparison = _comparison(history, evaluations)
+    target_ids_by_sentence = {
+        sentence.id: {
+            hint.id
+            for hint in sentence.language_hints
+            if issue_type_for_hint(hint) is not None
+        }
+        for sentence in sentences
+    }
+    if is_secondary and secondary_part is not None and take.sentence_ids:
+        target_ids_by_sentence = {
+            take.sentence_ids[0]: set(target_types),
+        }
+    sentence_comparisons = {
+        sentence_id: _comparison(
+            [item for item in history if sentence_id in item.sentence_ids],
+            [item for item in evaluations if item.target_id in target_ids],
+        )
+        for sentence_id, target_ids in target_ids_by_sentence.items()
+    }
     coach = GlmPracticeCoach(
         settings.glm_api_key.get_secret_value() if settings.glm_api_key else None,
         settings.glm_model,
@@ -212,6 +231,7 @@ async def analyze_practice_take(
         target_evaluations=evaluations,
         recommendations=recommendations,
         comparison=comparison,
+        sentence_comparisons=sentence_comparisons,
     )
     store.save(attempt)
     return attempt

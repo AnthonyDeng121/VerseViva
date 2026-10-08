@@ -308,8 +308,8 @@ function App() {
           {job.status === "processing" && job.updated_at &&
             Date.now() - new Date(job.updated_at).getTime() > 120_000 && (
               <p className="stale-note">
-                该阶段较长时间未更新，可能仍在请求模型，也可能正在等待后端重启。
-                任务编号已保存，刷新页面后会自动恢复。
+                该阶段较长时间未更新，模型可能仍在处理或网络响应较慢。
+                任务已保存，可以稍后刷新页面查看最新进度。
               </p>
             )}
           {job.status === "failed" && job.error && (
@@ -346,7 +346,7 @@ function App() {
 
       {profile && pageMode !== "upload" && (
         <ProfileView profile={profile} selectedHint={selectedHint} onSelect={setSelectedHint}
-          mode={pageMode} onModeChange={setPageMode} />
+          mode={pageMode} />
       )}
     </main>
   );
@@ -357,21 +357,24 @@ function ProfileView({
   selectedHint,
   onSelect,
   mode,
-  onModeChange,
 }: {
   profile: SongProfile;
   selectedHint: LanguageHint | null;
   onSelect: (hint: LanguageHint) => void;
   mode: "technique" | "sing";
-  onModeChange: (mode: "upload" | "technique" | "sing") => void;
 }) {
   const [currentTime, setCurrentTime] = useState(0);
   const [lyricsMode, setLyricsMode] = useState<"standard" | "layers">("standard");
   const [playbackRate, setPlaybackRate] = useState<0.75 | 1>(1);
   const [loopSentenceId, setLoopSentenceId] = useState<string | null>(null);
   const [audioMode, setAudioMode] = useState<"source" | "vocal">("source");
+  const [playbackStopToken, setPlaybackStopToken] = useState(0);
   const sourceAudioRef = useRef<HTMLAudioElement>(null);
   const vocalAudioRef = useRef<HTMLAudioElement>(null);
+  const stopReferencePlayback = () => {
+    sourceAudioRef.current?.pause();
+    vocalAudioRef.current?.pause();
+  };
   useEffect(() => {
     setCurrentTime(0);
     setPlaybackRate(1);
@@ -428,9 +431,9 @@ function ProfileView({
         </div>
         <div className="audio-mode-switch" role="group" aria-label="参考音轨">
           <button type="button" className={audioMode === "source" ? "active" : ""}
-            onClick={() => setAudioMode("source")}>原曲</button>
+            onClick={() => { setAudioMode("source"); setPlaybackStopToken((value) => value + 1); }}>原曲</button>
           {profile.audio.vocalUrl && <button type="button" className={audioMode === "vocal" ? "active" : ""}
-            onClick={() => setAudioMode("vocal")}>人声</button>}
+            onClick={() => { setAudioMode("vocal"); setPlaybackStopToken((value) => value + 1); }}>人声</button>}
         </div>
       </div>
 
@@ -438,13 +441,21 @@ function ProfileView({
         {audioMode === "source" && <label>
           <span>原曲</span>
           <AudioPlayer audioRef={sourceAudioRef} src={profile.audio.sourceUrl}
-            playbackRate={playbackRate} onTimeChange={handleTimeChange} />
+            playbackRate={playbackRate} onTimeChange={handleTimeChange}
+            onPlay={() => {
+              vocalAudioRef.current?.pause();
+              setPlaybackStopToken((value) => value + 1);
+            }} />
         </label>}
         {audioMode === "vocal" && profile.audio.vocalUrl && (
           <label>
             <span>人声</span>
             <AudioPlayer audioRef={vocalAudioRef} src={profile.audio.vocalUrl}
-              playbackRate={playbackRate} onTimeChange={handleTimeChange} />
+              playbackRate={playbackRate} onTimeChange={handleTimeChange}
+              onPlay={() => {
+                sourceAudioRef.current?.pause();
+                setPlaybackStopToken((value) => value + 1);
+              }} />
           </label>
         )}
       </div>
@@ -517,8 +528,9 @@ function ProfileView({
         accompanimentUrl={profile.audio.accompanimentUrl}
         sourceUrl={profile.audio.sourceUrl}
         onTimelineChange={setCurrentTime}
-        onRecordingStart={() => onModeChange("technique")}
-        onRecordingFinished={() => onModeChange("sing")}
+        onRecordingStart={stopReferencePlayback}
+        onExclusivePlaybackStart={stopReferencePlayback}
+        playbackStopToken={playbackStopToken}
       /></div>
 
     </section>
@@ -550,11 +562,13 @@ function AudioPlayer({
   src,
   playbackRate,
   onTimeChange,
+  onPlay,
 }: {
   audioRef: React.RefObject<HTMLAudioElement | null>;
   src: string;
   playbackRate: number;
   onTimeChange: (time: number, player: HTMLAudioElement) => void;
+  onPlay: () => void;
 }) {
   const [playbackMessage, setPlaybackMessage] = useState("正在连接音频资源…");
   useEffect(() => {
@@ -569,6 +583,7 @@ function AudioPlayer({
       controls
       preload="metadata"
       src={src}
+      onPlay={onPlay}
       onLoadedMetadata={(event) => {
         event.currentTarget.volume = 0.3;
         event.currentTarget.playbackRate = playbackRate;
@@ -926,7 +941,6 @@ function HintDetail({ sentence, initialHintId }: {
       </div>
       <button className="hint-arrow" type="button" aria-label="下一个语言点"
         disabled={count < 2} onClick={() => setIndex((index + 1) % count)}>›</button>
-      {hint.evidence.needsHumanReview && <p className="review-note">这条候选需要人工复核。</p>}
     </aside>
   );
 }

@@ -78,6 +78,7 @@ async def upload_take(
     vocal_part_id: str | None = Form(default=None),
     client_duration_seconds: float | None = Form(default=None),
     latency_compensation_ms: float = Form(default=0),
+    manual_offset_ms: float = Form(default=0),
 ) -> RecordingTake:
     settings = get_settings()
     profile = ProfileStore(settings.data_dir).get(song_id)
@@ -132,7 +133,10 @@ async def upload_take(
                     header = (header + chunk)[:12]
                 size += len(chunk)
                 if size > settings.max_recording_size_bytes:
-                    raise HTTPException(status_code=413, detail="Recording is too large")
+                    raise HTTPException(
+                        status_code=413,
+                        detail="录音文件过大，请缩短演唱范围后重试（当前上限 100 MB）",
+                    )
                 output.write(chunk)
         if size == 0:
             raise HTTPException(status_code=400, detail="Recording is empty")
@@ -166,6 +170,7 @@ async def upload_take(
             size_bytes=size,
             client_duration_seconds=client_duration_seconds,
             latency_compensation_ms=latency_compensation_ms,
+            manual_offset_ms=manual_offset_ms,
         )
         TakeStore(settings.data_dir).add(take)
         return take

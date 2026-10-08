@@ -86,6 +86,7 @@ class PracticeAttempt(PracticeModel):
     target_evaluations: list[TargetEvaluation] = Field(default_factory=list)
     recommendations: list[PracticeRecommendation] = Field(default_factory=list, max_length=3)
     comparison: AttemptComparison
+    sentence_comparisons: dict[str, AttemptComparison] = Field(default_factory=dict)
     insufficient_reason: str | None = None
     acoustic_provider: str
     acoustic_model: str

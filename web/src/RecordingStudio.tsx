@@ -53,8 +53,10 @@ type RecordingTake = {
 export type PracticeAttempt = {
   attemptId: string;
   takeId: string;
+  trackSlotId: string;
+  sentenceIds: string[];
   status: "analyzed" | "insufficient_data" | "failed";
-  issues: { issueId: string; type: string; wordText: string; confidence: number }[];
+  issues: { issueId: string; type: string; sentenceId: string; wordText: string; confidence: number }[];
   recommendations: {
     rank: number;
     issueId: string;
@@ -65,6 +67,9 @@ export type PracticeAttempt = {
   comparison: {
     result: "first_attempt" | "improved" | "unchanged" | "regressed" | "insufficient_data";
   };
+  sentenceComparisons?: Record<string, {
+    result: "first_attempt" | "improved" | "unchanged" | "regressed" | "insufficient_data";
+  }>;
   insufficientReason?: string | null;
   createdAt: string;
 };
@@ -82,6 +87,7 @@ const MIME_CANDIDATES = [
   "audio/webm",
   "audio/ogg;codecs=opus",
 ];
+const DEFAULT_RECORDING_ADVANCE_MS = 500;
 
 function recordingExtension(mimeType: string) {
   if (mimeType.includes("mp4")) return "m4a";
@@ -111,6 +117,8 @@ export function RecordingStudio({
   onTimelineChange,
   onRecordingStart,
   onRecordingFinished,
+  onExclusivePlaybackStart,
+  playbackStopToken,
 }: {
   songId: string;
   sentences: RecordingSentence[];
@@ -120,6 +128,8 @@ export function RecordingStudio({
   onTimelineChange?: (time: number) => void;
   onRecordingStart?: () => void;
   onRecordingFinished?: () => void;
+  onExclusivePlaybackStart?: () => void;
+  playbackStopToken?: number;
 }) {
   const [startIndex, setStartIndex] = useState(0);
   const [endIndex, setEndIndex] = useState(0);
@@ -273,6 +283,12 @@ export function RecordingStudio({
   }, [previewUrl]);
 
   useEffect(() => {
+    previewAudioRef.current?.pause();
+    sourceRef.current?.pause();
+    stopPlayback();
+  }, [playbackStopToken]);
+
+  useEffect(() => {
     if (accompanimentRef.current) accompanimentRef.current.volume = accompanimentVolume;
   }, [accompanimentVolume]);
 
@@ -284,6 +300,10 @@ export function RecordingStudio({
   }
 
   async function startRecording() {
+    onExclusivePlaybackStart?.();
+    stopPlayback();
+    sourceRef.current?.pause();
+    accompanimentRef.current?.pause();
     setError(null);
     setSavedNotice(null);
     resetPreview();
@@ -404,7 +424,8 @@ export function RecordingStudio({
     form.set("save_mode", "overdub_append");
     form.set("purpose", purpose);
     form.set("client_duration_seconds", String(selectionEnd - selectionStart));
-    form.set("latency_compensation_ms", String(previewOffsetMs));
+    form.set("latency_compensation_ms", String(DEFAULT_RECORDING_ADVANCE_MS));
+    form.set("manual_offset_ms", String(previewOffsetMs));
     if (selectedVocalPartId) form.set("vocal_part_id", selectedVocalPartId);
 
     try {
@@ -460,6 +481,9 @@ export function RecordingStudio({
       return;
     }
     stopPlayback();
+    onExclusivePlaybackStart?.();
+    sourceRef.current?.pause();
+    previewAudioRef.current?.pause();
     setError(null);
     const audio = new Audio(take.audioUrl);
     singleTakeAudioRef.current = audio;
@@ -634,6 +658,9 @@ export function RecordingStudio({
         <audio ref={previewAudioRef} controls src={previewUrl}
           onVolumeChange={(event) => setPreviewVoiceVolume(event.currentTarget.volume)}
           onPlay={(event) => {
+            onExclusivePlaybackStart?.();
+            stopPlayback();
+            sourceRef.current?.pause();
             event.currentTarget.volume = previewVoiceVolume;
             if (previewOffsetMs > 0) event.currentTarget.currentTime = previewOffsetMs / 1000;
             if (accompanimentRef.current && accompanimentUrl) {
@@ -674,7 +701,9 @@ export function RecordingStudio({
               : purpose === "guided_practice" ? "分析并上传" : "保存清唱叠录"}
           </button>
           <button type="button" className="secondary-button"
-            disabled={state === "uploading"} onClick={resetPreview}>重录</button>
+            disabled={state === "uploading"} onClick={() => void startRecording()}>重录</button>
+          <button type="button" className="text-button cancel-recording-button"
+            disabled={state === "uploading"} onClick={resetPreview}>取消</button>
         </>}
       </div>
 
@@ -683,7 +712,15 @@ export function RecordingStudio({
       {state === "recording" && <p className="recording-live">● 正在录制；到片段结尾会自动停止</p>}
       {analyzingTakeId && <p className="recording-live">正在分析，请保持页面打开…</p>}
 
-      {attempts.length > 0 && <PracticeFeedback attempt={attempts.at(-1)!} memory={memory} />}
+      {purpose === "guided_practice" && (() => {
+        const trackSlotId = `${lane}:${Array.from(new Set(selectedOptions.flatMap(
+          (option) => option.sentenceIds,
+        ))).join("+")}`;
+        const attempt = [...attempts].reverse().find((item) => item.trackSlotId === trackSlotId);
+        return attempt
+          ? <PracticeFeedback attempt={attempt} memory={memory} sentences={sentences} />
+          : null;
+      })()}
 
       {preparedAccompanimentUrl
         ? <audio ref={accompanimentRef} src={preparedAccompanimentUrl} preload="auto"

@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     web_dist_dir: Path = Path("web/dist")
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
     max_upload_size_bytes: int = 100 * 1024 * 1024
-    max_recording_size_bytes: int = 25 * 1024 * 1024
+    max_recording_size_bytes: int = 100 * 1024 * 1024
     auto_run_analysis_pipeline: bool = True
     demucs_executable: Path = Path(".venv-demucs/bin/demucs")
     demucs_model: str = "htdemucs"
