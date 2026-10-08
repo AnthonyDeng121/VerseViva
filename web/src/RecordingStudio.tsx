@@ -612,9 +612,9 @@ export function RecordingStudio({
       </div>
       <div className="recording-mode-switch reference-switch" role="group" aria-label="录制参考音源">
         <button type="button" className={recordingReference === "accompaniment" ? "active" : ""}
-          onClick={() => setRecordingReference("accompaniment")}>听伴奏</button>
+          onClick={() => setRecordingReference("accompaniment")}>伴奏</button>
         <button type="button" className={recordingReference === "source" ? "active" : ""}
-          onClick={() => setRecordingReference("source")}>听原唱</button>
+          onClick={() => setRecordingReference("source")}>原唱</button>
       </div></div>
       <p className="recording-purpose-note">{purpose === "guided_practice"
         ? "上传后分析语言技巧，并计入个人练唱记忆。"

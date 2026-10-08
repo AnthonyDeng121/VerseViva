@@ -262,10 +262,10 @@ audio { width: 100%; }
 .secure-ok, .secure-warning { padding: 6px 10px; border-radius: 999px; font-size: 12px; white-space: nowrap; }
 .secure-ok { color: #246044; background: #dff2e7; }
 .secure-warning { color: #8d3c31; background: #f8ddd8; }
-.recording-mode-switch { display: inline-flex; margin: 12px 0 9px; padding: 3px; border-radius: 10px; background: rgba(82,62,49,.08); }
-.recording-mode-switch button { min-width: 58px; padding: 6px 9px; border: 0; border-radius: 8px; color: #5e5148; background: transparent; font-size: 11px; }
+.recording-mode-switch { display: inline-flex; flex: 0 1 auto; margin: 10px 0 8px; padding: 2px; border-radius: 9px; background: rgba(82,62,49,.08); }
+.recording-mode-switch button { min-width: 40px; padding: 5px 5px; border: 0; border-radius: 7px; color: #5e5148; background: transparent; font-size: 10px; white-space: nowrap; }
 .recording-mode-switch button.active { color: #fff; background: #9f4e3d; }
-.recording-switch-row { display: flex; flex-wrap: nowrap; align-items: center; gap: 5px; overflow-x: auto; }
+.recording-switch-row { display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 3px; overflow-x: auto; }
 .purpose-switch { margin-left: 0; }
 .empty-mode-card { padding: 22px; border: 1px solid #dce5e0; border-radius: 16px; text-align: center; background: #fff; }
 .empty-mode-card p, .hero-loading { color: #68756f; font-size: 13px; }

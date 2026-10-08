@@ -68,9 +68,10 @@ Pipeline 每阶段记录实际/估算耗时、API 调用次数、缓存命中和
 - 新 Take 默认使用 500 ms 隐式设备延迟补偿，界面手动偏移仍从 0 ms 开始。
 - 参考播放、用户试听与录音参考互斥；多轨混音支持选择播放起点和播放中实时总增益。
 - WhisperX 词级对齐继续作为 G2P、语言候选和标记定位的内部证据；用户歌词播放只做整句高亮。
+- 日韩歌曲的语言标记只绘制在罗马音行，详情卡保留原文、辅助读音和演唱提示；三首 Hero 的人工语言规则校正由 `scripts/curate_hero_hints.py` 固化并纳入回归。
 - 开始录音后切到技巧分析页供用户边看边唱；录音组件保持挂载，结束后回到演唱页。
 - 当前会话可导出 192 kbps MP3 整体混音；导出必须应用 Take 的 mute/gain、延迟补偿、手动偏移和整体增益。
-- 后端 93 项回归、Ruff、前端 test/lint/build 构成冻结检查。
+- 后端回归、Ruff、前端 test/lint/build 构成冻结检查。
 
 当前 Hero：
 
@@ -129,7 +130,7 @@ python scripts/hero_assets.py restore artifacts/verseviva-hero-assets.zip --data
 
 ```bash
 python -m pytest -q --basetemp=<可写临时目录>
-python -m ruff check server tests scripts/hero_assets.py
+python -m ruff check server tests scripts
 cd web
 npm test
 npm run lint

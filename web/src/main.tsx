@@ -863,10 +863,12 @@ function AnnotatedLine({
 }
 
 function crossesParentheticalLane(sentence: SongSentence, hint: LanguageHint) {
+  // Pronunciation indexes point at the romanized line, which has no reliable
+  // character-position mapping back to parentheses in the original script.
+  if (sentence.pronunciation) return false;
   if (hint.startWordIndex === undefined || hint.endWordIndex === undefined
     || hint.startWordIndex === hint.endWordIndex) return false;
-  const annotationText = sentence.pronunciation?.text ?? sentence.lyrics;
-  const words = Array.from(annotationText.matchAll(/[A-Za-z]+(?:['’][A-Za-z]+)*/g));
+  const words = Array.from(sentence.lyrics.matchAll(/[A-Za-z]+(?:['’][A-Za-z]+)*/g));
   const start = words[hint.startWordIndex]?.index;
   const end = words[hint.endWordIndex]?.index;
   if (start === undefined || end === undefined) return false;
@@ -893,7 +895,8 @@ function HintDetail({ sentence, initialHintId }: {
   if (!detail) return null;
   const mark = hint.marks[0];
   const displayMark = mark?.symbol === "└─┘" ? "└┘" : mark?.symbol ?? "";
-  const words = Array.from(sentence.lyrics.matchAll(/[A-Za-z]+(?:['’][A-Za-z]+)*/g));
+  const annotationText = sentence.pronunciation?.text ?? sentence.lyrics;
+  const words = Array.from(annotationText.matchAll(/[A-Za-z]+(?:['’][A-Za-z]+)*/g));
   const before = [...words].reverse().find((word) => (word.index ?? 0) <= (mark?.startCharIndex ?? 0));
   const after = words.find((word) => (word.index ?? 0) > (mark?.startCharIndex ?? 0));
   const technique = displayMark === "×"
@@ -922,6 +925,7 @@ function HintDetail({ sentence, initialHintId }: {
 }
 
 function laneForHint(sentence: SongSentence, hint: LanguageHint) {
+  if (sentence.pronunciation) return "primary";
   const index = hint.marks[0]?.startCharIndex ?? 0;
   const prefix = sentence.lyrics.slice(0, index);
   return prefix.lastIndexOf("(") > prefix.lastIndexOf(")") ? "secondary" : "primary";
