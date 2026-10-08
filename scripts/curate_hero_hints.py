@@ -327,11 +327,14 @@ def curate_korean(profile: dict) -> None:
     last["languageHints"][0]["observedPronunciation"] = "eo neun"
     last["languageHints"][1]["canonicalPronunciation"] = "geot cheo"
     last["languageHints"][1]["observedPronunciation"] = "geo cheo"
-    for sentence in (first, last):
+    for sentence in profile["sentences"]:
         maximum = len(sentence["words"]) - 1
         for hint in sentence["languageHints"]:
             hint["startWordIndex"] = min(hint["startWordIndex"], maximum)
             hint["endWordIndex"] = min(hint["endWordIndex"], maximum)
+            if hint["marks"][0]["symbol"] == "×" and hint.get("canonicalPronunciation"):
+                left, *right = hint["canonicalPronunciation"].split()
+                hint["observedPronunciation"] = " ".join([left[:-1], *right]).strip()
 
 
 def curate_japanese(profile: dict) -> None:

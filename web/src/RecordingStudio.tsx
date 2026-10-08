@@ -137,6 +137,7 @@ export function RecordingStudio({
   const [purpose, setPurpose] = useState<"guided_practice" | "free_overdub">("guided_practice");
   const [recordingReference, setRecordingReference] = useState<"accompaniment" | "source">("accompaniment");
   const [state, setState] = useState<RecorderState>("idle");
+  const [countdown, setCountdown] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -298,6 +299,7 @@ export function RecordingStudio({
     setPreviewUrl(null);
     setPreviewBlob(null);
     setState("idle");
+    setCountdown(null);
   }
 
   async function startRecording() {
@@ -360,6 +362,11 @@ export function RecordingStudio({
         onRecordingFinished?.();
       };
 
+      for (let remaining = 3; remaining >= 1; remaining -= 1) {
+        setCountdown(remaining);
+        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+      }
+      setCountdown(null);
       recorder.start(250);
       setState("recording");
       onRecordingStart?.();
@@ -377,6 +384,7 @@ export function RecordingStudio({
     } catch (reason) {
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
+      setCountdown(null);
       setState("idle");
       const name = reason instanceof DOMException ? reason.name : "";
       setError(
@@ -720,7 +728,8 @@ export function RecordingStudio({
           <button type="button" className="primary-button"
             onClick={() => void startRecording()}
             disabled={state === "requesting" || practiceOptions.length === 0 || !resourcesReady}>
-            {!resourcesReady ? "正在准备音频…" : state === "requesting" ? "正在请求麦克风…" : "开始录音"}
+             {!resourcesReady ? "正在准备音频…" : countdown !== null
+               ? `${countdown} 秒后开始` : state === "requesting" ? "正在请求麦克风…" : "开始录音"}
           </button>}
         {state === "recording" &&
           <button type="button" className="record-stop-button" onClick={stopRecording}>停止录音</button>}
@@ -741,6 +750,7 @@ export function RecordingStudio({
 
       {error && <p className="recording-error">{error}</p>}
       {savedNotice && <p className="recording-success">{savedNotice}</p>}
+      {countdown !== null && <p className="recording-countdown" aria-live="assertive">{countdown}</p>}
       {state === "recording" && <p className="recording-live">● 正在录制；到片段结尾会自动停止</p>}
       {analyzingTakeId && <p className="recording-live">正在分析，请保持页面打开…</p>}
 

@@ -128,6 +128,8 @@ def _is_retryable_gemini_error(exc: Exception) -> bool:
             "high demand",
             "temporarily unavailable",
             "timeout",
+            "audio file processing failed",
+            "音频文件处理失败",
         )
     )
 

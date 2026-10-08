@@ -55,6 +55,16 @@ def test_korean_owner_corrections_target_romanization() -> None:
     assert last["hint_human_eop_neun"].marks[0].symbol == "×"
     assert last["hint_human_geot_cheo"].marks[0].symbol == "×"
 
+    profile = ProfileStore(ROOT / "data").get(f"{SONG_PREFIX}04")
+    assert profile is not None
+    for sentence in profile.sentences:
+        for hint in sentence.language_hints:
+            if hint.marks[0].symbol != "×" or not hint.canonical_pronunciation:
+                continue
+            canonical_left = hint.canonical_pronunciation.split()[0]
+            observed_left = (hint.observed_pronunciation or "").split()[0]
+            assert observed_left == canonical_left[:-1]
+
 
 def test_japanese_marks_stay_shifted_and_final_he_n_is_unmarked() -> None:
     last = _hints(_sentence("05", "sentence_006"))

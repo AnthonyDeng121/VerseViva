@@ -102,13 +102,14 @@ class GeminiPracticeAnalyzer:
             raise RuntimeError("Practice analysis requires google-genai") from exc
 
         client = genai.Client(api_key=self.api_key)
-        uploaded = _wait_for_active(client, client.files.upload(file=str(audio_path)))
+        uploaded = _upload_and_wait(client, audio_path, "用户录音")
         reference_audio = None
-        if reference_vocal_path is not None:
-            reference_audio = _wait_for_active(
-                client,
-                client.files.upload(file=str(reference_vocal_path)),
-            )
+        try:
+            if reference_vocal_path is not None:
+                reference_audio = _upload_and_wait(client, reference_vocal_path, "参考人声")
+        except Exception:
+            _delete_uploaded_file(client, uploaded)
+            raise
         try:
             audio_inputs = []
             if reference_audio is not None:
@@ -163,10 +164,12 @@ class GeminiPracticeAnalyzer:
             raise RuntimeError("Practice analysis requires google-genai") from exc
 
         client = genai.Client(api_key=self.api_key)
-        user_audio = client.files.upload(file=str(audio_path))
-        reference_audio = client.files.upload(file=str(reference_vocal_path))
-        user_audio = _wait_for_active(client, user_audio)
-        reference_audio = _wait_for_active(client, reference_audio)
+        user_audio = _upload_and_wait(client, audio_path, "用户录音")
+        try:
+            reference_audio = _upload_and_wait(client, reference_vocal_path, "参考人声")
+        except Exception:
+            _delete_uploaded_file(client, user_audio)
+            raise
         try:
             interaction = client.interactions.create(
                 model=self.model,
@@ -228,13 +231,33 @@ def _wait_for_active(client, uploaded, timeout_seconds: float = 60.0):
         if state_name.endswith("ACTIVE") or not state_name:
             return current
         if state_name.endswith("FAILED"):
-            raise RuntimeError("Gemini 音频文件处理失败")
+            error = getattr(current, "error", None)
+            detail = f"：{error}" if error else ""
+            raise RuntimeError(f"Gemini 音频文件处理失败{detail}")
         time.sleep(1)
         name = getattr(current, "name", None)
         if not name:
             return current
         current = client.files.get(name=name)
     raise TimeoutError("Gemini 音频文件未在 60 秒内准备完成")
+
+
+def _upload_and_wait(client, audio_path: Path, label: str):
+    uploaded = client.files.upload(file=str(audio_path))
+    try:
+        return _wait_for_active(client, uploaded)
+    except Exception as exc:
+        _delete_uploaded_file(client, uploaded)
+        raise RuntimeError(f"{label}{exc}") from exc
+
+
+def _delete_uploaded_file(client, uploaded) -> None:
+    name = getattr(uploaded, "name", None)
+    if name:
+        try:
+            client.files.delete(name=name)
+        except Exception:
+            pass
 
 
 @contextmanager
