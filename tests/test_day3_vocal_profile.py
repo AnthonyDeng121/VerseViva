@@ -20,8 +20,8 @@ def test_day3_profile_builds_traceable_multi_part_hero() -> None:
     audio_dir = project_root / "data" / "songs" / DAY3_VOCAL_SONG_ID / "audio"
     assert (audio_dir / "vocals.wav").is_file()
     assert (audio_dir / "accompaniment.wav").is_file()
-    assert len(primary) == 16
-    assert len(secondary) == 11
+    assert len(primary) == 13
+    assert len(secondary) == 12
     assert all(not part.needs_human_review for part in secondary)
     assert profile.sentences
     assert any(sentence.words for sentence in profile.sentences)

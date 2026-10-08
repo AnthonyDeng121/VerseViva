@@ -205,7 +205,7 @@ audio { width: 100%; }
 
 .hint-detail { display: grid; grid-template-columns: 28px minmax(0,1fr) 28px; align-items: center; gap: 7px; padding: 12px 8px; border-left: 4px solid #087e6b; border-radius: 12px; background: #f0f7f4; }
 .hint-content { display: grid; gap: 6px; min-width: 0; }
-.technique-display { display: inline-block; padding-bottom: 7px; font-size: 16px; }
+.technique-display { display: inline-block; padding-bottom: 7px; font-size: 16px; text-transform: none; }
 .technique-display i { font-style: normal; }
 .technique-gap { white-space: pre; }
 .hint-content p { font-size: 13px; line-height: 1.45; }
@@ -386,5 +386,6 @@ audio { width: 100%; }
   .mix-playhead { margin-left: 110px; }
   .mix-master-controls { grid-template-columns: 1fr; }
   .mix-modal-footer { align-items: stretch; flex-direction: column; }
-  .recording-selectors select, .track-name-input { font-size: 16px; }
+  .recording-selectors select { font-size: 13px; }
+  .track-name-input { font-size: 16px; }
 }

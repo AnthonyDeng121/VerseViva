@@ -90,7 +90,7 @@ def curate_english(profile: dict) -> None:
             phenomenon="cross_word_linking",
             start_word=6,
             end_word=7,
-            symbol="‿",
+            symbol="└─┘",
             start_char=26,
             end_char=28,
             explanation="次轨的 want to 连成一个连续动作。",
@@ -173,11 +173,100 @@ def curate_english(profile: dict) -> None:
         ]
     )
 
+    # The final call-and-response section was originally serialized as short,
+    # primary-only fragments after each lead line. Keep those lyric sentences
+    # as the evidence source, but put them on the secondary lane at the same
+    # time as the lead they answer.
+    late_pairs = (
+        ("sentence_009", "sentence_010", 23.7929, 26.921),
+        ("sentence_011", "sentence_012", 27.041, 29.727),
+        ("sentence_013", "sentence_014", 29.868, 32.574),
+    )
+    for _, response_id, start, end in late_pairs:
+        response = _sentence(profile, response_id)
+        response["startSeconds"] = start
+        response["endSeconds"] = end
+        for hint in response["languageHints"]:
+            hint["startSeconds"] = start
+            hint["endSeconds"] = end
+        if response_id == "sentence_012":
+            back_boundary = next(
+                hint for hint in response["languageHints"] if hint["id"] == "hint_candidate_011_008"
+            )
+            back_boundary["marks"][0]["symbol"] = "‿"
+            back_boundary["phenomenon"] = "cross_word_linking"
+
+    final_response_id = "sentence_017"
+    profile["sentences"] = [
+        sentence for sentence in profile["sentences"] if sentence["id"] != final_response_id
+    ]
+    final_response = deepcopy(_sentence(profile, "sentence_012"))
+    final_response.update(
+        {
+            "id": final_response_id,
+            "startSeconds": 32.815,
+            "endSeconds": 36.183,
+        }
+    )
+    word_duration = (
+        final_response["endSeconds"] - final_response["startSeconds"]
+    ) / len(final_response["words"])
+    for index, word in enumerate(final_response["words"]):
+        word["id"] = f"word_017_{index + 1:03d}"
+        word["startSeconds"] = final_response["startSeconds"] + index * word_duration
+        word["endSeconds"] = final_response["startSeconds"] + (index + 1) * word_duration
+    for hint in final_response["languageHints"]:
+        hint["id"] = hint["id"].replace("hint_candidate_011", "hint_human_final_response")
+        hint["source"] = "human_curated"
+        hint["confidence"] = 1.0
+        hint["startSeconds"] = final_response["startSeconds"]
+        hint["endSeconds"] = final_response["endSeconds"]
+        hint["evidence"] = {"curation": "product_owner_final_response_2026_10_08"}
+    profile["sentences"].append(final_response)
+    profile["sentences"].sort(key=lambda sentence: (sentence["startSeconds"], sentence["id"]))
+
+    response_ids = {response_id for _, response_id, _, _ in late_pairs}
+    profile["vocalParts"] = [
+        part
+        for part in profile["vocalParts"]
+        if not (part["lane"] == "primary" and part["sentenceIds"][0] in response_ids)
+        and part["id"] != "part_secondary_final_response"
+    ]
+    for _, response_id, start, end in late_pairs:
+        part = next(
+            item
+            for item in profile["vocalParts"]
+            if item["lane"] == "secondary" and item["sentenceIds"] == [response_id]
+        )
+        part["startSeconds"] = start
+        part["endSeconds"] = end
+    final_part = deepcopy(
+        next(
+            item
+            for item in profile["vocalParts"]
+            if item["lane"] == "secondary" and item["sentenceIds"] == ["sentence_012"]
+        )
+    )
+    final_part.update(
+        {
+            "id": "part_secondary_final_response",
+            "startSeconds": 32.815,
+            "endSeconds": 36.183,
+            "sentenceIds": [final_response_id],
+        }
+    )
+    profile["vocalParts"].append(final_part)
+
 
 def curate_korean(profile: dict) -> None:
     first = _sentence(profile, "sentence_002")
     first["languageHints"][0].update({"startWordIndex": 4, "endWordIndex": 5})
-    first["languageHints"][1].update({"startWordIndex": 7, "endWordIndex": 8})
+    first["languageHints"][1].update({"startWordIndex": 6, "endWordIndex": 7})
+    first["languageHints"][1]["marks"] = [
+        {"symbol": "‿", "startCharIndex": 31, "endCharIndex": 33, "placement": "below"}
+    ]
+    first["languageHints"][1]["canonicalPronunciation"] = "reom a"
+    first["languageHints"][1]["observedPronunciation"] = "reo ma"
 
     last = _sentence(profile, "sentence_009")
     template = first["languageHints"][0]
@@ -209,6 +298,10 @@ def curate_korean(profile: dict) -> None:
             action="geot 收住后直接进入 cheo。",
         ),
     ]
+    last["languageHints"][0]["canonicalPronunciation"] = "eop neun"
+    last["languageHints"][0]["observedPronunciation"] = "eo neun"
+    last["languageHints"][1]["canonicalPronunciation"] = "geot cheo"
+    last["languageHints"][1]["observedPronunciation"] = "geo cheo"
     for sentence in (first, last):
         maximum = len(sentence["words"]) - 1
         for hint in sentence["languageHints"]:
@@ -224,16 +317,24 @@ def curate_japanese(profile: dict) -> None:
         tokens = list(re.finditer(r"[A-Za-z]+", pronunciation["text"]))
         if sentence["languageHints"] and all(
             hint.get("evidence", {}).get("curation")
-            == "product_owner_shifted_one_word_2026_10_08"
+            == "product_owner_shifted_left_one_sound_v2_2026_10_08"
             for hint in sentence["languageHints"]
         ):
             continue
         shifted = []
         for hint in sentence["languageHints"]:
-            if sentence["id"] == "sentence_006" and hint["id"] == "hint_human_tai_he_2":
+            if sentence["id"] == "sentence_006" and hint["id"] in {
+                "hint_human_tai_he_2",
+                "hint_human_hen_da_2",
+            }:
                 continue
-            hint["startWordIndex"] = min(hint["startWordIndex"] + 1, len(sentence["words"]) - 1)
-            hint["endWordIndex"] = min(hint["endWordIndex"] + 1, len(sentence["words"]) - 1)
+            previous_version = hint.get("evidence", {}).get("curation") \
+                == "product_owner_shifted_one_word_2026_10_08"
+            already_shifted_left = hint.get("evidence", {}).get("curation") \
+                == "product_owner_shifted_left_one_sound_2026_10_08"
+            word_shift = 0 if already_shifted_left else (-2 if previous_version else -1)
+            hint["startWordIndex"] = max(0, hint["startWordIndex"] + word_shift)
+            hint["endWordIndex"] = max(0, hint["endWordIndex"] + word_shift)
             for mark in hint["marks"]:
                 current = max(
                     (
@@ -243,12 +344,20 @@ def curate_japanese(profile: dict) -> None:
                     ),
                     default=0,
                 )
-                target = tokens[min(current + 1, len(tokens) - 1)]
+                shift = 0 if already_shifted_left else (-2 if previous_version else -1)
+                target = tokens[max(0, current + shift)]
                 mark["startCharIndex"] = target.end() - 1
                 mark["endCharIndex"] = target.end() - 1
+                mark["symbol"] = "└─┘"
+                left = tokens[max(0, current + shift)]
+                right = tokens[min(max(0, current + shift) + 1, len(tokens) - 1)]
+                hint["canonicalPronunciation"] = f"{left.group()} {right.group()}"
+                hint["observedPronunciation"] = f"{left.group()}{right.group()}"
             hint["source"] = "human_curated"
             hint["confidence"] = 1.0
-            hint["evidence"] = {"curation": "product_owner_shifted_one_word_2026_10_08"}
+            hint["evidence"] = {
+                "curation": "product_owner_shifted_left_one_sound_v2_2026_10_08"
+            }
             shifted.append(hint)
         sentence["languageHints"] = shifted
 
