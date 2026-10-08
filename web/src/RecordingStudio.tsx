@@ -479,15 +479,36 @@ export function RecordingStudio({
     }
   }
 
-  async function analyzeTake(takeId: string, refreshMemory = true) {
+  async function analyzeTake(takeId: string, refreshMemory = true, force = false) {
     setAnalyzingTakeId(takeId);
     try {
-      const response = await fetch(`/api/v1/takes/${takeId}/analyze`, { method: "POST" });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null) as { detail?: string } | null;
+      const started = await fetch(
+        `/api/v1/takes/${takeId}/analysis-jobs?force=${force}`,
+        { method: "POST" },
+      );
+      if (!started.ok) {
+        const payload = await started.json().catch(() => null) as { detail?: string } | null;
         throw new Error(payload?.detail ?? "本次练唱分析失败");
       }
-      const attempt = await response.json() as PracticeAttempt;
+      let attempt: PracticeAttempt | null = null;
+      let missingPolls = 0;
+      for (let poll = 0; poll < 180; poll += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 2_000));
+        const response = await fetch(`/api/v1/takes/${takeId}/attempt`);
+        if (response.status === 404) {
+          missingPolls += 1;
+          if (missingPolls >= 8) {
+            throw new Error("分析任务已中断，请点击重分析继续。");
+          }
+          continue;
+        }
+        if (!response.ok) throw new Error("读取分析结果失败，请稍后重试。");
+        const payload = await response.json() as PracticeAttempt | { status: "processing" };
+        if (payload.status === "processing") continue;
+        attempt = payload;
+        break;
+      }
+      if (!attempt) throw new Error("分析时间超过 6 分钟，请稍后在已保存音轨中查看或重分析。");
       setAttempts((current) => [...current.filter((item) => item.takeId !== takeId), attempt]);
       if (refreshMemory) {
         const memoryResponse = await fetch(
@@ -863,7 +884,7 @@ export function RecordingStudio({
             </button>
             {take.purpose === "guided_practice" && <button type="button" className="secondary-button"
               disabled={analyzingTakeId === take.takeId}
-              onClick={() => void analyzeTake(take.takeId)}>
+              onClick={() => void analyzeTake(take.takeId, true, true)}>
               {analyzingTakeId === take.takeId ? "分析中…" : "重分析"}
             </button>}
             <button type="button" className="secondary-button"

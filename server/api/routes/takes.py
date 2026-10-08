@@ -25,6 +25,7 @@ from server.storage.take_store import TakeStore
 
 router = APIRouter()
 CHUNK_SIZE = 1024 * 1024
+ANALYSIS_TASKS: dict[str, asyncio.Task] = {}
 ALLOWED_RECORDING_TYPES = {
     ".webm": {"audio/webm", "video/webm", "application/octet-stream"},
     ".mp4": {"audio/mp4", "video/mp4", "application/octet-stream"},
@@ -325,6 +326,49 @@ async def analyze_take(take_id: str) -> PracticeAttempt:
     if not source.is_file():
         raise HTTPException(status_code=404, detail="Recording audio not found")
     return await analyze_practice_take(settings, take, profile, source)
+
+
+async def _run_take_analysis(take_id: str) -> None:
+    try:
+        settings = get_settings()
+        take = TakeStore(settings.data_dir).get(take_id)
+        if take is None:
+            return
+        profile = ProfileStore(settings.data_dir).get(take.song_id)
+        source = settings.data_dir / "takes" / take.take_id / take.stored_filename
+        if profile is not None and source.is_file():
+            await analyze_practice_take(settings, take, profile, source)
+    finally:
+        ANALYSIS_TASKS.pop(take_id, None)
+
+
+@router.post("/takes/{take_id}/analysis-jobs", status_code=status.HTTP_202_ACCEPTED)
+async def start_take_analysis(take_id: str, force: bool = Query(default=False)) -> dict:
+    settings = get_settings()
+    take = TakeStore(settings.data_dir).get(take_id)
+    if take is None:
+        raise HTTPException(status_code=404, detail="Recording Take not found")
+    if take.purpose == TakePurpose.free_overdub:
+        raise HTTPException(status_code=409, detail="清唱叠录不参与演唱分析或长期记忆")
+    existing = PracticeStore(settings.data_dir).get_for_take(take_id)
+    if existing is not None and existing.analysis_version == "practice-language-v5" and not force:
+        return {"takeId": take_id, "status": "complete"}
+    running = ANALYSIS_TASKS.get(take_id)
+    if running is None or running.done():
+        if force or existing is not None:
+            PracticeStore(settings.data_dir).delete_for_take(take_id)
+        ANALYSIS_TASKS[take_id] = asyncio.create_task(_run_take_analysis(take_id))
+    return {"takeId": take_id, "status": "processing"}
+
+
+@router.get("/takes/{take_id}/attempt")
+async def get_take_attempt(take_id: str):
+    attempt = PracticeStore(get_settings().data_dir).get_for_take(take_id)
+    if attempt is not None:
+        return attempt
+    if take_id in ANALYSIS_TASKS:
+        return {"takeId": take_id, "status": "processing"}
+    raise HTTPException(status_code=404, detail="Practice analysis not found")
 
 
 @router.get("/songs/{song_id}/attempts", response_model=list[PracticeAttempt])
