@@ -7,6 +7,8 @@ from server.models.practice import (
     LanguageIssueType,
     PracticeAttempt,
     PracticeStatus,
+    TargetEvaluation,
+    TargetResult,
 )
 from server.services.practice.models import AcousticFinding, FindingResult
 from server.services.practice.service import _has_audible_judgment
@@ -42,6 +44,12 @@ def _attempt(
         sentence_ids=["sentence_1"],
         status=status,
         issues=issues,
+        target_evaluations=[TargetEvaluation(
+            target_id="hint_1",
+            issue_type=issue_type,
+            result=TargetResult.issue_detected,
+            confidence=0.9,
+        )] if issue_type is not None and status == PracticeStatus.analyzed else [],
         recommendations=[],
         comparison=AttemptComparison(result=ComparisonResult.first_attempt),
         insufficient_reason="证据不足" if status == PracticeStatus.insufficient_data else None,
@@ -95,3 +103,21 @@ def test_silent_or_uncertain_recording_cannot_be_treated_as_success() -> None:
 
     assert _has_audible_judgment([]) is False
     assert _has_audible_judgment([uncertain]) is False
+
+
+def test_same_target_comparison_uses_recent_reliable_judgements() -> None:
+    from server.services.practice.service import _comparison
+
+    history = [_attempt(1, issue_type=LanguageIssueType.expected_elision_realized)]
+    current = [TargetEvaluation(
+        target_id="hint_1",
+        issue_type=LanguageIssueType.expected_elision_realized,
+        result=TargetResult.reference_matched,
+        confidence=0.88,
+    )]
+
+    comparison = _comparison(history, current)
+
+    assert comparison.result == ComparisonResult.improved
+    assert comparison.lookback_attempt_count == 1
+    assert comparison.improved_target_ids == ["hint_1"]

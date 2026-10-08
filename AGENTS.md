@@ -1453,3 +1453,18 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
 - 后续若修改 Hero 数据，优先更新并运行 `server/scripts/curate_demo_profiles.py`；不要恢复已删除的 Juno 示例。
 - 不要删除 WAV 母文件：网页和模型优先 MP3 是 Demo 性能策略，WAV 保留用于回退和未来更精细的声学验证。
 - 不要自行 commit 或 push；交付时提供中文 commit 建议即可。
+
+## 16.9 2026-10-08 多轨对齐与同目标练习比较
+
+- 整体混音以所有当前 Take 的最早选择开始时间和最晚选择结束时间为伴奏区间；
+  中间即使没有用户录音，也保留完整伴奏。
+- 整体混音中，伴奏和所有未静音 Take 由同一 `AudioContext` 调度；Take 按
+  `timelineStart - latencyCompensation - manualOffset` 落到歌曲时间轴。
+- 新增多轨对齐弹窗：伴奏轨固定，用户可水平拖动人声片段；拖动结果保存为
+  该 Take 独立的 `manualOffsetMs`，不破坏原录音。
+- 单轨列表和多轨弹窗均提供静音 / 取消静音，`muted` 通过 Take PATCH 持久化。
+- PracticeAttempt 新增每个确定技巧目标的 `targetEvaluations`，保存 Gemini 对同一 hint 的
+  `issue_detected` / `reference_matched` 与置信度。前后比较以同一 target ID 为键，
+  回看同 session / song / track slot 最近最多 5 次可靠结果，不再只比较粗粒度问题类型。
+- 根据产品负责人决定，用户练唱录音不额外运行 WhisperX 词级对齐；继续将所选整句 /
+  片段与参考整体人声交给 Gemini 受限核查，且不得声称用户录音已获得词级精确对齐。

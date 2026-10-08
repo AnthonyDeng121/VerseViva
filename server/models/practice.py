@@ -30,6 +30,20 @@ class ComparisonResult(StrEnum):
     insufficient_data = "insufficient_data"
 
 
+class TargetResult(StrEnum):
+    issue_detected = "issue_detected"
+    reference_matched = "reference_matched"
+
+
+class TargetEvaluation(PracticeModel):
+    """One comparable Gemini judgement for the same curated language target."""
+
+    target_id: str
+    issue_type: LanguageIssueType
+    result: TargetResult
+    confidence: float = Field(ge=0, le=1)
+
+
 class LanguageIssue(PracticeModel):
     issue_id: str
     type: LanguageIssueType
@@ -54,6 +68,10 @@ class AttemptComparison(PracticeModel):
     result: ComparisonResult
     resolved_issue_types: list[LanguageIssueType] = Field(default_factory=list)
     new_issue_types: list[LanguageIssueType] = Field(default_factory=list)
+    lookback_attempt_count: int = Field(default=0, ge=0, le=5)
+    improved_target_ids: list[str] = Field(default_factory=list)
+    unchanged_target_ids: list[str] = Field(default_factory=list)
+    regressed_target_ids: list[str] = Field(default_factory=list)
 
 
 class PracticeAttempt(PracticeModel):
@@ -65,6 +83,7 @@ class PracticeAttempt(PracticeModel):
     sentence_ids: list[str]
     status: PracticeStatus
     issues: list[LanguageIssue] = Field(default_factory=list, max_length=3)
+    target_evaluations: list[TargetEvaluation] = Field(default_factory=list)
     recommendations: list[PracticeRecommendation] = Field(default_factory=list, max_length=3)
     comparison: AttemptComparison
     insufficient_reason: str | None = None

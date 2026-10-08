@@ -298,6 +298,35 @@ audio { width: 100%; }
 .current-track-editor > small { white-space: nowrap; }
 .current-track-mix { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
 .current-track-mix label { display: grid; gap: 3px; font-size: 11px; }
+.mute-button { min-width: 34px; min-height: 30px; padding: 5px 8px; border: 1px solid rgba(74,54,43,.18); border-radius: 8px; color: #5e5148; background: #fff; cursor: pointer; }
+.mute-button.active { color: #fff; border-color: #a64236; background: #a64236; }
+.mix-modal-backdrop { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 18px; background: rgba(20,24,23,.68); backdrop-filter: blur(5px); }
+.mix-modal { width: min(1080px, 100%); max-height: min(88vh, 820px); overflow: auto; padding: 18px; border: 1px solid rgba(255,255,255,.16); border-radius: 18px; color: #edf5f1; background: #202825; box-shadow: 0 24px 80px rgba(0,0,0,.42); }
+.mix-modal-header, .mix-modal-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.mix-modal-header h3 { margin: 2px 0 0; color: #fff; font-size: 20px; }
+.mix-modal-header .eyebrow { color: #8ed6c3; }
+.icon-button { width: 36px; height: 36px; border: 0; border-radius: 50%; color: #fff; background: rgba(255,255,255,.1); font-size: 24px; cursor: pointer; }
+.mix-modal-note { margin: 12px 0 18px; color: #bac8c3; font-size: 12px; }
+.mix-ruler { display: flex; justify-content: space-between; margin-left: 142px; padding: 0 2px 6px; color: #93a29d; font-variant-numeric: tabular-nums; font-size: 10px; }
+.mix-lanes { position: relative; display: grid; gap: 6px; }
+.mix-lane { display: grid; grid-template-columns: 132px minmax(480px,1fr); gap: 10px; min-height: 68px; }
+.mix-lane-label { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 2px 6px; min-width: 0; }
+.mix-lane-label strong { overflow: hidden; color: #f5faf8; text-overflow: ellipsis; white-space: nowrap; }
+.mix-lane-label small { grid-column: 1; color: #91a09b; }
+.mix-lane-label .mute-button { grid-column: 2; grid-row: 1 / span 2; }
+.mix-lane-bed { position: relative; overflow: hidden; min-height: 64px; border-radius: 7px; background-color: #111714; background-image: linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px); background-size: 10% 100%; }
+.mix-clip { position: absolute; top: 5px; bottom: 5px; min-width: 24px; overflow: hidden; border: 1px solid #8be0c3; border-radius: 5px; color: #10221c; background: #72cbae; touch-action: none; cursor: grab; user-select: none; }
+.mix-clip:active { cursor: grabbing; }
+.mix-clip > span { position: relative; z-index: 1; display: block; overflow: hidden; padding: 3px 6px; font-size: 10px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.wave-pattern { position: absolute; inset: 21px 4px 4px; opacity: .55; color: #174d3d; background: repeating-linear-gradient(90deg, transparent 0 3px, currentColor 3px 5px); clip-path: polygon(0 42%,5% 23%,10% 68%,15% 31%,20% 75%,25% 16%,30% 58%,35% 36%,40% 83%,45% 25%,50% 62%,55% 33%,60% 72%,65% 20%,70% 65%,75% 39%,80% 78%,85% 29%,90% 61%,95% 20%,100% 48%,100% 55%,95% 73%,90% 45%,85% 76%,80% 38%,75% 67%,70% 33%,65% 80%,60% 44%,55% 70%,50% 31%,45% 77%,40% 43%,35% 64%,30% 29%,25% 81%,20% 36%,15% 70%,10% 35%,5% 78%,0 58%); }
+.accompaniment-lane .mix-lane-bed { background: #263d4a; }
+.accompaniment-wave { inset: 5px; color: #82b7d6; opacity: .78; }
+.mix-lane.muted { opacity: .48; }
+.mix-playhead { position: absolute; z-index: 5; top: 0; bottom: 0; width: 1px; margin-left: 142px; background: #ff5c4d; pointer-events: none; }
+.mix-master-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0; }
+.mix-master-controls label { display: grid; gap: 5px; color: #cbd7d3; font-size: 11px; }
+.mix-modal-footer { padding-top: 12px; border-top: 1px solid rgba(255,255,255,.1); }
+.mix-modal-footer > span { color: #aab8b3; font-variant-numeric: tabular-nums; }
 .playback-progress { width: 100%; accent-color: #087e6b; }
 .take-details { flex: 1; min-width: 0; }
 .track-name-input { width: min(100%, 260px); border: 0; border-bottom: 1px solid transparent; padding: 4px 2px; color: #2c352f; background: transparent; font: inherit; font-weight: 800; }
@@ -330,5 +359,12 @@ audio { width: 100%; }
   .all-track-editor { grid-template-columns: 1fr; }
   .current-track-editor { grid-template-columns: 1fr; }
   .current-track-mix { grid-column: auto; grid-template-columns: 1fr; }
+  .mix-modal-backdrop { place-items: stretch; padding: 0; }
+  .mix-modal { max-height: 100vh; border-radius: 0; }
+  .mix-lanes { overflow-x: auto; }
+  .mix-lane { grid-template-columns: 100px 620px; }
+  .mix-ruler { margin-left: 110px; min-width: 620px; }
+  .mix-playhead { margin-left: 110px; }
+  .mix-master-controls { grid-template-columns: 1fr; }
   .practice-feedback-heading { flex-direction: column; }
 }

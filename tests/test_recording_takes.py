@@ -147,13 +147,19 @@ def test_take_can_be_renamed_and_its_mix_settings_persist(take_client) -> None:
 
     response = client.patch(
         f"/api/v1/takes/{created['takeId']}",
-        json={"displayName": "我的和声", "gain": 0.72, "manualOffsetMs": -120},
+        json={
+            "displayName": "我的和声",
+            "gain": 0.72,
+            "manualOffsetMs": -120,
+            "muted": True,
+        },
     )
 
     assert response.status_code == 200
     assert response.json()["displayName"] == "我的和声"
     assert response.json()["gain"] == 0.72
     assert response.json()["manualOffsetMs"] == -120
+    assert response.json()["muted"] is True
     assert client.get(f"/api/v1/takes/{created['takeId']}").json()["gain"] == 0.72
 
 

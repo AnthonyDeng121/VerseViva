@@ -7,8 +7,11 @@ from server.models.practice import (
     AttemptComparison,
     ComparisonResult,
     LanguageIssue,
+    LanguageIssueType,
     PracticeAttempt,
     PracticeStatus,
+    TargetEvaluation,
+    TargetResult,
 )
 from server.models.recording import RecordingTake
 from server.models.song import SongProfile, SongSentence, VocalPart
@@ -58,7 +61,7 @@ async def analyze_practice_take(
         "coaching_provider": "glm" if settings.glm_api_key else "template_fallback",
         "coaching_model": settings.glm_model if settings.glm_api_key else "rules-v1",
     }
-    previous = _previous_attempt(store, take)
+    history = _comparable_history(store, take)
 
     is_secondary = take.track_slot_id.startswith("secondary:")
     secondary_part = next(
@@ -80,7 +83,7 @@ async def analyze_practice_take(
         attempt = PracticeAttempt(
             **base,
             status=PracticeStatus.insufficient_data,
-            comparison=_comparison(previous, []),
+            comparison=_comparison(history, []),
             insufficient_reason="所选范围没有可绑定的次轨歌词，无法进行可靠语言诊断。",
         )
         store.save(attempt)
@@ -89,7 +92,7 @@ async def analyze_practice_take(
         attempt = PracticeAttempt(
             **base,
             status=PracticeStatus.insufficient_data,
-            comparison=_comparison(previous, []),
+            comparison=_comparison(history, []),
             insufficient_reason="所选句子还没有可核查的语言标注目标。",
         )
         store.save(attempt)
@@ -98,7 +101,7 @@ async def analyze_practice_take(
         attempt = PracticeAttempt(
             **base,
             status=PracticeStatus.insufficient_data,
-            comparison=_comparison(previous, []),
+            comparison=_comparison(history, []),
             insufficient_reason="练唱声学分析尚未配置 Gemini API Key。",
         )
         store.save(attempt)
@@ -137,7 +140,7 @@ async def analyze_practice_take(
         attempt = PracticeAttempt(
             **base,
             status=PracticeStatus.insufficient_data,
-            comparison=_comparison(previous, []),
+            comparison=_comparison(history, []),
             insufficient_reason=f"Gemini 暂时无法完成本次听感核查：{exc}",
         )
         store.save(attempt)
@@ -147,7 +150,7 @@ async def analyze_practice_take(
         attempt = PracticeAttempt(
             **base,
             status=PracticeStatus.insufficient_data,
-            comparison=_comparison(previous, []),
+            comparison=_comparison(history, []),
             insufficient_reason=batch.insufficient_reason or "本次录音不足以可靠判断。",
         )
         store.save(attempt)
@@ -160,7 +163,7 @@ async def analyze_practice_take(
         attempt = PracticeAttempt(
             **base,
             status=PracticeStatus.insufficient_data,
-            comparison=_comparison(previous, []),
+            comparison=_comparison(history, []),
             insufficient_reason="未听到足够的演唱内容，无法判断语言动作，请重新录制。",
         )
         store.save(attempt)
@@ -180,7 +183,21 @@ async def analyze_practice_take(
             settings.practice_issue_confidence_threshold,
         )
     )
-    comparison = _comparison(previous, issues)
+    target_types = (
+        {
+            secondary_target_id(secondary_part.id, issue_type): issue_type
+            for issue_type in LanguageIssueType
+        }
+        if is_secondary and secondary_part is not None
+        else {
+            hint.id: issue_type_for_hint(hint)
+            for sentence in sentences
+            for hint in sentence.language_hints
+            if issue_type_for_hint(hint) is not None
+        }
+    )
+    evaluations = _build_target_evaluations(batch.findings, target_types)
+    comparison = _comparison(history, evaluations)
     coach = GlmPracticeCoach(
         settings.glm_api_key.get_secret_value() if settings.glm_api_key else None,
         settings.glm_model,
@@ -192,6 +209,7 @@ async def analyze_practice_take(
         **base,
         status=PracticeStatus.analyzed,
         issues=issues,
+        target_evaluations=evaluations,
         recommendations=recommendations,
         comparison=comparison,
     )
@@ -263,10 +281,34 @@ def _build_issues(
     return sorted(issues, key=lambda item: item.confidence, reverse=True)[:3]
 
 
-def _previous_attempt(store: PracticeStore, take: RecordingTake) -> PracticeAttempt | None:
+def _comparable_history(store: PracticeStore, take: RecordingTake) -> list[PracticeAttempt]:
     candidates = store.list_for_session(take.session_id, take.song_id)
-    comparable = [item for item in candidates if item.track_slot_id == take.track_slot_id]
-    return comparable[-1] if comparable else None
+    comparable = [
+        item
+        for item in candidates
+        if item.track_slot_id == take.track_slot_id and item.status == PracticeStatus.analyzed
+    ]
+    return comparable[-5:]
+
+
+def _build_target_evaluations(
+    findings: list[AcousticFinding],
+    target_types: dict[str, LanguageIssueType],
+) -> list[TargetEvaluation]:
+    evaluations = []
+    for finding in findings:
+        issue_type = finding.issue_type or target_types.get(finding.hint_id)
+        if finding.result == FindingResult.uncertain or issue_type is None:
+            continue
+        evaluations.append(
+            TargetEvaluation(
+                target_id=finding.hint_id,
+                issue_type=issue_type,
+                result=TargetResult(finding.result.value),
+                confidence=finding.confidence,
+            )
+        )
+    return evaluations
 
 
 def _build_secondary_issues(
@@ -300,18 +342,58 @@ def _build_secondary_issues(
 
 
 def _comparison(
-    previous: PracticeAttempt | None,
-    current_issues: list[LanguageIssue],
+    history: list[PracticeAttempt],
+    current: list[TargetEvaluation],
 ) -> AttemptComparison:
-    if previous is None or previous.status != PracticeStatus.analyzed:
+    if not history:
         return AttemptComparison(result=ComparisonResult.first_attempt)
+    previous = history[-1]
     old_types = {item.type for item in previous.issues}
-    new_types = {item.type for item in current_issues}
+    new_types = {
+        item.issue_type for item in current if item.result == TargetResult.issue_detected
+    }
     resolved = sorted(old_types - new_types, key=str)
     added = sorted(new_types - old_types, key=str)
-    if resolved and not added:
+    improved_targets = []
+    unchanged_targets = []
+    regressed_targets = []
+    for evaluation in current:
+        prior = [
+            item
+            for attempt in history
+            for item in attempt.target_evaluations
+            if item.target_id == evaluation.target_id
+        ]
+        if not prior:
+            continue
+        issue_weight = sum(
+            item.confidence for item in prior if item.result == TargetResult.issue_detected
+        )
+        matched_weight = sum(
+            item.confidence for item in prior if item.result == TargetResult.reference_matched
+        )
+        prior_result = (
+            TargetResult.issue_detected
+            if issue_weight >= matched_weight
+            else TargetResult.reference_matched
+        )
+        if (
+            prior_result == TargetResult.issue_detected
+            and evaluation.result == TargetResult.reference_matched
+        ):
+            improved_targets.append(evaluation.target_id)
+        elif (
+            prior_result == TargetResult.reference_matched
+            and evaluation.result == TargetResult.issue_detected
+        ):
+            regressed_targets.append(evaluation.target_id)
+        else:
+            unchanged_targets.append(evaluation.target_id)
+    if not improved_targets and not regressed_targets and not unchanged_targets:
+        result = ComparisonResult.first_attempt
+    elif improved_targets and not regressed_targets:
         result = ComparisonResult.improved
-    elif added and not resolved:
+    elif regressed_targets and not improved_targets:
         result = ComparisonResult.regressed
     else:
         result = ComparisonResult.unchanged
@@ -320,4 +402,8 @@ def _comparison(
         result=result,
         resolved_issue_types=resolved,
         new_issue_types=added,
+        lookback_attempt_count=len(history),
+        improved_target_ids=improved_targets,
+        unchanged_target_ids=unchanged_targets,
+        regressed_target_ids=regressed_targets,
     )

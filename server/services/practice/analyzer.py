@@ -259,7 +259,8 @@ def _build_prompt(sentences: list[SongSentence]) -> str:
 规则：
 - 不评价音高、音色、情绪，也不输出 timing_deviation 或任何毫秒级偏差。
 - 不得根据歌词拼写猜测用户唱法；只写录音中可听见的证据。
-- 每个 hintId 最多返回一次，不得添加 TARGETS 之外的问题。
+- 必须为每个 TARGET 恰好返回一次，使用 issue_detected、reference_matched 或 uncertain；
+  不得添加 TARGETS 之外的问题。
 - issue_detected：用户没有实现参考目标，issueType 必须等于目标给定值。
 - reference_matched：用户已实现参考目标，issueType 必须为 null。
 - uncertain：伴奏泄漏、叠唱、噪声、漏唱或发音不清导致不能可靠判断，issueType 必须为 null。
@@ -298,6 +299,7 @@ def _build_secondary_prompt(vocal_part: VocalPart) -> str:
   recordingUsable=false，不得借主唱听感推断次轨。
 - issue_detected 只用于参考和用户之间清楚可听的语言动作差异，issueType 必须匹配 hintId。
 - reference_matched 表示该类差异没有出现；uncertain 表示单项无法判断。
+- 必须为每个 TARGET 恰好返回一次，才能与该次轨近期练习进行同目标比较。
 - 最多返回 3 个 issue_detected；问题不足时不得凑数。
 - audibleEvidence 只用简短中文描述实际听感，不得编造频谱、舌位或波形证据。
 """.strip()
