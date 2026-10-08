@@ -477,8 +477,8 @@ function ProfileView({
 
       <div className="legend" aria-label="标记说明">
         <span><b>×</b>吞音(不发音)</span>
-        <span><b>‿</b>连读(二合一)</span>
-        <span><b>└┘</b>连读(改音)</span>
+        <span><b>‿</b>连读(改音)</span>
+        <span><b>└┘</b>连读(二合一)</span>
       </div>
 
       <div className="lyrics-stage-heading">

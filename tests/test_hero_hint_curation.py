@@ -47,6 +47,8 @@ def test_korean_owner_corrections_target_romanization() -> None:
     assert first["hint_candidate_001_003"].marks[0].start_char_index == 21
     assert first["hint_candidate_001_006"].marks[0].start_char_index == 31
     assert first["hint_candidate_001_006"].canonical_pronunciation == "reom a"
+    assert first["hint_human_an_a"].marks[0].start_char_index == 34
+    assert first["hint_human_an_a"].canonical_pronunciation == "an a"
 
     last = _hints(_sentence("04", "sentence_009"))
     assert last["hint_human_eop_neun"].marks[0].symbol == "×"
@@ -59,12 +61,12 @@ def test_japanese_marks_stay_shifted_and_final_he_n_is_unmarked() -> None:
     assert "hint_human_hen_da_2" not in last
     assert all(hint.source.value == "human_curated" for hint in last.values())
     assert all(
-        hint.evidence.get("curation") == "product_owner_shifted_left_one_sound_v2_2026_10_08"
+        hint.evidence.get("curation") == "product_owner_shifted_left_one_sound_v3_2026_10_08"
         for hint in last.values()
     )
-    assert all(hint.marks[0].symbol == "└─┘" for hint in last.values())
+    assert all(hint.marks[0].symbol == "‿" for hint in last.values())
 
     first = _hints(_sentence("05", "sentence_001"))
     assert first["hint_human_en_wa"].marks[0].start_char_index == 22
-    assert first["hint_human_en_wa"].marks[0].symbol == "└─┘"
+    assert first["hint_human_en_wa"].marks[0].symbol == "‿"
     assert first["hint_human_en_wa"].canonical_pronunciation == "e n"

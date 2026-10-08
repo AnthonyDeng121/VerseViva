@@ -260,6 +260,7 @@ def curate_english(profile: dict) -> None:
 
 def curate_korean(profile: dict) -> None:
     first = _sentence(profile, "sentence_002")
+    _remove(first, "hint_human_an_a")
     first["languageHints"][0].update({"startWordIndex": 4, "endWordIndex": 5})
     first["languageHints"][1].update({"startWordIndex": 6, "endWordIndex": 7})
     first["languageHints"][1]["marks"] = [
@@ -267,6 +268,23 @@ def curate_korean(profile: dict) -> None:
     ]
     first["languageHints"][1]["canonicalPronunciation"] = "reom a"
     first["languageHints"][1]["observedPronunciation"] = "reo ma"
+    first["languageHints"].append(
+        _curated_hint(
+            first["languageHints"][0],
+            sentence=first,
+            hint_id="hint_human_an_a",
+            phenomenon="cross_word_linking",
+            start_word=7,
+            end_word=8,
+            symbol="‿",
+            start_char=34,
+            end_char=36,
+            explanation="an 和 a 在这次演唱中连续衔接。",
+            action="唱完 an 后保持气流，直接进入 a。",
+        )
+    )
+    first["languageHints"][-1]["canonicalPronunciation"] = "an a"
+    first["languageHints"][-1]["observedPronunciation"] = "a na"
 
     last = _sentence(profile, "sentence_009")
     template = first["languageHints"][0]
@@ -317,7 +335,7 @@ def curate_japanese(profile: dict) -> None:
         tokens = list(re.finditer(r"[A-Za-z]+", pronunciation["text"]))
         if sentence["languageHints"] and all(
             hint.get("evidence", {}).get("curation")
-            == "product_owner_shifted_left_one_sound_v2_2026_10_08"
+            == "product_owner_shifted_left_one_sound_v3_2026_10_08"
             for hint in sentence["languageHints"]
         ):
             continue
@@ -331,7 +349,10 @@ def curate_japanese(profile: dict) -> None:
             previous_version = hint.get("evidence", {}).get("curation") \
                 == "product_owner_shifted_one_word_2026_10_08"
             already_shifted_left = hint.get("evidence", {}).get("curation") \
-                == "product_owner_shifted_left_one_sound_2026_10_08"
+                in {
+                    "product_owner_shifted_left_one_sound_2026_10_08",
+                    "product_owner_shifted_left_one_sound_v2_2026_10_08",
+                }
             word_shift = 0 if already_shifted_left else (-2 if previous_version else -1)
             hint["startWordIndex"] = max(0, hint["startWordIndex"] + word_shift)
             hint["endWordIndex"] = max(0, hint["endWordIndex"] + word_shift)
@@ -348,7 +369,7 @@ def curate_japanese(profile: dict) -> None:
                 target = tokens[max(0, current + shift)]
                 mark["startCharIndex"] = target.end() - 1
                 mark["endCharIndex"] = target.end() - 1
-                mark["symbol"] = "└─┘"
+                mark["symbol"] = "‿"
                 left = tokens[max(0, current + shift)]
                 right = tokens[min(max(0, current + shift) + 1, len(tokens) - 1)]
                 hint["canonicalPronunciation"] = f"{left.group()} {right.group()}"
@@ -356,7 +377,7 @@ def curate_japanese(profile: dict) -> None:
             hint["source"] = "human_curated"
             hint["confidence"] = 1.0
             hint["evidence"] = {
-                "curation": "product_owner_shifted_left_one_sound_v2_2026_10_08"
+                "curation": "product_owner_shifted_left_one_sound_v3_2026_10_08"
             }
             shifted.append(hint)
         sentence["languageHints"] = shifted
