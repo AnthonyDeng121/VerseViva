@@ -11,7 +11,11 @@ from server.models.practice import (
     TargetResult,
 )
 from server.services.practice.models import AcousticFinding, FindingResult
-from server.services.practice.service import _has_audible_judgment
+from server.services.practice.service import (
+    _comparable_history,
+    _has_audible_judgment,
+    _has_audible_signal,
+)
 from server.storage.practice_store import PracticeStore
 
 
@@ -137,3 +141,36 @@ def test_same_target_comparison_uses_recent_reliable_judgements() -> None:
     assert comparison.result == ComparisonResult.improved
     assert comparison.lookback_attempt_count == 1
     assert comparison.improved_target_ids == ["hint_1"]
+
+
+def test_history_matches_same_lane_and_overlapping_sentence(tmp_path) -> None:
+    from types import SimpleNamespace
+
+    store = PracticeStore(tmp_path)
+    prior = _attempt(1, issue_type=LanguageIssueType.expected_elision_realized).model_copy(
+        update={
+            "track_slot_id": "primary:sentence_1+sentence_2+sentence_3",
+            "sentence_ids": ["sentence_1", "sentence_2", "sentence_3"],
+        }
+    )
+    store.save(prior)
+    take = SimpleNamespace(
+        take_id="take_current",
+        session_id="session_test",
+        song_id="song_test",
+        track_slot_id="primary:sentence_1+sentence_2",
+        sentence_ids=["sentence_1", "sentence_2"],
+    )
+
+    assert _comparable_history(store, take) == [prior]
+
+
+def test_near_silent_recording_is_rejected_before_gemini(monkeypatch, tmp_path) -> None:
+    from subprocess import CompletedProcess
+
+    monkeypatch.setattr(
+        "server.services.practice.service.subprocess.run",
+        lambda *args, **kwargs: CompletedProcess(args[0], 0, "", "max_volume: -51.5 dB"),
+    )
+
+    assert _has_audible_signal("ffmpeg", tmp_path / "silent.webm") is False

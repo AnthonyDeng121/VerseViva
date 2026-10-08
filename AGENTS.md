@@ -76,6 +76,10 @@ Pipeline 每阶段记录实际/估算耗时、API 调用次数、缓存命中和
 - Practice 发给 Gemini 的每个目标必须携带符号、参考动作、标准/实际读音、结构变换和人工解释；提示词正文必须明确 `×` 吞音、`‿` 改音式连读、`└─┘` 二合一的判定标准。
 - Gemini 将可用录音返回为空或全部 `uncertain` 时按临时模型故障有限重试，不得保存成无反馈的成功结果。
 - Take 摘要和练习反馈按 `track_slot_id` 投影歌词：primary 排除括号副轨，secondary 只取括号声部。
+- 练唱分析前用 ffmpeg 客观峰值门禁拦截近静音录音；同一句、同 lane 的可靠 Attempt 才参与前后比较，选择范围变化不应重置句级历史。
+- 用户可选择“仅分析”或“分析并保存”；仅分析保留 PracticeAttempt 与 Memory，但删除临时 Take 音频且不进入正式音轨列表。已保存 Take 可连同音频和对应 Attempt 删除。
+- 次轨多句分析必须覆盖所选的全部 Vocal Part；每条次轨起点锚定对应主轨句首。`lyrics_provider` 的确定歌词和人工时间锚点不可被 Gemini 以 stem 分离困难为由推翻。
+- 次轨 Gemini 目标必须来自 Song Profile 中已有的具体 `×`、`‿`、`└─┘` 标记，不得按问题类型机械补齐；混合参考导致全部 `uncertain` 时，Plan B 只发送用户录音和确定目标直接核查。
 - 当前会话可导出 192 kbps MP3 整体混音；导出必须应用 Take 的 mute/gain、延迟补偿、手动偏移和整体增益。
 - 后端回归、Ruff、前端 test/lint/build 构成冻结检查。
 

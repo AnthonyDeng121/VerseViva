@@ -11,7 +11,8 @@ export function PracticeFeedback({ attempt, memory, sentences }: {
   sentences: FeedbackSentence[];
 }) {
   const lane = attempt.trackSlotId.startsWith("secondary:") ? "secondary" : "primary";
-  const cards = attempt.sentenceIds.map((sentenceId) => ({
+  const cards = attempt.sentenceIds.filter((sentenceId) => attempt.status !== "analyzed"
+    || Boolean(attempt.sentenceComparisons?.[sentenceId])).map((sentenceId) => ({
     sentenceId,
     lyrics: lyricsForLane(
       sentences.find((item) => item.id === sentenceId)?.lyrics ?? "所选句子",
@@ -60,7 +61,7 @@ export function PracticeFeedback({ attempt, memory, sentences }: {
         disabled={index >= cards.length - 1} onClick={() => setIndex((value) => value + 1)}>›</button>
     </div>
     {memory && <p className="feedback-memory-count">
-      练唱记忆：{memory.reliableAttempts}/{memory.totalAttempts} 次可靠分析
+      本会话累计：{memory.reliableAttempts}/{memory.totalAttempts} 次可靠分析；当前句历史以上方比较为准
     </p>}
   </section>;
 }

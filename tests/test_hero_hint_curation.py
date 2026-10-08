@@ -3,9 +3,11 @@ from pathlib import Path
 
 from server.services.practice.analyzer import (
     _build_prompt,
+    _build_secondary_prompt,
     issue_type_for_hint,
     target_words_for_hint,
 )
+from server.services.practice.service import _secondary_target_specs
 from server.storage.profile_store import ProfileStore
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,6 +48,36 @@ def test_get_him_back_owner_corrections_are_preserved() -> None:
         hint for hint in final_response.language_hints
         if hint.id == "hint_human_final_response_008"
     ).marks[0].symbol == "‿"
+
+    profile = ProfileStore(ROOT / "data").get(f"{SONG_PREFIX}03")
+    assert profile is not None
+    sentences = {item.id: item for item in profile.sentences}
+    for part in (item for item in profile.vocal_parts if item.lane.value == "secondary"):
+        assert part.start_seconds == sentences[part.sentence_ids[0]].start_seconds
+
+
+def test_secondary_plan_b_uses_confirmed_marked_targets() -> None:
+    profile = ProfileStore(ROOT / "data").get(f"{SONG_PREFIX}03")
+    assert profile is not None
+    parts = [
+        item
+        for item in profile.vocal_parts
+        if item.id in {"part_secondary_001_01", "part_secondary_002_01"}
+    ]
+    sentences = [
+        item for item in profile.sentences if item.id in {"sentence_001", "sentence_002"}
+    ]
+    targets = _secondary_target_specs(parts, sentences)
+
+    assert {(item["targetWords"], item["symbol"]) for item in targets} >= {
+        ("get him", "‿"),
+        ("want to", "└─┘"),
+        ("But", "×"),
+        ("then I", "‿"),
+    }
+    prompt = _build_secondary_prompt(parts, targets)
+    assert "没有具体 TARGET 的歌词不得自行补充判断" in prompt
+    assert "不得据此否定 TARGET" in prompt
 
 
 def test_korean_owner_corrections_target_romanization() -> None:

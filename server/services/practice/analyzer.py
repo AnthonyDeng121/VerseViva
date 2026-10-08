@@ -11,7 +11,7 @@ from pathlib import Path
 from server.models.practice import LanguageIssueType
 from server.models.song import LanguageHint, SongSentence, VocalPart
 from server.pipelines.language_coach import _is_retryable_gemini_error
-from server.services.practice.models import AcousticFindingBatch
+from server.services.practice.models import AcousticFindingBatch, FindingResult
 
 
 class GeminiPracticeAnalyzer:
@@ -40,30 +40,42 @@ class GeminiPracticeAnalyzer:
         self,
         audio_path: Path,
         reference_vocal_path: Path,
-        vocal_part: VocalPart,
+        vocal_parts: list[VocalPart],
+        targets: list[dict],
     ) -> AcousticFindingBatch:
         return await asyncio.to_thread(
             self._analyze_secondary_sync,
             audio_path,
             reference_vocal_path,
-            vocal_part,
+            vocal_parts,
+            targets,
         )
 
     def _analyze_secondary_sync(
         self,
         audio_path: Path,
         reference_vocal_path: Path,
-        vocal_part: VocalPart,
+        vocal_parts: list[VocalPart],
+        targets: list[dict],
     ) -> AcousticFindingBatch:
         last_error: Exception | None = None
         with _gemini_compatible_audio(audio_path) as compatible_audio:
             for attempt in range(3):
                 try:
-                    return self._analyze_secondary_once(
+                    batch = self._analyze_secondary_once(
                         compatible_audio,
                         reference_vocal_path,
-                        vocal_part,
+                        vocal_parts,
+                        targets,
+                        use_reference=attempt == 0,
                     )
+                    if batch.recording_usable and (
+                        not batch.findings
+                        or all(item.result == FindingResult.uncertain for item in batch.findings)
+                    ):
+                        if attempt < 2:
+                            continue
+                    return batch
                 except Exception as exc:
                     last_error = exc
                     if attempt == 2 or not _is_retryable_gemini_error(exc):
@@ -169,7 +181,10 @@ class GeminiPracticeAnalyzer:
         self,
         audio_path: Path,
         reference_vocal_path: Path,
-        vocal_part: VocalPart,
+        vocal_parts: list[VocalPart],
+        targets: list[dict],
+        *,
+        use_reference: bool,
     ) -> AcousticFindingBatch:
         try:
             from google import genai
@@ -178,26 +193,42 @@ class GeminiPracticeAnalyzer:
 
         client = genai.Client(api_key=self.api_key)
         user_audio = _upload_and_wait(client, audio_path, "用户录音")
+        reference_audio = None
+        if use_reference:
+            try:
+                reference_audio = _upload_and_wait(client, reference_vocal_path, "参考人声")
+            except Exception:
+                _delete_uploaded_file(client, user_audio)
+                raise
         try:
-            reference_audio = _upload_and_wait(client, reference_vocal_path, "参考人声")
-        except Exception:
-            _delete_uploaded_file(client, user_audio)
-            raise
-        try:
-            interaction = client.interactions.create(
-                model=self.model,
-                input=[
-                    {"type": "text", "text": _build_secondary_prompt(vocal_part)},
+            audio_inputs = []
+            if reference_audio is not None:
+                audio_inputs.append(
                     {
                         "type": "audio",
                         "uri": reference_audio.uri,
                         "mime_type": reference_audio.mime_type,
-                    },
+                    }
+                )
+            audio_inputs.append(
+                {
+                    "type": "audio",
+                    "uri": user_audio.uri,
+                    "mime_type": user_audio.mime_type,
+                }
+            )
+            interaction = client.interactions.create(
+                model=self.model,
+                input=[
                     {
-                        "type": "audio",
-                        "uri": user_audio.uri,
-                        "mime_type": user_audio.mime_type,
+                        "type": "text",
+                        "text": _build_secondary_prompt(
+                            vocal_parts,
+                            targets,
+                            reference_available=reference_audio is not None,
+                        ),
                     },
+                    *audio_inputs,
                 ],
                 response_format={
                     "type": "text",
@@ -206,10 +237,7 @@ class GeminiPracticeAnalyzer:
                 },
             )
             batch = AcousticFindingBatch.model_validate_json(interaction.output_text)
-            known = {
-                secondary_target_id(vocal_part.id, issue_type)
-                for issue_type in LanguageIssueType
-            }
+            known = {item["hintId"] for item in targets}
             findings = [item for item in batch.findings if item.hint_id in known]
             return batch.model_copy(update={"findings": findings})
         finally:
@@ -398,34 +426,54 @@ def _reference_action(hint: LanguageHint) -> str:
     return "边界两侧输入音共享或融合为一个发音动作"
 
 
-def secondary_target_id(part_id: str, issue_type: LanguageIssueType) -> str:
-    return f"secondary:{part_id}:{issue_type.value}"
+def secondary_target_id(part_id: str, hint_id: str) -> str:
+    return f"secondary:{part_id}:{hint_id}"
 
 
-def _build_secondary_prompt(vocal_part: VocalPart) -> str:
-    targets = [
+def _build_secondary_prompt(
+    vocal_parts: list[VocalPart],
+    targets: list[dict],
+    *,
+    reference_available: bool = True,
+) -> str:
+    audio_description = (
+        "包含多层人声的参考 vocals stem 和用户录音"
+        if reference_available
+        else "用户单独录制的次轨；本次不提供混合参考音"
+    )
+    parts = [
         {
-            "hintId": secondary_target_id(vocal_part.id, issue_type),
-            "issueType": issue_type.value,
+            "partId": part.id,
+            "role": part.role.value,
+            "lyrics": part.lyrics,
+            "referenceStartSeconds": part.start_seconds,
+            "referenceEndSeconds": part.end_seconds,
         }
-        for issue_type in LanguageIssueType
+        for part in vocal_parts
     ]
     return f"""
-你会依次收到两段音频：第一段是包含多层人声的参考 vocals stem，第二段是用户单独录制的次轨。
-只比较以下已确认 secondary 歌词在参考区间中的语言演唱动作与用户录音，不评价音高、音色、
+你会收到{audio_description}。
+以下 secondary 歌词和时间锚点来自已确认的歌词编排，是不可推翻的输入事实。只比较这些歌词的
+语言演唱动作与用户录音，不评价音高、音色、
 情绪，不输出 timing_deviation 或毫秒偏差。
 三类核查含义：expected_elision_realized 检查用户是否把参考中吞掉或未释放的尾音额外清楚发出；
 coalescent_assimilation_missing 检查用户是否漏掉 ‿ 所表示的改音式连续衔接；
 identical_consonants_separated 检查用户是否把 └┘ 所表示的二合一动作拆成两个音。
 
-次轨角色：{vocal_part.role.value}
-确定歌词：{vocal_part.lyrics}
-参考区间：{vocal_part.start_seconds:.3f} 至 {vocal_part.end_seconds:.3f} 秒
-允许核查的 TARGETS：{json.dumps(targets, ensure_ascii=False)}
+确定的次轨编排：{json.dumps(parts, ensure_ascii=False)}
+只允许核查以下由 Song Profile 已确认标记生成的 TARGETS：
+{json.dumps(targets, ensure_ascii=False)}
 
 约束：
-- 参考 stem 含主唱和其他重叠人声；如果无法把确定歌词的发音动作可靠辨认出来，必须返回
-  recordingUsable=false，不得借主唱听感推断次轨。
+- 参考 stem 含主唱和其他重叠人声，只用于辅助听发音；不得因为某几个词被主唱遮盖、无法分离，
+  就否定确定歌词、声称歌词不在区间或返回 recordingUsable=false。单项目听不清应返回 uncertain。
+- recordingUsable=false 只用于用户录音本身没有可辨认演唱、严重损坏或全部被噪声覆盖。
+- 当参考 stem 的目标动作听不清时，直接按照 TARGETS 中的 symbol、referenceAction、标准/实际读音
+  检查用户录音是否完成目标；不得据此否定 TARGET。没有具体 TARGET 的歌词不得自行补充判断。
+- 如果本次没有参考音，这是混合参考无法可靠分离后的 Plan B；必须直接依据确定 TARGETS 核查用户录音，
+  不得仅以“缺少参考音”为由把全部项目返回 uncertain。
+- 用户录音从所选第一条次轨开始，后续每条次轨按各自 referenceStartSeconds 相对排列；不得只核查
+  第一条，也不得把某条次轨错配到另一条的参考区间。
 - issue_detected 只用于参考和用户之间清楚可听的语言动作差异，issueType 必须匹配 hintId。
 - reference_matched 表示该类差异没有出现；uncertain 表示单项无法判断。
 - 必须为每个 TARGET 恰好返回一次，才能与该次轨近期练习进行同目标比较。

@@ -412,7 +412,7 @@ export function RecordingStudio({
     sourceRef.current?.pause();
   }
 
-  async function uploadRecording() {
+  async function uploadRecording(saveTake = true) {
     if (!previewBlob) return;
     previewAudioRef.current?.pause();
     sourceRef.current?.pause();
@@ -453,14 +453,24 @@ export function RecordingStudio({
         throw new Error(payload?.detail ?? "录音上传失败");
       }
       const created = await response.json() as RecordingTake;
-      const restored = await fetch(
-        `/api/v1/songs/${songId}/takes?session_id=${encodeURIComponent(sessionId)}`,
-      );
-      setTakes(restored.ok ? await restored.json() as RecordingTake[] : [...takes, created]);
       if (purpose === "guided_practice") {
-        await analyzeTake(created.takeId);
+        await analyzeTake(created.takeId, saveTake);
+        if (!saveTake) {
+          const deleted = await fetch(
+            `/api/v1/takes/${created.takeId}?preserve_attempt=true`,
+            { method: "DELETE" },
+          );
+          if (!deleted.ok) throw new Error("分析已完成，但临时录音清理失败");
+          setSavedNotice("分析完成并已计入练唱记忆；录音未保存为正式音轨。");
+        }
       } else {
         setSavedNotice("清唱叠录已保存，可在已保存音轨中试听和编辑；不会参与演唱分析或长期记忆。");
+      }
+      if (saveTake || purpose === "free_overdub") {
+        const restored = await fetch(
+          `/api/v1/songs/${songId}/takes?session_id=${encodeURIComponent(sessionId)}`,
+        );
+        setTakes(restored.ok ? await restored.json() as RecordingTake[] : [...takes, created]);
       }
       resetPreview();
     } catch (reason) {
@@ -469,7 +479,7 @@ export function RecordingStudio({
     }
   }
 
-  async function analyzeTake(takeId: string) {
+  async function analyzeTake(takeId: string, refreshMemory = true) {
     setAnalyzingTakeId(takeId);
     try {
       const response = await fetch(`/api/v1/takes/${takeId}/analyze`, { method: "POST" });
@@ -479,15 +489,35 @@ export function RecordingStudio({
       }
       const attempt = await response.json() as PracticeAttempt;
       setAttempts((current) => [...current.filter((item) => item.takeId !== takeId), attempt]);
-      const memoryResponse = await fetch(
-        `/api/v1/practice/memory?session_id=${encodeURIComponent(sessionId)}`,
-      );
-      if (memoryResponse.ok) setMemory(await memoryResponse.json() as PracticeMemory);
+      if (refreshMemory) {
+        const memoryResponse = await fetch(
+          `/api/v1/practice/memory?session_id=${encodeURIComponent(sessionId)}`,
+        );
+        if (memoryResponse.ok) setMemory(await memoryResponse.json() as PracticeMemory);
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "本次练唱分析失败");
     } finally {
       setAnalyzingTakeId(null);
     }
+  }
+
+  async function deleteTake(take: RecordingTake) {
+    if (!window.confirm(`确定删除“${take.displayName}”吗？该录音和对应分析记录将一并删除。`)) return;
+    stopPlayback();
+    setError(null);
+    const response = await fetch(`/api/v1/takes/${take.takeId}`, { method: "DELETE" });
+    if (!response.ok) {
+      setError("删除音轨失败，请稍后重试。");
+      return;
+    }
+    setTakes((current) => current.filter((item) => item.takeId !== take.takeId));
+    setAttempts((current) => current.filter((item) => item.takeId !== take.takeId));
+    if (editingTakeId === take.takeId) setEditingTakeId(null);
+    const memoryResponse = await fetch(
+      `/api/v1/practice/memory?session_id=${encodeURIComponent(sessionId)}`,
+    );
+    if (memoryResponse.ok) setMemory(await memoryResponse.json() as PracticeMemory);
   }
 
   async function playTake(take: RecordingTake) {
@@ -631,7 +661,7 @@ export function RecordingStudio({
           onClick={() => setRecordingReference("source")}>原唱</button>
       </div></div>
       <p className="recording-purpose-note">{purpose === "guided_practice"
-        ? "上传后分析语言技巧，并计入个人练唱记忆。"
+        ? "两种方式都会保存分析记忆；“仅分析”不会把录音保留为正式音轨。"
         : "自由选择句子并保存为叠录音轨，不分析，也不计入个人练唱记忆。"}</p>
 
       {editingTake && <section className="current-track-editor">
@@ -740,12 +770,16 @@ export function RecordingStudio({
         {state === "recording" &&
           <button type="button" className="record-stop-button" onClick={stopRecording}>停止录音</button>}
         {(state === "preview" || state === "uploading") && previewBlob && <>
+          {purpose === "guided_practice" && <button type="button" className="secondary-button"
+            disabled={state === "uploading"} onClick={() => void uploadRecording(false)}>
+            仅分析
+          </button>}
           <button type="button" className="primary-button analyzing-button"
-            disabled={state === "uploading"} onClick={() => void uploadRecording()}>
+            disabled={state === "uploading"} onClick={() => void uploadRecording(true)}>
             {state === "uploading" && <span className="button-spinner" aria-hidden="true" />}
             {state === "uploading"
               ? purpose === "guided_practice" ? "正在上传并分析…" : "正在保存叠录…"
-              : purpose === "guided_practice" ? "分析并上传" : "保存清唱叠录"}
+              : purpose === "guided_practice" ? "分析并保存" : "保存清唱叠录"}
           </button>
           <button type="button" className="secondary-button"
             disabled={state === "uploading"} onClick={() => void startRecording()}>重录</button>
@@ -832,6 +866,8 @@ export function RecordingStudio({
               onClick={() => void analyzeTake(take.takeId)}>
               {analyzingTakeId === take.takeId ? "分析中…" : "重分析"}
             </button>}
+            <button type="button" className="secondary-button"
+              onClick={() => void deleteTake(take)}>删除</button>
           </div>
         </article>)}
       </div>}

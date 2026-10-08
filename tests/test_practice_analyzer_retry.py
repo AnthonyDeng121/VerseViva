@@ -51,3 +51,26 @@ def test_practice_analyzer_retries_usable_response_without_findings(monkeypatch)
 
     assert result.recording_usable is False
     assert calls == 2
+
+
+def test_secondary_analysis_falls_back_to_user_audio_only(monkeypatch) -> None:
+    analyzer = GeminiPracticeAnalyzer(api_key="test-key", model="test-model")
+    reference_modes = []
+
+    def analyze_once(*args, use_reference):
+        reference_modes.append(use_reference)
+        if use_reference:
+            return AcousticFindingBatch(recording_usable=True, findings=[])
+        return AcousticFindingBatch(recording_usable=False, insufficient_reason="用户录音不可辨认")
+
+    monkeypatch.setattr(analyzer, "_analyze_secondary_once", analyze_once)
+
+    result = analyzer._analyze_secondary_sync(
+        Path("recording.mp3"),
+        Path("reference.mp3"),
+        [],
+        [],
+    )
+
+    assert result.recording_usable is False
+    assert reference_modes == [True, False]

@@ -92,7 +92,7 @@ class PracticeAttempt(PracticeModel):
     acoustic_model: str
     coaching_provider: str
     coaching_model: str
-    analysis_version: str = "practice-language-v1"
+    analysis_version: str = "practice-language-v5"
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

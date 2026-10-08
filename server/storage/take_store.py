@@ -100,6 +100,14 @@ class TakeStore:
             ).fetchone()
         return self._parse(row["payload"]) if row else None
 
+    def delete(self, take_id: str) -> RecordingTake | None:
+        take = self.get(take_id)
+        if take is None:
+            return None
+        with self._connect() as connection:
+            connection.execute("DELETE FROM recording_takes WHERE take_id = ?", (take_id,))
+        return take
+
     def list_for_song(self, song_id: str, *, session_id: str | None = None) -> list[RecordingTake]:
         query = "SELECT payload FROM recording_takes WHERE song_id = ?"
         values = [song_id]

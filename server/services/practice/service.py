@@ -1,4 +1,5 @@
 import re
+import subprocess
 from pathlib import Path
 from uuid import uuid4
 
@@ -34,15 +35,16 @@ async def analyze_practice_take(
 ) -> PracticeAttempt:
     store = PracticeStore(settings.data_dir)
     existing = store.get_for_take(take.take_id)
-    if existing is not None and existing.status == PracticeStatus.analyzed:
+    if (
+        existing is not None
+        and existing.status == PracticeStatus.analyzed
+        and existing.analysis_version == "practice-language-v5"
+    ):
         return existing
 
     sentences = [item for item in profile.sentences if item.id in take.sentence_ids]
-    selected_part = next(
-        (item for item in profile.vocal_parts if item.id == take.vocal_part_id),
-        None,
-    )
-    if selected_part is not None and selected_part.lane.value == "primary":
+    is_secondary = take.track_slot_id.startswith("secondary:")
+    if not is_secondary:
         sentences = [_primary_only_sentence(item) for item in sentences]
     targets = [
         hint
@@ -64,28 +66,33 @@ async def analyze_practice_take(
     }
     history = _comparable_history(store, take)
 
-    is_secondary = take.track_slot_id.startswith("secondary:")
-    secondary_part = next(
-        (item for item in profile.vocal_parts if item.id == take.vocal_part_id),
-        None,
-    )
-    if is_secondary and secondary_part is None:
-        secondary_part = next(
-            (
-                item
-                for item in profile.vocal_parts
-                if item.lane.value == "secondary"
-                and item.start_seconds < take.selection_end_seconds
-                and item.end_seconds > take.selection_start_seconds
-            ),
-            None,
-        )
-    if is_secondary and secondary_part is None:
+    secondary_parts = [
+        item
+        for item in profile.vocal_parts
+        if item.lane.value == "secondary"
+        and (take.vocal_part_id is None or item.id == take.vocal_part_id)
+        and item.start_seconds < take.selection_end_seconds
+        and item.end_seconds > take.selection_start_seconds
+        and (not item.sentence_ids or bool(set(item.sentence_ids) & set(take.sentence_ids)))
+    ]
+    if is_secondary and not secondary_parts:
         attempt = PracticeAttempt(
             **base,
             status=PracticeStatus.insufficient_data,
             comparison=_comparison(history, []),
             insufficient_reason="所选范围没有可绑定的次轨歌词，无法进行可靠语言诊断。",
+        )
+        store.save(attempt)
+        return attempt
+    secondary_targets = (
+        _secondary_target_specs(secondary_parts, sentences) if is_secondary else []
+    )
+    if is_secondary and not secondary_targets:
+        attempt = PracticeAttempt(
+            **base,
+            status=PracticeStatus.insufficient_data,
+            comparison=_comparison(history, []),
+            insufficient_reason="所选次轨歌词还没有已确认的吞音、改音或二合一标记。",
         )
         store.save(attempt)
         return attempt
@@ -108,12 +115,22 @@ async def analyze_practice_take(
         store.save(attempt)
         return attempt
 
+    if not _has_audible_signal(settings.ffmpeg_executable, audio_path):
+        attempt = PracticeAttempt(
+            **base,
+            status=PracticeStatus.insufficient_data,
+            comparison=_comparison(history, []),
+            insufficient_reason="录音中没有检测到可辨认的人声信号，本次不计入练唱记忆。",
+        )
+        store.save(attempt)
+        return attempt
+
     analyzer = GeminiPracticeAnalyzer(
         settings.gemini_api_key.get_secret_value(),
         settings.gemini_model,
     )
     try:
-        if is_secondary and secondary_part is not None:
+        if is_secondary and secondary_parts:
             reference_vocal_path = (
                 settings.data_dir / "songs" / profile.song_id / "audio" / "vocals.mp3"
             )
@@ -124,7 +141,8 @@ async def analyze_practice_take(
             batch = await analyzer.analyze_secondary(
                 audio_path,
                 reference_vocal_path,
-                secondary_part,
+                secondary_parts,
+                secondary_targets,
             )
         else:
             reference_vocal_path = (
@@ -172,12 +190,13 @@ async def analyze_practice_take(
 
     issues = (
         _build_secondary_issues(
-            secondary_part,
+            secondary_parts,
+            secondary_targets,
             batch.findings,
             take.sentence_ids,
             settings.practice_issue_confidence_threshold,
         )
-        if is_secondary and secondary_part is not None
+        if is_secondary and secondary_parts
         else _build_issues(
             sentences,
             batch.findings,
@@ -186,10 +205,10 @@ async def analyze_practice_take(
     )
     target_types = (
         {
-            secondary_target_id(secondary_part.id, issue_type): issue_type
-            for issue_type in LanguageIssueType
+            item["hintId"]: LanguageIssueType(item["issueType"])
+            for item in secondary_targets
         }
-        if is_secondary and secondary_part is not None
+        if is_secondary and secondary_parts
         else {
             hint.id: issue_type_for_hint(hint)
             for sentence in sentences
@@ -207,9 +226,14 @@ async def analyze_practice_take(
         }
         for sentence in sentences
     }
-    if is_secondary and secondary_part is not None and take.sentence_ids:
+    if is_secondary and secondary_parts:
         target_ids_by_sentence = {
-            take.sentence_ids[0]: set(target_types),
+            sentence_id: {
+                item["hintId"]
+                for item in secondary_targets
+                if sentence_id == item["sentenceId"]
+            }
+            for sentence_id in take.sentence_ids
         }
     sentence_comparisons = {
         sentence_id: _comparison(
@@ -217,6 +241,7 @@ async def analyze_practice_take(
             [item for item in evaluations if item.target_id in target_ids],
         )
         for sentence_id, target_ids in target_ids_by_sentence.items()
+        if target_ids and any(item.target_id in target_ids for item in evaluations)
     }
     coach = GlmPracticeCoach(
         settings.glm_api_key.get_secret_value() if settings.glm_api_key else None,
@@ -242,6 +267,29 @@ def _has_audible_judgment(findings: list[AcousticFinding]) -> bool:
     return any(item.result != FindingResult.uncertain for item in findings)
 
 
+def _has_audible_signal(ffmpeg_executable: str, audio_path: Path) -> bool:
+    """Reject near-digital-silence before an LLM can hallucinate a pronunciation."""
+    result = subprocess.run(
+        [
+            ffmpeg_executable,
+            "-hide_banner",
+            "-i",
+            str(audio_path),
+            "-af",
+            "volumedetect",
+            "-f",
+            "null",
+            "NUL" if __import__("os").name == "nt" else "/dev/null",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    match = re.search(r"max_volume:\s*(-?[\d.]+)\s*dB", result.stderr)
+    return match is None or float(match.group(1)) > -45.0
+
+
 def _primary_only_sentence(sentence: SongSentence) -> SongSentence:
     parenthetical_ranges = [match.span() for match in re.finditer(r"\([^)]*\)", sentence.lyrics)]
     hints = [
@@ -255,6 +303,57 @@ def _primary_only_sentence(sentence: SongSentence) -> SongSentence:
     ]
     lyrics = re.sub(r"\s*\([^)]*\)", "", sentence.lyrics).strip()
     return sentence.model_copy(update={"lyrics": lyrics, "language_hints": hints})
+
+
+def _secondary_target_specs(
+    vocal_parts: list[VocalPart],
+    sentences: list[SongSentence],
+) -> list[dict]:
+    sentence_map = {item.id: item for item in sentences}
+    specs = []
+    for part in vocal_parts:
+        for sentence_id in part.sentence_ids:
+            sentence = sentence_map.get(sentence_id)
+            if sentence is None:
+                continue
+            ranges = [match.span() for match in re.finditer(r"\([^)]*\)", sentence.lyrics)]
+            whole_secondary = sentence.lyrics.strip().startswith("(")
+            for hint in sentence.language_hints:
+                issue_type = issue_type_for_hint(hint)
+                if issue_type is None:
+                    continue
+                position = hint.marks[0].start_char_index
+                belongs_to_secondary = whole_secondary or any(
+                    start <= position < end for start, end in ranges
+                )
+                if not belongs_to_secondary:
+                    continue
+                detail = next(
+                    (item for item in hint.details if item.locale == "zh-CN"),
+                    hint.details[0] if hint.details else None,
+                )
+                specs.append(
+                    {
+                        "hintId": secondary_target_id(part.id, hint.id),
+                        "sourceHintId": hint.id,
+                        "partId": part.id,
+                        "sentenceId": sentence_id,
+                        "lyrics": part.lyrics,
+                        "targetWords": target_words_for_hint(sentence, hint) or part.lyrics,
+                        "symbol": hint.marks[0].symbol,
+                        "issueType": issue_type.value,
+                        "referenceAction": (
+                            detail.explanation if detail else hint.phenomenon
+                        ),
+                        "canonicalPronunciation": hint.canonical_pronunciation,
+                        "observedPronunciation": hint.observed_pronunciation,
+                        "transformations": [
+                            item.model_dump(mode="json", by_alias=True)
+                            for item in hint.transformations
+                        ],
+                    }
+                )
+    return specs
 
 
 def _build_issues(
@@ -306,7 +405,10 @@ def _comparable_history(store: PracticeStore, take: RecordingTake) -> list[Pract
     comparable = [
         item
         for item in candidates
-        if item.track_slot_id == take.track_slot_id and item.status == PracticeStatus.analyzed
+        if item.take_id != take.take_id
+        and item.track_slot_id.split(":", 1)[0] == take.track_slot_id.split(":", 1)[0]
+        and bool(set(item.sentence_ids) & set(take.sentence_ids))
+        and item.status == PracticeStatus.analyzed
     ]
     return comparable[-5:]
 
@@ -332,18 +434,25 @@ def _build_target_evaluations(
 
 
 def _build_secondary_issues(
-    vocal_part: VocalPart,
+    vocal_parts: list[VocalPart],
+    targets: list[dict],
     findings: list,
     sentence_ids: list[str],
     threshold: float,
 ) -> list[LanguageIssue]:
+    parts_by_id = {part.id: part for part in vocal_parts}
+    target_specs = {item["hintId"]: item for item in targets}
     issues = []
     for finding in findings:
+        target = target_specs.get(finding.hint_id)
+        vocal_part = parts_by_id.get(target["partId"]) if target else None
         if (
+            vocal_part is None
+            or
             finding.result != FindingResult.issue_detected
             or finding.issue_type is None
             or finding.confidence < threshold
-            or finding.hint_id != secondary_target_id(vocal_part.id, finding.issue_type)
+            or finding.issue_type.value != target["issueType"]
         ):
             continue
         issues.append(
@@ -351,8 +460,12 @@ def _build_secondary_issues(
                 issue_id=f"issue_{uuid4().hex}",
                 type=finding.issue_type,
                 hint_id=finding.hint_id,
-                sentence_id=sentence_ids[0],
-                word_text=vocal_part.lyrics,
+                sentence_id=(
+                    vocal_part.sentence_ids[0]
+                    if vocal_part.sentence_ids
+                    else sentence_ids[0]
+                ),
+                word_text=target["targetWords"],
                 target_segments=[],
                 confidence=finding.confidence,
                 audible_evidence=finding.audible_evidence,

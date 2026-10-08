@@ -173,6 +173,17 @@ def curate_english(profile: dict) -> None:
         ]
     )
 
+    # Every secondary response starts with the corresponding primary sentence.
+    # Earlier ASR-derived offsets started the first response at "to get" and
+    # made the confirmed opening words appear outside the reference interval.
+    sentence_by_id = {item["id"]: item for item in profile["sentences"]}
+    for part in profile["vocalParts"]:
+        if part["lane"] != "secondary" or not part["sentenceIds"]:
+            continue
+        anchor = sentence_by_id.get(part["sentenceIds"][0])
+        if anchor is not None:
+            part["startSeconds"] = anchor["startSeconds"]
+
     # The final call-and-response section was originally serialized as short,
     # primary-only fragments after each lead line. Keep those lyric sentences
     # as the evidence source, but put them on the secondary lane at the same

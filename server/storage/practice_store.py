@@ -62,6 +62,10 @@ class PracticeStore:
             ).fetchone()
         return PracticeAttempt.model_validate_json(row["payload"]) if row else None
 
+    def delete_for_take(self, take_id: str) -> None:
+        with self._connect() as connection:
+            connection.execute("DELETE FROM practice_attempts WHERE take_id = ?", (take_id,))
+
     def list_for_session(
         self,
         session_id: str,

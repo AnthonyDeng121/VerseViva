@@ -278,6 +278,23 @@ async def update_take(take_id: str, update: RecordingTakeUpdate) -> RecordingTak
     return updated
 
 
+@router.delete("/takes/{take_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_take(
+    take_id: str,
+    preserve_attempt: bool = Query(default=False),
+) -> None:
+    settings = get_settings()
+    take = TakeStore(settings.data_dir).delete(take_id)
+    if take is None:
+        raise HTTPException(status_code=404, detail="Recording Take not found")
+    if not preserve_attempt:
+        PracticeStore(settings.data_dir).delete_for_take(take_id)
+    take_dir = (settings.data_dir / "takes" / take_id).resolve()
+    expected_parent = (settings.data_dir / "takes").resolve()
+    if take_dir.parent == expected_parent:
+        shutil.rmtree(take_dir, ignore_errors=True)
+
+
 @router.get("/takes/{take_id}/audio", response_class=FileResponse)
 async def get_take_audio(take_id: str) -> FileResponse:
     settings = get_settings()

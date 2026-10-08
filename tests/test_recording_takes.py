@@ -1,3 +1,4 @@
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -5,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from server.config import get_settings
 from server.main import app
+from server.storage.practice_store import PracticeStore
 from server.storage.profile_store import ProfileStore
 from tests.test_song_profile_schema import make_profile
 
@@ -208,6 +210,51 @@ def test_take_can_be_renamed_and_its_mix_settings_persist(take_client) -> None:
     assert response.json()["manualOffsetMs"] == -120
     assert response.json()["muted"] is True
     assert client.get(f"/api/v1/takes/{created['takeId']}").json()["gain"] == 0.72
+
+
+def test_take_can_be_deleted_with_its_audio(take_client) -> None:
+    client, data_dir, song_id = take_client
+    created = _webm_upload(client, song_id).json()
+    take_dir = data_dir / "takes" / created["takeId"]
+
+    response = client.delete(f"/api/v1/takes/{created['takeId']}")
+
+    assert response.status_code == 204
+    assert client.get(f"/api/v1/takes/{created['takeId']}").status_code == 404
+    assert not take_dir.exists()
+
+
+def test_temporary_take_deletion_can_preserve_practice_memory(take_client) -> None:
+    client, data_dir, song_id = take_client
+    created = _webm_upload(client, song_id).json()
+    database = data_dir / "verseviva.sqlite3"
+    PracticeStore(data_dir)
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            """INSERT INTO practice_attempts
+            (attempt_id, take_id, session_id, song_id, track_slot_id, created_at, payload)
+            VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "attempt_preserved",
+                created["takeId"],
+                "session_mobile_01",
+                song_id,
+                "primary:sentence_001",
+                "2026-10-08T00:00:00+00:00",
+                "{}",
+            ),
+        )
+
+    response = client.delete(
+        f"/api/v1/takes/{created['takeId']}?preserve_attempt=true"
+    )
+
+    assert response.status_code == 204
+    with sqlite3.connect(database) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM practice_attempts WHERE take_id = ?",
+            (created["takeId"],),
+        ).fetchone()[0] == 1
 
 
 def test_current_session_mixdown_downloads_mp3(
