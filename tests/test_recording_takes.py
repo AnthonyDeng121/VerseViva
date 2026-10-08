@@ -92,6 +92,35 @@ def test_mobile_webm_accepts_browser_codec_parameter(take_client) -> None:
     assert response.json()["mimeType"] == "audio/webm"
 
 
+def test_upload_normalizes_mislabeled_webm_with_mp4_container(take_client) -> None:
+    client, data_dir, song_id = take_client
+    response = client.post(
+        f"/api/v1/songs/{song_id}/takes",
+        data={
+            "session_id": "session_mobile_01",
+            "track_slot_id": "primary:sentence_001",
+            "selection_type": "sentence",
+            "sentence_ids": '["sentence_001"]',
+            "selection_start_seconds": "0.852",
+            "selection_end_seconds": "5.1",
+            "timeline_start_seconds": "0.852",
+            "save_mode": "overdub_append",
+        },
+        files={
+            "audio": (
+                "recording.webm",
+                b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00",
+                "audio/webm",
+            )
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["storedFilename"] == "original.m4a"
+    assert payload["mimeType"] == "audio/mp4"
+    assert (data_dir / "takes" / payload["takeId"] / "original.m4a").is_file()
+
 def test_practice_replace_only_supersedes_current_session_track(take_client) -> None:
     client, _, song_id = take_client
     first = _webm_upload(client, song_id).json()

@@ -34,16 +34,17 @@ ALLOWED_RECORDING_TYPES = {
 }
 
 
-def _has_recording_signature(suffix: str, header: bytes) -> bool:
-    if suffix == ".webm":
-        return header.startswith(b"\x1aE\xdf\xa3")
-    if suffix in {".mp4", ".m4a"}:
-        return len(header) >= 12 and header[4:8] == b"ftyp"
-    if suffix == ".ogg":
-        return header.startswith(b"OggS")
-    if suffix == ".wav":
-        return len(header) >= 12 and header[:4] == b"RIFF" and header[8:12] == b"WAVE"
-    return False
+def _recording_format(header: bytes) -> tuple[str, str] | None:
+    """Identify the stored format from bytes instead of trusting browser metadata."""
+    if header.startswith(b"\x1aE\xdf\xa3"):
+        return ".webm", "audio/webm"
+    if len(header) >= 12 and header[4:8] == b"ftyp":
+        return ".m4a", "audio/mp4"
+    if header.startswith(b"OggS"):
+        return ".ogg", "audio/ogg"
+    if len(header) >= 12 and header[:4] == b"RIFF" and header[8:12] == b"WAVE":
+        return ".wav", "audio/wav"
+    return None
 
 
 def _parse_sentence_ids(value: str) -> list[str]:
@@ -144,11 +145,18 @@ async def upload_take(
                 output.write(chunk)
         if size == 0:
             raise HTTPException(status_code=400, detail="Recording is empty")
-        if not _has_recording_signature(suffix, header):
+        detected_format = _recording_format(header)
+        if detected_format is None:
             raise HTTPException(
                 status_code=415,
-                detail="Recording content does not match its extension",
+                detail="Recording content is not a supported audio container",
             )
+        detected_suffix, detected_content_type = detected_format
+        if detected_suffix != suffix:
+            corrected_destination = take_dir / f"original{detected_suffix}"
+            destination.replace(corrected_destination)
+            destination = corrected_destination
+        content_type = detected_content_type
 
         existing_takes = TakeStore(settings.data_dir).list_for_song(
             song_id,
