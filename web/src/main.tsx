@@ -372,6 +372,7 @@ function ProfileView({
   const [loopSentenceId, setLoopSentenceId] = useState<string | null>(null);
   const [audioMode, setAudioMode] = useState<"source" | "vocal">("source");
   const [playbackStopToken, setPlaybackStopToken] = useState(0);
+  const [recordingCountdown, setRecordingCountdown] = useState<number | null>(null);
   const sourceAudioRef = useRef<HTMLAudioElement>(null);
   const vocalAudioRef = useRef<HTMLAudioElement>(null);
   const stopReferencePlayback = () => {
@@ -463,7 +464,11 @@ function ProfileView({
         )}
       </div>
 
-      {mode === "technique" && <><div className="learning-playback-controls" aria-label="听句控制">
+      {mode === "technique" && <>{recordingCountdown !== null &&
+        <div className="technique-countdown" role="status" aria-live="assertive">
+          <strong>{recordingCountdown}</strong><span>准备演唱</span>
+        </div>}
+      <div className="learning-playback-controls" aria-label="听句控制">
         <div className="speed-switch" role="group" aria-label="播放速度">
           <button className={playbackRate === 1 ? "active" : ""} type="button" onClick={() => setPlaybackRate(1)}>原速</button>
           <button className={playbackRate === 0.75 ? "active" : ""} type="button" onClick={() => setPlaybackRate(0.75)}>0.75×</button>
@@ -536,6 +541,7 @@ function ProfileView({
           onModeChange("technique");
         }}
         onRecordingFinished={() => onModeChange("sing")}
+        onCountdownChange={setRecordingCountdown}
         onExclusivePlaybackStart={stopReferencePlayback}
         playbackStopToken={playbackStopToken}
       /></div>

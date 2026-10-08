@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import subprocess
 import tempfile
 import time
@@ -212,11 +213,18 @@ class GeminiPracticeAnalyzer:
 def issue_type_for_hint(hint: LanguageHint) -> LanguageIssueType | None:
     phenomenon = hint.phenomenon.lower()
     operations = {item.operation.value for item in hint.transformations}
-    if "elision" in phenomenon or "unreleased" in phenomenon or "delete" in operations:
+    symbols = {mark.symbol for mark in hint.marks}
+    if (
+        "elision" in phenomenon
+        or "not_audibly_released" in phenomenon
+        or "unreleased" in operations
+        or "delete" in operations
+        or "×" in symbols
+    ):
         return LanguageIssueType.expected_elision_realized
-    if "identical" in phenomenon or "merge" in phenomenon:
+    if "identical" in phenomenon or "merge" in phenomenon or "└─┘" in symbols:
         return LanguageIssueType.identical_consonants_separated
-    if "assimilation" in phenomenon:
+    if "assimilation" in phenomenon or "resegment" in operations or "‿" in symbols:
         return LanguageIssueType.coalescent_assimilation_missing
     return None
 
@@ -303,13 +311,12 @@ def _build_prompt(sentences: list[SongSentence]) -> str:
             issue_type = issue_type_for_hint(hint)
             if issue_type is None:
                 continue
-            words = sentence.words[hint.start_word_index : hint.end_word_index + 1]
             targets.append(
                 {
                     "hintId": hint.id,
                     "sentenceId": sentence.id,
                     "lyrics": sentence.lyrics,
-                    "targetWords": " ".join(word.text for word in words),
+                    "targetWords": target_words_for_hint(sentence, hint),
                     "referencePhenomenon": hint.phenomenon,
                     "expectedIssueTypeWhenUserDiffers": issue_type.value,
                     "transformations": [
@@ -337,6 +344,17 @@ def _build_prompt(sentences: list[SongSentence]) -> str:
 TARGETS:
 {json.dumps(targets, ensure_ascii=False)}
 """.strip()
+
+
+def target_words_for_hint(sentence: SongSentence, hint: LanguageHint) -> str:
+    text = sentence.pronunciation.text if sentence.pronunciation else sentence.lyrics
+    words = list(re.finditer(r"[A-Za-z]+(?:['’][A-Za-z]+)*", text))
+    position = hint.marks[0].start_char_index
+    left = next((word.group() for word in reversed(words) if word.start() <= position), "")
+    if hint.marks[0].symbol == "×":
+        return left
+    right = next((word.group() for word in words if word.start() > position), "")
+    return " ".join(item for item in (left, right) if item)
 
 
 def secondary_target_id(part_id: str, issue_type: LanguageIssueType) -> str:

@@ -117,6 +117,7 @@ export function RecordingStudio({
   onTimelineChange,
   onRecordingStart,
   onRecordingFinished,
+  onCountdownChange,
   onExclusivePlaybackStart,
   playbackStopToken,
 }: {
@@ -128,6 +129,7 @@ export function RecordingStudio({
   onTimelineChange?: (time: number) => void;
   onRecordingStart?: () => void;
   onRecordingFinished?: () => void;
+  onCountdownChange?: (seconds: number | null) => void;
   onExclusivePlaybackStart?: () => void;
   playbackStopToken?: number;
 }) {
@@ -300,6 +302,7 @@ export function RecordingStudio({
     setPreviewBlob(null);
     setState("idle");
     setCountdown(null);
+    onCountdownChange?.(null);
   }
 
   async function startRecording() {
@@ -362,14 +365,16 @@ export function RecordingStudio({
         onRecordingFinished?.();
       };
 
+      onRecordingStart?.();
       for (let remaining = 3; remaining >= 1; remaining -= 1) {
         setCountdown(remaining);
+        onCountdownChange?.(remaining);
         await new Promise((resolve) => window.setTimeout(resolve, 1000));
       }
       setCountdown(null);
+      onCountdownChange?.(null);
       recorder.start(250);
       setState("recording");
-      onRecordingStart?.();
       const referencePlayer = recordingReference === "source"
         ? sourceRef.current : accompanimentRef.current;
       if (referencePlayer) {
@@ -385,6 +390,7 @@ export function RecordingStudio({
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
       setCountdown(null);
+      onCountdownChange?.(null);
       setState("idle");
       const name = reason instanceof DOMException ? reason.name : "";
       setError(
@@ -743,7 +749,7 @@ export function RecordingStudio({
           </button>
           <button type="button" className="secondary-button"
             disabled={state === "uploading"} onClick={() => void startRecording()}>重录</button>
-          <button type="button" className="text-button cancel-recording-button"
+          <button type="button" className="secondary-button cancel-recording-button"
             disabled={state === "uploading"} onClick={resetPreview}>取消</button>
         </>}
       </div>

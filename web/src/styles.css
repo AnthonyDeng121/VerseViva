@@ -273,6 +273,9 @@ audio { width: 100%; }
 .recording-purpose-note { margin: 0 0 12px; color: #6f7774; font-size: .76rem; }
 .recording-success { color: #0d7e6a; font-size: .82rem; }
 .recording-countdown { margin: 8px 0; color: #9f4e3d; font-size: 34px; font-weight: 800; line-height: 1; text-align: center; }
+.technique-countdown { position: sticky; top: 8px; z-index: 4; display: grid; place-items: center; justify-self: center; min-width: 108px; padding: 12px 22px; border: 1px solid rgba(159,78,61,.25); border-radius: 16px; color: #9f4e3d; background: rgba(255,250,244,.96); box-shadow: 0 8px 24px rgba(91,54,42,.14); }
+.technique-countdown strong { font-size: 42px; line-height: 1; }
+.technique-countdown span { margin-top: 5px; font-size: 12px; }
 .take-purpose { color: #0d7e6a; }
 .recording-selectors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
 .recording-selectors label, .volume-controls label { display: grid; gap: 7px; }
@@ -283,7 +286,7 @@ audio { width: 100%; }
 .recording-live { color: #b0302c; font-weight: 700; }
 .record-stop-button { padding: 10px 16px; border: 0; border-radius: 12px; color: #fff; background: #b0302c; }
 .text-button { border: 0; padding: 5px 10px; color: #75665d; background: transparent; cursor: pointer; text-decoration: underline; }
-.cancel-recording-button { flex-basis: 100%; font-size: 12px; }
+.cancel-recording-button { flex-basis: 100%; }
 .analyzing-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 .button-spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.45); border-top-color: #fff; border-radius: 50%; animation: button-spin .75s linear infinite; }
 @keyframes button-spin { to { transform: rotate(360deg); } }

@@ -19,6 +19,7 @@ from server.services.practice.analyzer import (
     GeminiPracticeAnalyzer,
     issue_type_for_hint,
     secondary_target_id,
+    target_words_for_hint,
 )
 from server.services.practice.coach import GlmPracticeCoach
 from server.services.practice.models import AcousticFinding, FindingResult
@@ -280,7 +281,6 @@ def _build_issues(
         expected_type = issue_type_for_hint(hint)
         if expected_type is None or finding.issue_type != expected_type:
             continue
-        words = sentence.words[hint.start_word_index : hint.end_word_index + 1]
         segments = [
             segment
             for transformation in hint.transformations
@@ -292,7 +292,7 @@ def _build_issues(
                 type=expected_type,
                 hint_id=hint.id,
                 sentence_id=sentence.id,
-                word_text=" ".join(item.text for item in words),
+                word_text=target_words_for_hint(sentence, hint),
                 target_segments=segments,
                 confidence=finding.confidence,
                 audible_evidence=finding.audible_evidence,

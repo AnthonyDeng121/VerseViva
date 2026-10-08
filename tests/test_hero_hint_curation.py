@@ -1,6 +1,7 @@
 import re
 from pathlib import Path
 
+from server.services.practice.analyzer import issue_type_for_hint, target_words_for_hint
 from server.storage.profile_store import ProfileStore
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -116,3 +117,21 @@ def test_multilingual_card_targets_match_adjacent_romanized_tokens() -> None:
                 left = next(word.group() for word in reversed(words) if word.start() <= position)
                 right = next(word.group() for word in words if word.start() > position)
                 assert hint.canonical_pronunciation == f"{left} {right}"
+
+
+def test_every_hero_symbol_is_available_to_practice_analysis() -> None:
+    store = ProfileStore(ROOT / "data")
+    for suffix in ("03", "04", "05"):
+        profile = store.get(f"{SONG_PREFIX}{suffix}")
+        assert profile is not None
+        assert all(
+            issue_type_for_hint(hint) is not None
+            for sentence in profile.sentences
+            for hint in sentence.language_hints
+        )
+
+
+def test_elision_target_does_not_include_the_other_vocal_lane() -> None:
+    sentence = _sentence("03", "sentence_003")
+    hint = _hints(sentence)["hint_candidate_002_004"]
+    assert target_words_for_hint(sentence, hint) == "heart"
