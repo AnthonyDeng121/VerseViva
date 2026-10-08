@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { calculateTimelinePlacement, offsetFromDrag } from "./audioTimeline";
+
 export type TimelineTake = {
   takeId: string;
   displayName: string;
@@ -103,12 +105,19 @@ export function MixTimeline({
         source.buffer = buffers[index + 1];
         gain.gain.value = (take.gain ?? 1) * voiceVolume;
         source.connect(gain).connect(context.destination);
-        const correction = ((take.latencyCompensationMs ?? 0) + (take.manualOffsetMs ?? 0)) / 1000;
-        const clipStart = take.timelineStartSeconds - correction;
-        const delay = Math.max(0, clipStart - rangeStart);
-        const bufferOffset = Math.max(0, rangeStart - clipStart);
-        const available = Math.min(source.buffer.duration - bufferOffset, duration - delay);
-        if (available > 0) source.start(startAt + delay, bufferOffset, available);
+        const placement = calculateTimelinePlacement({
+          timelineStartSeconds: take.timelineStartSeconds,
+          latencyCompensationMs: take.latencyCompensationMs,
+          manualOffsetMs: take.manualOffsetMs,
+          rangeStartSeconds: rangeStart,
+          rangeDurationSeconds: duration,
+          bufferDurationSeconds: source.buffer.duration,
+        });
+        if (placement.availableSeconds > 0) source.start(
+          startAt + placement.delaySeconds,
+          placement.bufferOffsetSeconds,
+          placement.availableSeconds,
+        );
       });
 
       setPlaying(true);
@@ -145,8 +154,12 @@ export function MixTimeline({
   function moveDrag(event: React.PointerEvent<HTMLDivElement>) {
     const drag = dragRef.current;
     if (!drag) return;
-    const deltaSeconds = ((event.clientX - drag.startX) / drag.width) * duration;
-    const manualOffsetMs = clampOffset(Math.round((drag.originalOffset - deltaSeconds * 1000) / 10) * 10);
+    const manualOffsetMs = offsetFromDrag({
+      originalOffsetMs: drag.originalOffset,
+      deltaPixels: event.clientX - drag.startX,
+      laneWidthPixels: drag.width,
+      timelineDurationSeconds: duration,
+    });
     drag.latestOffset = manualOffsetMs;
     onPatch(drag.takeId, { manualOffsetMs });
   }
@@ -176,8 +189,14 @@ export function MixTimeline({
           <div className="mix-lane-bed"><div className="wave-pattern accompaniment-wave" /></div>
         </div>
         {currentTakes.map((take) => {
-          const correction = ((take.latencyCompensationMs ?? 0) + (take.manualOffsetMs ?? 0)) / 1000;
-          const clipStart = take.timelineStartSeconds - correction;
+          const clipStart = calculateTimelinePlacement({
+            timelineStartSeconds: take.timelineStartSeconds,
+            latencyCompensationMs: take.latencyCompensationMs,
+            manualOffsetMs: take.manualOffsetMs,
+            rangeStartSeconds: rangeStart,
+            rangeDurationSeconds: duration,
+            bufferDurationSeconds: Number.POSITIVE_INFINITY,
+          }).clipStartSeconds;
           const clipDuration = Math.max(take.selectionEndSeconds - take.selectionStartSeconds, 0.05);
           const left = ((clipStart - rangeStart) / duration) * 100;
           const width = (clipDuration / duration) * 100;
@@ -218,10 +237,6 @@ export function MixTimeline({
       </footer>
     </section>
   </div>;
-}
-
-function clampOffset(value: number) {
-  return Math.max(-2000, Math.min(2000, value));
 }
 
 function formatTime(seconds: number) {

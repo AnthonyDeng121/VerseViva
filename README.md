@@ -201,6 +201,7 @@ docker compose -f compose.yaml -f compose.tunnel.yaml up --build
 .venv/bin/ruff check server tests
 
 # web/
+npm test
 npm run build
 npm run lint
 ```
@@ -221,11 +222,35 @@ ffprobe -version
 ```text
 POST /api/v1/songs/analyze
 GET  /api/v1/songs/jobs/{job_id}
+GET  /api/v1/songs/jobs/latest
 POST /api/v1/songs/jobs/{job_id}/retry
 GET  /api/v1/songs/{song_id}
 GET  /api/v1/songs/{song_id}/audio/source
 GET  /api/v1/songs/{song_id}/audio/vocals
+GET  /api/v1/songs/{song_id}/audio/accompaniment
+
+POST /api/v1/songs/{song_id}/takes
+GET  /api/v1/songs/{song_id}/takes?session_id=...
+GET  /api/v1/takes/{take_id}
+PATCH /api/v1/takes/{take_id}
+GET  /api/v1/takes/{take_id}/audio
+POST /api/v1/takes/{take_id}/analyze
+
+GET  /api/v1/songs/{song_id}/attempts?session_id=...
+GET  /api/v1/practice/memory?session_id=...
 ```
+
+Take 上传接受浏览器常见的 WebM、MP4/M4A、OGG 和 WAV。Hero 网页播放与下载优先使用 MP3，
+内部仍保留 WAV 母文件用于音频分析和降级，不应把所有内部音频描述成 MP3。
+
+## 当前完成度与后续工作
+
+当前已经完成歌曲分析、三首 Hero 预缓存、语言标记、双轨歌词、用户录音、多 Take、共享音频时钟、
+拖拽对齐、音量/静音、PracticeAttempt 前后比较、Memory 聚合、SQLite 持久化、结构化阶段耗时和
+API 调用计数。前端已开始按职责拆分，并为多轨时间计算、偏移方向、循环边界与录音状态机增加测试。
+
+比赛冻结前仍需完成：三首 Hero 的手机端全流程人工验收；真实设备录音延迟校准；Gemini 的真实成本、
+限流和结果质量记录；继续将 `main.tsx` 中的播放器与歌词视图拆成独立组件。远程模型 Worker 本阶段不部署。
 
 ## 数据与版本控制
 
