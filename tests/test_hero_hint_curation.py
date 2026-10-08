@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 from server.storage.profile_store import ProfileStore
@@ -46,7 +47,7 @@ def test_korean_owner_corrections_target_romanization() -> None:
     first = _hints(_sentence("04", "sentence_002"))
     assert first["hint_candidate_001_003"].marks[0].start_char_index == 21
     assert first["hint_candidate_001_006"].marks[0].start_char_index == 31
-    assert first["hint_candidate_001_006"].canonical_pronunciation == "reom a"
+    assert first["hint_candidate_001_006"].canonical_pronunciation == "reom an"
     assert first["hint_human_an_a"].marks[0].start_char_index == 34
     assert first["hint_human_an_a"].canonical_pronunciation == "an a"
 
@@ -61,7 +62,7 @@ def test_japanese_marks_stay_shifted_and_final_he_n_is_unmarked() -> None:
     assert "hint_human_hen_da_2" not in last
     assert all(hint.source.value == "human_curated" for hint in last.values())
     assert all(
-        hint.evidence.get("curation") == "product_owner_shifted_left_one_sound_v3_2026_10_08"
+        hint.evidence.get("curation") == "product_owner_shifted_left_one_sound_v4_2026_10_08"
         for hint in last.values()
     )
     assert all(hint.marks[0].symbol == "‿" for hint in last.values())
@@ -70,3 +71,38 @@ def test_japanese_marks_stay_shifted_and_final_he_n_is_unmarked() -> None:
     assert first["hint_human_en_wa"].marks[0].start_char_index == 22
     assert first["hint_human_en_wa"].marks[0].symbol == "‿"
     assert first["hint_human_en_wa"].canonical_pronunciation == "e n"
+    detail = first["hint_human_en_wa"].details[0]
+    assert "e n" in detail.action
+    assert "n wa" not in detail.action
+    assert not detail.action.startswith("建议")
+
+
+def test_hero_actions_do_not_duplicate_the_ui_label() -> None:
+    store = ProfileStore(ROOT / "data")
+    for suffix in ("03", "04", "05"):
+        profile = store.get(f"{SONG_PREFIX}{suffix}")
+        assert profile is not None
+        assert all(
+            not detail.action.startswith("建议")
+            for sentence in profile.sentences
+            for hint in sentence.language_hints
+            for detail in hint.details
+        )
+
+
+def test_multilingual_card_targets_match_adjacent_romanized_tokens() -> None:
+    store = ProfileStore(ROOT / "data")
+    for suffix in ("04", "05"):
+        profile = store.get(f"{SONG_PREFIX}{suffix}")
+        assert profile is not None
+        for sentence in profile.sentences:
+            if sentence.pronunciation is None:
+                continue
+            words = list(re.finditer(r"[A-Za-z]+(?:['’][A-Za-z]+)*", sentence.pronunciation.text))
+            for hint in sentence.language_hints:
+                if not hint.canonical_pronunciation:
+                    continue
+                position = hint.marks[0].start_char_index
+                left = next(word.group() for word in reversed(words) if word.start() <= position)
+                right = next(word.group() for word in words if word.start() > position)
+                assert hint.canonical_pronunciation == f"{left} {right}"

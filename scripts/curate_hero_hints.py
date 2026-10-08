@@ -266,8 +266,15 @@ def curate_korean(profile: dict) -> None:
     first["languageHints"][1]["marks"] = [
         {"symbol": "‿", "startCharIndex": 31, "endCharIndex": 33, "placement": "below"}
     ]
-    first["languageHints"][1]["canonicalPronunciation"] = "reom a"
-    first["languageHints"][1]["observedPronunciation"] = "reo ma"
+    first["languageHints"][1]["canonicalPronunciation"] = "reom an"
+    first["languageHints"][1]["observedPronunciation"] = "reo man"
+    first["languageHints"][1]["details"] = [
+        {
+            "locale": "zh-CN",
+            "explanation": "reom 和 an 在这次演唱中连续衔接。",
+            "action": "唱完 reom 后保持气流，直接进入 an。",
+        }
+    ]
     first["languageHints"].append(
         _curated_hint(
             first["languageHints"][0],
@@ -335,7 +342,7 @@ def curate_japanese(profile: dict) -> None:
         tokens = list(re.finditer(r"[A-Za-z]+", pronunciation["text"]))
         if sentence["languageHints"] and all(
             hint.get("evidence", {}).get("curation")
-            == "product_owner_shifted_left_one_sound_v3_2026_10_08"
+            == "product_owner_shifted_left_one_sound_v4_2026_10_08"
             for hint in sentence["languageHints"]
         ):
             continue
@@ -352,6 +359,7 @@ def curate_japanese(profile: dict) -> None:
                 in {
                     "product_owner_shifted_left_one_sound_2026_10_08",
                     "product_owner_shifted_left_one_sound_v2_2026_10_08",
+                    "product_owner_shifted_left_one_sound_v3_2026_10_08",
                 }
             word_shift = 0 if already_shifted_left else (-2 if previous_version else -1)
             hint["startWordIndex"] = max(0, hint["startWordIndex"] + word_shift)
@@ -374,10 +382,18 @@ def curate_japanese(profile: dict) -> None:
                 right = tokens[min(max(0, current + shift) + 1, len(tokens) - 1)]
                 hint["canonicalPronunciation"] = f"{left.group()} {right.group()}"
                 hint["observedPronunciation"] = f"{left.group()}{right.group()}"
+                target = f"{left.group()} {right.group()}"
+                hint["details"] = [
+                    {
+                        "locale": "zh-CN",
+                        "explanation": f"原唱在 {target} 处保持连续语流，没有单独停顿。",
+                        "action": f"把 {target} 放在同一口气中自然衔接。",
+                    }
+                ]
             hint["source"] = "human_curated"
             hint["confidence"] = 1.0
             hint["evidence"] = {
-                "curation": "product_owner_shifted_left_one_sound_v3_2026_10_08"
+                "curation": "product_owner_shifted_left_one_sound_v4_2026_10_08"
             }
             shifted.append(hint)
         sentence["languageHints"] = shifted
@@ -387,6 +403,10 @@ def main() -> None:
     for suffix, curator in (("03", curate_english), ("04", curate_korean), ("05", curate_japanese)):
         path, profile = _profile(suffix)
         curator(profile)
+        for sentence in profile["sentences"]:
+            for hint in sentence["languageHints"]:
+                for detail in hint["details"]:
+                    detail["action"] = re.sub(r"^建议[：:]\s*", "", detail["action"])
         path.write_text(json.dumps(profile, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"Curated {path}")
 

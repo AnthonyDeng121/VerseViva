@@ -213,7 +213,8 @@ audio { width: 100%; }
 .hint-arrow { width: 28px; height: 38px; border: 0; border-radius: 8px; color: #087e6b; background: rgba(8,126,107,.08); font-size: 27px; cursor: pointer; }
 .hint-arrow:disabled { opacity: .25; }
 .hint-detail .review-note { grid-column: 2; }
-.detail-heading span { color: #6b7771; font-size: 12px; text-transform: uppercase; }
+.detail-heading > span { color: #6b7771; font-size: 12px; }
+.detail-heading .technique-display .lyric-character { text-transform: none; }
 .action { color: #26352e; }
 .review-note { color: #926820; font-size: 13px; }
 .model-note { padding-top: 16px; border-top: 1px solid #e0e7e2; font-size: 13px; }
