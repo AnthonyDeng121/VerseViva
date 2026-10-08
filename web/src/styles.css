@@ -44,6 +44,7 @@ p { line-height: 1.7; color: #526067; }
 .home-collapsible > summary { padding: 10px 14px; color: #33413b; font-size: 13px; font-weight: 800; cursor: pointer; list-style-position: outside; margin-left: 18px; }
 .home-collapsible > summary::marker { color: #087e6b; font-size: 11px; }
 .upload-card { display: grid; grid-template-columns: 1.2fr 1fr 1fr auto; align-items: end; gap: 10px; padding: 10px 14px 14px; border: 0; border-radius: 0; box-shadow: none; font-size: 12px; }
+.upload-cost-note { padding: 9px 14px 0; color: #75665d; font-size: 11px; }
 .upload-card details { grid-column: 1 / -1; font-size: 13px; }
 .upload-card .primary-button { min-height: 42px; }
 label { display: grid; gap: 8px; color: #33413b; font-weight: 700; }
@@ -184,7 +185,6 @@ audio { width: 100%; }
 .lyric-pronunciation { display: block; margin-top: 2px; padding-bottom: 5px; color: #65736c; font-size: .88em; font-weight: 500; letter-spacing: .01em; }
 .lyric-line.active .lyric-pronunciation { color: #087e6b; }
 .lyric-character { position: relative; display: inline-block; white-space: pre; }
-.lyric-character.active-word { color: #0b9b81; }
 .character-mark {
   border: 0;
   padding: 0;

@@ -244,7 +244,7 @@ def _gemini_compatible_audio(audio_path: Path) -> Iterator[Path]:
         yield audio_path
         return
     with tempfile.TemporaryDirectory(prefix="verseviva-practice-") as directory:
-        converted = Path(directory) / "recording.wav"
+        converted = Path(directory) / "recording.mp3"
         result = subprocess.run(
             [
                 "ffmpeg",
@@ -258,6 +258,8 @@ def _gemini_compatible_audio(audio_path: Path) -> Iterator[Path]:
                 "1",
                 "-ar",
                 "16000",
+                "-b:a",
+                "64k",
                 str(converted),
             ],
             capture_output=True,

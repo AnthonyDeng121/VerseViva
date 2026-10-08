@@ -206,6 +206,7 @@ function App() {
 
       {pageMode === "upload" && <details className="home-collapsible">
         <summary>自行上传歌曲</summary>
+      <p className="upload-cost-note">由于模型计算和服务器成本，建议上传 60 秒以内的音频，以减少等待时间。</p>
       <form className="upload-card" onSubmit={submit}>
         <label>
           <span>歌曲文件</span>
@@ -346,7 +347,7 @@ function App() {
 
       {profile && pageMode !== "upload" && (
         <ProfileView profile={profile} selectedHint={selectedHint} onSelect={setSelectedHint}
-          mode={pageMode} />
+          mode={pageMode} onModeChange={setPageMode} />
       )}
     </main>
   );
@@ -357,11 +358,13 @@ function ProfileView({
   selectedHint,
   onSelect,
   mode,
+  onModeChange,
 }: {
   profile: SongProfile;
   selectedHint: LanguageHint | null;
   onSelect: (hint: LanguageHint) => void;
   mode: "technique" | "sing";
+  onModeChange: (mode: "upload" | "technique" | "sing") => void;
 }) {
   const [currentTime, setCurrentTime] = useState(0);
   const [lyricsMode, setLyricsMode] = useState<"standard" | "layers">("standard");
@@ -528,7 +531,11 @@ function ProfileView({
         accompanimentUrl={profile.audio.accompanimentUrl}
         sourceUrl={profile.audio.sourceUrl}
         onTimelineChange={setCurrentTime}
-        onRecordingStart={stopReferencePlayback}
+        onRecordingStart={() => {
+          stopReferencePlayback();
+          onModeChange("technique");
+        }}
+        onRecordingFinished={() => onModeChange("sing")}
         onExclusivePlaybackStart={stopReferencePlayback}
         playbackStopToken={playbackStopToken}
       /></div>
@@ -633,7 +640,6 @@ function KaraokeLyrics({
           <AnnotatedLine
             key={sentence.id}
             sentence={sentence}
-            currentTime={currentTime}
             active={sentence.id === activeSentenceId}
             past={currentTime > sentence.endSeconds}
             onSelect={onSelect}
@@ -732,7 +738,7 @@ function AnnotatedVocalPart({ part, sentences, lyrics = part.lyrics, currentTime
     id: part.id, lyrics, startSeconds: part.startSeconds, endSeconds: part.endSeconds,
     words: [], languageHints: [],
   };
-  return <AnnotatedLine sentence={projected} currentTime={currentTime}
+  return <AnnotatedLine sentence={projected}
     active={currentTime >= part.startSeconds && currentTime < part.endSeconds}
     past={currentTime >= part.endSeconds} onSelect={onSelect} onSeek={onSeek} compact />;
 }
@@ -771,7 +777,6 @@ function withoutParenthetical(lyrics: string) {
 
 function AnnotatedLine({
   sentence,
-  currentTime,
   active,
   past,
   onSelect,
@@ -779,7 +784,6 @@ function AnnotatedLine({
   compact = false,
 }: {
   sentence: SongSentence;
-  currentTime: number;
   active: boolean;
   past: boolean;
   onSelect: (hint: LanguageHint) => void;
@@ -813,11 +817,6 @@ function AnnotatedLine({
       }
     }
   }
-  const wordRanges = sentence.pronunciation ? [] : findWordRanges(sentence);
-  const activeWord = wordRanges.find(
-    ({ word }) => currentTime >= word.startSeconds && currentTime < word.endSeconds,
-  );
-
   return (
     <p
       className={`lyric-line ${active ? "active" : ""} ${past ? "past" : ""} ${compact ? "compact" : ""}`}
@@ -837,9 +836,7 @@ function AnnotatedLine({
       <span className={sentence.pronunciation ? "lyric-pronunciation" : "lyric-original-only"}>
       {Array.from(annotationText).map((character, index) => (
         <React.Fragment key={`${sentence.id}-${index}`}>
-          <span className={`lyric-character ${
-            activeWord && index >= activeWord.start && index <= activeWord.end ? "active-word" : ""
-          }`}>
+          <span className="lyric-character">
             {character}
             {(marksAt.get(index) ?? [])
               .map(({ mark, hint }) => (
@@ -863,27 +860,6 @@ function AnnotatedLine({
       </span>
     </p>
   );
-}
-
-function findWordRanges(sentence: SongSentence) {
-  const matches = Array.from(sentence.lyrics.matchAll(/[A-Za-z]+(?:['’][A-Za-z]+)*/g));
-  let cursor = 0;
-  return sentence.words.flatMap((word) => {
-    const normalized = normalizeWord(word.text);
-    const relativeIndex = matches.slice(cursor).findIndex(
-      (match) => normalizeWord(match[0]) === normalized,
-    );
-    if (relativeIndex < 0) return [];
-    const matchIndex = cursor + relativeIndex;
-    const match = matches[matchIndex];
-    cursor = matchIndex + 1;
-    const start = match.index ?? 0;
-    return [{ word, start, end: start + match[0].length - 1 }];
-  });
-}
-
-function normalizeWord(value: string) {
-  return value.toLowerCase().replaceAll("’", "'").replace(/[^a-z']/g, "");
 }
 
 function crossesParentheticalLane(sentence: SongSentence, hint: LanguageHint) {
