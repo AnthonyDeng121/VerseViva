@@ -894,7 +894,8 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
 目标：让一个人通过多次录制完成原歌中无法同时唱出的 Vocal 层。
 
 - 展示 Hero Song 人工校对的 primary / secondary 双轨歌词
-- Overdub Hero 片段使用 Olivia Rodrigo 的《get him back!》bridge，原始短片段位于 `data/day3/input/get him back!.mp3`
+- Overdub Hero 片段使用 Olivia Rodrigo 的《get him back!》bridge，部署资源位于
+  `data/songs/song_00000000000000000000000000000003/audio/`
 - 先录 primary take，再按同一歌曲时间轴录 secondary take
 - 使用共享 AudioContext 时钟和 latency offset 同步回放
 - 支持分轨静音、保留、重录和最小音量平衡
@@ -1181,8 +1182,8 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
 
 ## 14.4 接力注意事项
 
-- 不要再运行旧的 `build_day3_vocal_profile.py` 覆盖当前完整 get him back Hero；它是早期固定 cue
-  构建器。需要更新 Hero 时，应运行通用上传 Pipeline 后使用 `promote_song_profile.py`。
+- 早期固定 cue 的 `build_day3_vocal_profile.py` 已删除。需要更新 Hero 时，应运行通用上传
+  Pipeline 后使用 `promote_song_profile.py`，再重新构建 Hero 部署包。
 - `data/` 中模型产物通常不进入 Git，但比赛机器或云端必须单独预置 Hero 产物。
 - 当前 Windows FastAPI + WSL 模型虚拟环境是开发组合，不是比赛部署方案。最终 H5 应同源访问云端
   API；Gemini 放独立 Worker，CPU 模型 Pipeline 放 Linux Worker 或预缓存 Hero。
@@ -1259,7 +1260,7 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
 
 ### 韩语 Hero：BLACKPINK《AS IF IT'S YOUR LAST》片段
 
-- 原始素材：`data/day4/input/AS IF IT'S YOUR LAST.mp3`，约 31.6 秒。
+- 当前部署素材：`data/songs/song_00000000000000000000000000000004/audio/source.mp3`，约 31.6 秒。
 - 真实分析 job：`job_837eaeeb7ecb49f3bf24052a3d822308`。
 - 原始随机 song：`song_fc95d42d348940e59a11b04bf60ecc76`。
 - 稳定 Hero song：`song_00000000000000000000000000000004`。
@@ -1274,7 +1275,7 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
 
 ### 日语 Hero：TUNE'S《動物園は大変だ》片段
 
-- 原始素材：`data/day4/input/動物園は大変だ.mp3`，约 24.5 秒。
+- 当前部署素材：`data/songs/song_00000000000000000000000000000005/audio/source.mp3`，约 24.5 秒。
 - 真实分析 job：`job_f1975fd286e84677a443b244cca1d227`。
 - 原始随机 song：`song_42430bbff9c2491a9fb6f8dba5a24f78`。
 - 稳定 Hero song：`song_00000000000000000000000000000005`。
@@ -1483,3 +1484,16 @@ WSL2 + CPU 环境下，45.5 秒真实音频全链路曾耗时约 15 分钟，其
   “每 30 秒音频”的换算值，并明确说明服务器硬件会改变实际速度。
 - 录音页必须先完整下载当前伴奏和原唱资源并转为浏览器 Blob，才解锁“开始录音”。
   60 秒未完成时明确报错，不再回退到边下载边开始录音。
+
+## 16.11 2026-10-08 Hero 资源整理与部署决定
+
+- 比赛部署采用独立 Hero ZIP，不在服务器首次启动时重跑 Demucs / WhisperX / Gemini。
+  `scripts/hero_assets.py build` 构建 `artifacts/verseviva-hero-assets.zip`；`restore` 在部署数据卷恢复。
+- Hero ZIP 只包含固定 03 / 04 / 05 三首歌的 Profile、`source.mp3`、`vocals.mp3`、
+  `accompaniment.mp3` 与 vocals / accompaniment WAV 母文件；不包含 SQLite、用户 Take、Job 或密钥。
+- 本地 `data/` 已只保留 `songs/` 的三个正式 Hero、`takes/` 的 Hero 真实手机回归录音和
+  `verseviva.sqlite3`。旧 Day 实验、历史 Job、重复/退役 Song 与非 Hero Take 已移入可恢复 `.trash/`。
+- 远程模型 Worker 暂不部署；当前仍由主 FastAPI 服务直接调度模型与 Gemini。
+- 网页 Hero 原曲、整体人声和伴奏均优先使用 MP3；Pipeline 也优先将 `analysis-vocals.mp3`
+  交给 WhisperX / Gemini。但用户浏览器录音仍保留 WebM / M4A / OGG / WAV 原格式，
+  上传歌曲源文件仍允许 MP3 / WAV / FLAC；不得宣称所有内部文件都已统一为 MP3。

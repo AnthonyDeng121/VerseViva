@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY pyproject.toml requirements-*.txt ./
 COPY server ./server
+COPY scripts ./scripts
 RUN python -m pip install --upgrade pip setuptools wheel \
     && python -m pip install . \
     && python -m venv /opt/verseviva/demucs \

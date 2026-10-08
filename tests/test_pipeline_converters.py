@@ -6,11 +6,11 @@ from server.pipelines.errors import PipelineOutputError
 from server.pipelines.whisperx.converter import convert_whisperx_json
 
 ROOT = Path(__file__).resolve().parents[1]
-DAY1_OUTPUT = ROOT / "data" / "day1" / "output"
+WHISPERX_FIXTURE = ROOT / "server" / "fixtures" / "whisperx-real-alignment.json"
 
 
 def test_whisperx_converter_handles_real_day1_alignment() -> None:
-    result = convert_whisperx_json(DAY1_OUTPUT / "whisperx" / "vocals.json")
+    result = convert_whisperx_json(WHISPERX_FIXTURE)
 
     assert result.language == "en"
     assert len(result.sentences) == 4
