@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     whisperx_device: str = "cpu"
     whisperx_compute_type: str = "int8"
     ffprobe_executable: str = "ffprobe"
+    ffmpeg_executable: str = "ffmpeg"
     lyrics_provider: Literal["disabled", "lrclib"] = "lrclib"
     lrclib_base_url: str = "https://lrclib.net"
     lrclib_timeout_seconds: float = 10.0

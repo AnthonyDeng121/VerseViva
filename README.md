@@ -231,6 +231,7 @@ GET  /api/v1/songs/{song_id}/audio/accompaniment
 
 POST /api/v1/songs/{song_id}/takes
 GET  /api/v1/songs/{song_id}/takes?session_id=...
+GET  /api/v1/songs/{song_id}/mixdown?session_id=...
 GET  /api/v1/takes/{take_id}
 PATCH /api/v1/takes/{take_id}
 GET  /api/v1/takes/{take_id}/audio
@@ -252,6 +253,7 @@ API 调用计数。前端已开始按职责拆分，并为多轨时间计算、�
 送入 Gemini 前只生成临时的 16 kHz、64 kbps 单声道 MP3 兼容副本。
 WhisperX 词级时间继续用于内部语言分析，但歌词播放界面只按整句高亮。自行上传建议控制在 60 秒以内，
 以减少模型计算成本和用户等待时间；开始录音后页面会切到技巧分析，录音结束后返回演唱页。
+已保存音轨区域可下载 192 kbps MP3 整体混音，合成会应用静音、单轨音量、整体音量和时间偏移。
 
 比赛冻结前仍需完成：三首 Hero 的手机端全流程人工验收；真实设备录音延迟校准；Gemini 的真实成本、
 限流和结果质量记录；继续将 `main.tsx` 中的播放器与歌词视图拆成独立组件。远程模型 Worker 本阶段不部署。

@@ -181,6 +181,52 @@ def test_take_can_be_renamed_and_its_mix_settings_persist(take_client) -> None:
     assert client.get(f"/api/v1/takes/{created['takeId']}").json()["gain"] == 0.72
 
 
+def test_current_session_mixdown_downloads_mp3(
+    take_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, data_dir, song_id = take_client
+    created = _webm_upload(
+        client,
+        song_id,
+        latency_compensation_ms="500",
+        manual_offset_ms="-120",
+    ).json()
+    audio_dir = data_dir / "songs" / song_id / "audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    (audio_dir / "accompaniment.mp3").write_bytes(b"fake-accompaniment")
+    captured = {}
+
+    def fake_render_mixdown(**kwargs) -> None:
+        captured.update(kwargs)
+        kwargs["output"].parent.mkdir(parents=True, exist_ok=True)
+        kwargs["output"].write_bytes(b"ID3mixed-audio")
+
+    monkeypatch.setattr(
+        "server.api.routes.takes.render_mixdown",
+        fake_render_mixdown,
+    )
+
+    response = client.get(
+        f"/api/v1/songs/{song_id}/mixdown",
+        params={
+            "session_id": "session_mobile_01",
+            "accompaniment_volume": 0.4,
+            "voice_volume": 0.5,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("audio/mpeg")
+    assert response.content == b"ID3mixed-audio"
+    assert captured["accompaniment_volume"] == 0.4
+    assert captured["voice_volume"] == 0.5
+    take = captured["takes"][0][0]
+    assert take.take_id == created["takeId"]
+    assert take.latency_compensation_ms == 500
+    assert take.manual_offset_ms == -120
+
+
 def test_free_overdub_is_saved_but_cannot_enter_practice_analysis(take_client) -> None:
     client, _, song_id = take_client
 

@@ -1,9 +1,12 @@
+import asyncio
 import json
+import shutil
 from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 
 from server.config import get_settings
 from server.models.practice import PracticeAttempt, PracticeMemory
@@ -14,6 +17,7 @@ from server.models.recording import (
     TakePurpose,
     TakeSaveMode,
 )
+from server.services.mixdown import render_mixdown
 from server.services.practice.service import analyze_practice_take
 from server.storage.practice_store import PracticeStore
 from server.storage.profile_store import ProfileStore
@@ -192,6 +196,58 @@ async def list_song_takes(
     if ProfileStore(settings.data_dir).get(song_id) is None:
         raise HTTPException(status_code=404, detail="Song profile not found")
     return TakeStore(settings.data_dir).list_for_song(song_id, session_id=session_id)
+
+
+@router.get("/songs/{song_id}/mixdown", response_class=FileResponse)
+async def download_song_mixdown(
+    song_id: str,
+    session_id: str = Query(...),
+    accompaniment_volume: float = Query(default=0.55, ge=0, le=1),
+    voice_volume: float = Query(default=1, ge=0, le=1),
+) -> FileResponse:
+    settings = get_settings()
+    profile = ProfileStore(settings.data_dir).get(song_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Song profile not found")
+    accompaniment = settings.data_dir / "songs" / song_id / "audio" / "accompaniment.mp3"
+    if not accompaniment.is_file():
+        accompaniment = accompaniment.with_suffix(".wav")
+    if not accompaniment.is_file():
+        raise HTTPException(status_code=409, detail="当前歌曲没有可用伴奏")
+    takes = TakeStore(settings.data_dir).list_for_song(song_id, session_id=session_id)
+    current = [take for take in takes if take.is_current]
+    if not current:
+        raise HTTPException(status_code=409, detail="当前会话还没有可混音的录音")
+    sources = []
+    for take in current:
+        source = settings.data_dir / "takes" / take.take_id / take.stored_filename
+        if not source.is_file():
+            raise HTTPException(
+                status_code=409,
+                detail=f"音轨 {take.display_name} 的录音文件不存在",
+            )
+        sources.append((take, source))
+    output_dir = settings.data_dir / "mixdowns" / f"mix_{uuid4().hex}"
+    output = output_dir / "verseviva-mix.mp3"
+    try:
+        await asyncio.to_thread(
+            render_mixdown,
+            ffmpeg_executable=settings.ffmpeg_executable,
+            accompaniment=accompaniment,
+            takes=sources,
+            output=output,
+            accompaniment_volume=accompaniment_volume,
+            voice_volume=voice_volume,
+        )
+    except (RuntimeError, ValueError) as exc:
+        shutil.rmtree(output_dir, ignore_errors=True)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return FileResponse(
+        output,
+        media_type="audio/mpeg",
+        filename=f"{profile.title}-VerseViva整体混音.mp3",
+        background=BackgroundTask(shutil.rmtree, output_dir, ignore_errors=True),
+    )
 
 
 @router.get("/takes/{take_id}", response_model=RecordingTake)

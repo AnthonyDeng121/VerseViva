@@ -151,6 +151,7 @@ export function RecordingStudio({
   const [previewOffsetMs, setPreviewOffsetMs] = useState(0);
   const [editingTakeId, setEditingTakeId] = useState<string | null>(null);
   const [mixOpen, setMixOpen] = useState(false);
+  const [downloadingMix, setDownloadingMix] = useState(false);
   const [resourcesReady, setResourcesReady] = useState(false);
   const [preparedAccompanimentUrl, setPreparedAccompanimentUrl] = useState<string | null>(null);
   const [preparedSourceUrl, setPreparedSourceUrl] = useState<string | null>(null);
@@ -552,6 +553,37 @@ export function RecordingStudio({
     if (persist) void updateTake(takeId, patch);
   }
 
+  async function downloadMixdown() {
+    stopPlayback();
+    onExclusivePlaybackStart?.();
+    setDownloadingMix(true);
+    setError(null);
+    try {
+      const query = new URLSearchParams({
+        session_id: sessionId,
+        accompaniment_volume: String(accompanimentVolume),
+        voice_volume: String(mixVoiceVolume),
+      });
+      const response = await fetch(`/api/v1/songs/${songId}/mixdown?${query}`);
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { detail?: string } | null;
+        throw new Error(payload?.detail ?? "整体混音生成失败");
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "VerseViva-整体混音.mp3";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "整体混音下载失败");
+    } finally {
+      setDownloadingMix(false);
+    }
+  }
+
   if (!sentences.length) return null;
 
   return (
@@ -739,11 +771,17 @@ export function RecordingStudio({
       {takes.length > 0 && <div className="take-history">
         <div className="take-history-heading">
           <h4>已保存音轨</h4>
-          <button type="button" className="primary-button" onClick={() => {
-            stopPlayback(); setEditingTakeId(null); setMixOpen(true);
-          }}>
-            打开多轨对齐与混音
-          </button>
+          <div className="take-history-actions">
+            <button type="button" className="primary-button" onClick={() => {
+              stopPlayback(); setEditingTakeId(null); setMixOpen(true);
+            }}>
+              打开多轨对齐与混音
+            </button>
+            <button type="button" className="secondary-button" disabled={downloadingMix}
+              onClick={() => void downloadMixdown()}>
+              {downloadingMix ? "正在生成…" : "下载整体混音"}
+            </button>
+          </div>
         </div>
         {playingLabel && <p className="now-playing">正在播放：{playingLabel}</p>}
         {[...takes].reverse().map((take) => <article key={take.takeId}

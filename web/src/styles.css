@@ -295,6 +295,7 @@ audio { width: 100%; }
 .take-row.history { opacity: .66; }
 .take-row div { display: grid; gap: 3px; }
 .take-history-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.take-history-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .mix-preview audio { display: block; margin-top: 10px; }
 .take-inline-controls { display: grid !important; grid-template-columns: minmax(100px,1fr) auto auto; align-items: center; gap: 6px !important; }
 .take-inline-controls .secondary-button { min-height: 30px; padding-inline: 9px; font-size: 12px; }
@@ -369,6 +370,9 @@ audio { width: 100%; }
   .recording-selectors { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .recording-actions button { width: 100%; min-height: 40px; }
   .take-row { grid-template-columns: 1fr; }
+  .take-history-heading { align-items: stretch; flex-direction: column; }
+  .take-history-actions { justify-content: stretch; }
+  .take-history-actions button { flex: 1; }
   .take-inline-controls { grid-template-columns: minmax(90px,1fr) auto auto !important; }
   .preview-mix-controls { grid-template-columns: 1fr; }
   .all-track-editor { grid-template-columns: 1fr; }
