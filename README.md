@@ -106,7 +106,7 @@ LRCLIB 默认启用且不需要 API Key。可通过 `VERSEVIVA_LYRICS_PROVIDER=d
 使用 Docker Compose 时，在首次启动前把资源直接恢复到命名数据卷：
 
 ```bash
-docker compose run --rm \
+docker compose --env-file .env.production run --rm \
   -v "$PWD/artifacts:/artifacts:ro" \
   app python scripts/hero_assets.py restore \
   /artifacts/verseviva-hero-assets.zip --data-dir /app/data
@@ -178,7 +178,7 @@ Copy-Item .env.production.example .env.production
 构建并启动：
 
 ```powershell
-docker compose up --build -d
+docker compose --env-file .env.production up --build -d
 ```
 
 正式部署时把 `SITE_ADDRESS` 改为实际域名，例如 `demo.example.com`，并将域名解析到云服务器公网 IP。Caddy 会作为统一入口将 H5、API 和音频请求转发给 FastAPI。
@@ -186,7 +186,7 @@ docker compose up --build -d
 临时容器 Tunnel 可使用：
 
 ```powershell
-docker compose -f compose.yaml -f compose.tunnel.yaml up --build
+docker compose --env-file .env.production -f compose.yaml -f compose.tunnel.yaml up --build
 ```
 
 完整模型镜像包含 Demucs、WhisperX 和 ffmpeg，因此第一次构建时间和镜像体积仍然较大。Hero Song 应继续使用预缓存；临时上传应限制为短片段。
@@ -236,6 +236,9 @@ GET  /api/v1/takes/{take_id}
 PATCH /api/v1/takes/{take_id}
 GET  /api/v1/takes/{take_id}/audio
 POST /api/v1/takes/{take_id}/analyze
+POST /api/v1/takes/{take_id}/analysis-jobs?force=...
+GET  /api/v1/takes/{take_id}/attempt
+DELETE /api/v1/takes/{take_id}?preserve_attempt=...
 
 GET  /api/v1/songs/{song_id}/attempts?session_id=...
 GET  /api/v1/practice/memory?session_id=...
@@ -244,7 +247,7 @@ GET  /api/v1/practice/memory?session_id=...
 Take 上传接受浏览器常见的 WebM、MP4/M4A、OGG 和 WAV。Hero 网页播放与下载优先使用 MP3，
 内部仍保留 WAV 母文件用于音频分析和降级，不应把所有内部音频描述成 MP3。
 
-## 当前完成度与后续工作
+## Demo 定型状态
 
 当前已经完成歌曲分析、三首 Hero 预缓存、语言标记、双轨歌词、用户录音、多 Take、共享音频时钟、
 拖拽对齐、音量/静音、PracticeAttempt 前后比较、Memory 聚合、SQLite 持久化、结构化阶段耗时和
@@ -271,8 +274,16 @@ WhisperX 词级时间继续用于内部语言分析，但歌词播放界面只�
 日韩歌曲的标记只显示在罗马音行，详情卡继续显示原文、辅助读音与演唱提示。三首 Hero 的人工校正可通过
 `python scripts/curate_hero_hints.py` 幂等重放，校正后需重新构建 Hero 部署包。
 
-比赛冻结前仍需完成：三首 Hero 的手机端全流程人工验收；真实设备录音延迟校准；Gemini 的真实成本、
-限流和结果质量记录；继续将 `main.tsx` 中的播放器与歌词视图拆成独立组件。远程模型 Worker 本阶段不部署。
+截至 2026-10-09，Demo 代码链路已经冻结：后端 115 项与前端 12 项测试通过，Ruff、ESLint、生产构建通过；
+Hero ZIP 已在空数据目录完成恢复验收，三首 Profile、H5 入口与音频 Range 请求正常。代码审计未发现仍可稳定
+复现的核心链路阻塞。
+
+部署不是只执行 `docker compose up`：先填写 `.env.production` 中的 Gemini Key（GLM Key 可选），再将
+`artifacts/verseviva-hero-assets.zip` 恢复到 `/app/data` 对应持久卷，并配置固定域名与 HTTPS。缺少 Key 时
+服务仍能启动，但上传歌曲的语言核查和用户练唱诊断不构成完整 Demo。
+
+复赛优化集中在真实 iOS/Android 与弱网验收、录音延迟校准、Gemini 成本/限流监控、浏览器端到端测试、
+前端大组件拆分，以及服务器备份与数据保留策略。远程模型 Worker 和持久任务队列等真实并发需要时再部署。
 
 ## 数据与版本控制
 
