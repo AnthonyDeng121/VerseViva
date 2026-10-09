@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { summarizeTakeLyrics, type RecorderState } from "./audioTimeline";
+import {
+  estimateAnalysisProgress,
+  estimatePracticeAnalysisSeconds,
+  summarizeTakeLyrics,
+  type RecorderState,
+} from "./audioTimeline";
 import { MixTimeline } from "./MixTimeline";
 import { PracticeFeedback } from "./PracticeFeedback";
 
@@ -148,6 +153,8 @@ export function RecordingStudio({
   const [attempts, setAttempts] = useState<PracticeAttempt[]>([]);
   const [memory, setMemory] = useState<PracticeMemory | null>(null);
   const [analyzingTakeId, setAnalyzingTakeId] = useState<string | null>(null);
+  const [submissionMode, setSubmissionMode] = useState<"analyze-only" | "analyze-save" | null>(null);
+  const [analysisElapsedSeconds, setAnalysisElapsedSeconds] = useState(0);
   const [accompanimentVolume, setAccompanimentVolume] = useState(0.55);
   const [mixVoiceVolume, setMixVoiceVolume] = useState(1);
   const [previewVoiceVolume, setPreviewVoiceVolume] = useState(1);
@@ -296,6 +303,18 @@ export function RecordingStudio({
     if (accompanimentRef.current) accompanimentRef.current.volume = accompanimentVolume;
   }, [accompanimentVolume]);
 
+  useEffect(() => {
+    if (!analyzingTakeId) {
+      setAnalysisElapsedSeconds(0);
+      return;
+    }
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      setAnalysisElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1_000);
+    return () => window.clearInterval(timer);
+  }, [analyzingTakeId]);
+
   function resetPreview() {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
@@ -418,6 +437,7 @@ export function RecordingStudio({
     sourceRef.current?.pause();
     stopPlayback();
     setState("uploading");
+    setSubmissionMode(saveTake ? "analyze-save" : "analyze-only");
     setError(null);
     const selectedIds = Array.from(new Set(selectedOptions.flatMap((option) => option.sentenceIds)));
     const form = new FormData();
@@ -454,13 +474,17 @@ export function RecordingStudio({
       }
       const created = await response.json() as RecordingTake;
       if (purpose === "guided_practice") {
-        await analyzeTake(created.takeId, saveTake);
+        const analysisSucceeded = await analyzeTake(created.takeId, saveTake);
         if (!saveTake) {
           const deleted = await fetch(
-            `/api/v1/takes/${created.takeId}?preserve_attempt=true`,
+            `/api/v1/takes/${created.takeId}?preserve_attempt=${analysisSucceeded}`,
             { method: "DELETE" },
           );
-          if (!deleted.ok) throw new Error("分析已完成，但临时录音清理失败");
+          if (!deleted.ok) throw new Error("临时录音清理失败");
+          if (!analysisSucceeded) {
+            setState("preview");
+            return;
+          }
           setSavedNotice("分析完成并已计入练唱记忆；录音未保存为正式音轨。");
         }
       } else {
@@ -476,6 +500,8 @@ export function RecordingStudio({
     } catch (reason) {
       setState("preview");
       setError(reason instanceof Error ? reason.message : "录音上传失败");
+    } finally {
+      setSubmissionMode(null);
     }
   }
 
@@ -516,8 +542,10 @@ export function RecordingStudio({
         );
         if (memoryResponse.ok) setMemory(await memoryResponse.json() as PracticeMemory);
       }
+      return true;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "本次练唱分析失败");
+      return false;
     } finally {
       setAnalyzingTakeId(null);
     }
@@ -793,13 +821,16 @@ export function RecordingStudio({
         {(state === "preview" || state === "uploading") && previewBlob && <>
           {purpose === "guided_practice" && <button type="button" className="secondary-button"
             disabled={state === "uploading"} onClick={() => void uploadRecording(false)}>
-            仅分析
+            {submissionMode === "analyze-only" && <span className="button-spinner" aria-hidden="true" />}
+            {submissionMode === "analyze-only" ? "正在分析…" : "仅分析"}
           </button>}
           <button type="button" className="primary-button analyzing-button"
             disabled={state === "uploading"} onClick={() => void uploadRecording(true)}>
-            {state === "uploading" && <span className="button-spinner" aria-hidden="true" />}
+            {submissionMode === "analyze-save" && <span className="button-spinner" aria-hidden="true" />}
             {state === "uploading"
-              ? purpose === "guided_practice" ? "正在上传并分析…" : "正在保存叠录…"
+              ? purpose === "guided_practice"
+                ? submissionMode === "analyze-save" ? "正在分析并保存…" : "分析并保存"
+                : "正在保存叠录…"
               : purpose === "guided_practice" ? "分析并保存" : "保存清唱叠录"}
           </button>
           <button type="button" className="secondary-button"
@@ -813,7 +844,17 @@ export function RecordingStudio({
       {savedNotice && <p className="recording-success">{savedNotice}</p>}
       {countdown !== null && <p className="recording-countdown" aria-live="assertive">{countdown}</p>}
       {state === "recording" && <p className="recording-live">● 正在录制；到片段结尾会自动停止</p>}
-      {analyzingTakeId && <p className="recording-live">正在分析，请保持页面打开…</p>}
+      {analyzingTakeId && (() => {
+        const estimatedSeconds = estimatePracticeAnalysisSeconds(selectionEnd - selectionStart, lane);
+        return <section className="recording-analysis-progress" aria-live="polite">
+        <strong>{submissionMode === "analyze-only" ? "正在分析练唱录音" : "正在分析并保存录音"}</strong>
+        <div className="analysis-progress-track"><span style={{
+          width: `${estimateAnalysisProgress(analysisElapsedSeconds, estimatedSeconds)}%`,
+        }} /></div>
+        <p>Gemini 正在逐句核查语言标记，已等待 {analysisElapsedSeconds} 秒。</p>
+        <small>预计约 {estimatedSeconds} 秒；长片段或 Plan B 可能需要 1–2 分钟。</small>
+      </section>;
+      })()}
 
       {purpose === "guided_practice" && (() => {
         const trackSlotId = `${lane}:${Array.from(new Set(selectedOptions.flatMap(

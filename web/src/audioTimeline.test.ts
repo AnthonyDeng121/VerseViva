@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   calculateTimelinePlacement,
   canTransitionRecorder,
+  estimateAnalysisProgress,
+  estimatePracticeAnalysisSeconds,
   lyricsForLane,
   normalizeLoopTime,
   offsetFromDrag,
@@ -62,6 +64,19 @@ describe("recorder state machine", () => {
   it("rejects impossible jumps", () => {
     expect(canTransitionRecorder("idle", "uploaded")).toBe(false);
     expect(canTransitionRecorder("recording", "uploading")).toBe(false);
+  });
+});
+
+describe("practice analysis estimate", () => {
+  it("scales the estimate with duration and secondary-lane work", () => {
+    expect(estimatePracticeAnalysisSeconds(2, "primary")).toBe(30);
+    expect(estimatePracticeAnalysisSeconds(20, "primary")).toBe(90);
+    expect(estimatePracticeAnalysisSeconds(20, "secondary")).toBe(120);
+  });
+
+  it("keeps estimated progress below completion until a result arrives", () => {
+    expect(estimateAnalysisProgress(0, 60)).toBe(8);
+    expect(estimateAnalysisProgress(120, 60)).toBe(92);
   });
 });
 

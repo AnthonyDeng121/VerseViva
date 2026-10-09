@@ -69,6 +69,18 @@ export function normalizeLoopTime(current: number, start: number, end: number) {
   return current;
 }
 
+export function estimatePracticeAnalysisSeconds(
+  durationSeconds: number,
+  lane: "primary" | "secondary",
+) {
+  const secondsPerAudioSecond = lane === "secondary" ? 5 : 3.5;
+  return Math.max(30, Math.ceil(Math.max(0, durationSeconds) * secondsPerAudioSecond + 20));
+}
+
+export function estimateAnalysisProgress(elapsedSeconds: number, estimatedSeconds: number) {
+  return Math.min(92, 8 + (Math.max(0, elapsedSeconds) / Math.max(1, estimatedSeconds)) * 84);
+}
+
 export function lyricsForLane(lyrics: string, lane: "primary" | "secondary") {
   const parenthetical = Array.from(lyrics.matchAll(/\(([^)]*)\)/g), (match) => match[1].trim())
     .filter(Boolean);
