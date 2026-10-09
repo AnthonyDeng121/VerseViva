@@ -68,6 +68,17 @@ def test_mobile_webm_sentence_take_uploads_and_restores(take_client) -> None:
     assert [item["takeId"] for item in restored.json()] == [payload["takeId"]]
 
 
+def test_take_upload_accepts_long_multi_sentence_slot_identifier(take_client) -> None:
+    client, _, song_id = take_client
+    long_slot_id = "primary:" + "+".join(f"sentence_{index:03d}" for index in range(1, 14))
+
+    response = _webm_upload(client, song_id, track_slot_id=long_slot_id)
+
+    assert len(long_slot_id) > 128
+    assert response.status_code == 201
+    assert response.json()["trackSlotId"] == long_slot_id
+
+
 def test_take_keeps_hidden_latency_compensation_separate_from_manual_offset(
     take_client,
 ) -> None:

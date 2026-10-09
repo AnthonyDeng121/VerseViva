@@ -75,9 +75,11 @@ def test_secondary_plan_b_uses_confirmed_marked_targets() -> None:
         ("But", "×"),
         ("then I", "‿"),
     }
-    prompt = _build_secondary_prompt(parts, targets)
+    prompt = _build_secondary_prompt(parts, targets, recording_start_seconds=parts[0].start_seconds)
     assert "没有具体 TARGET 的歌词不得自行补充判断" in prompt
     assert "不得据此否定 TARGET" in prompt
+    assert '"userAudioStartSeconds": 0' in prompt
+    assert "禁止把另一遍的正确发音复制为当前遍结论" in prompt
 
 
 def test_korean_owner_corrections_target_romanization() -> None:

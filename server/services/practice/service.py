@@ -38,7 +38,7 @@ async def analyze_practice_take(
     if (
         existing is not None
         and existing.status == PracticeStatus.analyzed
-        and existing.analysis_version == "practice-language-v5"
+        and existing.analysis_version == "practice-language-v6"
     ):
         return existing
 
@@ -143,6 +143,7 @@ async def analyze_practice_take(
                 reference_vocal_path,
                 secondary_parts,
                 secondary_targets,
+                take.selection_start_seconds,
             )
         else:
             reference_vocal_path = (
@@ -154,6 +155,7 @@ async def analyze_practice_take(
                 audio_path,
                 sentences,
                 reference_vocal_path if reference_vocal_path.is_file() else None,
+                take.selection_start_seconds,
             )
     except Exception as exc:
         attempt = PracticeAttempt(

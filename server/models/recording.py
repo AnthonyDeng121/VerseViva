@@ -39,7 +39,9 @@ class RecordingTake(RecordingModel):
     display_name: str = Field(default="未命名轨道", min_length=1, max_length=40)
     session_id: str = Field(min_length=1, max_length=128)
     song_id: str
-    track_slot_id: str = Field(min_length=1, max_length=128)
+    # A segment slot includes every selected sentence ID. Full-song Hero ranges can
+    # legitimately exceed the old 128-character limit (13 primary lines are ~180).
+    track_slot_id: str = Field(min_length=1, max_length=512)
     selection_type: RecordingSelectionType
     sentence_ids: list[str] = Field(min_length=1)
     vocal_part_id: str | None = None

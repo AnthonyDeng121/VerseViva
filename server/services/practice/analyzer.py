@@ -11,7 +11,7 @@ from pathlib import Path
 from server.models.practice import LanguageIssueType
 from server.models.song import LanguageHint, SongSentence, VocalPart
 from server.pipelines.language_coach import _is_retryable_gemini_error
-from server.services.practice.models import AcousticFindingBatch, FindingResult
+from server.services.practice.models import AcousticFinding, AcousticFindingBatch, FindingResult
 
 
 class GeminiPracticeAnalyzer:
@@ -28,12 +28,14 @@ class GeminiPracticeAnalyzer:
         audio_path: Path,
         sentences: list[SongSentence],
         reference_vocal_path: Path | None = None,
+        recording_start_seconds: float = 0,
     ) -> AcousticFindingBatch:
         return await asyncio.to_thread(
             self._analyze_sync,
             audio_path,
             sentences,
             reference_vocal_path,
+            recording_start_seconds,
         )
 
     async def analyze_secondary(
@@ -42,6 +44,7 @@ class GeminiPracticeAnalyzer:
         reference_vocal_path: Path,
         vocal_parts: list[VocalPart],
         targets: list[dict],
+        recording_start_seconds: float,
     ) -> AcousticFindingBatch:
         return await asyncio.to_thread(
             self._analyze_secondary_sync,
@@ -49,6 +52,7 @@ class GeminiPracticeAnalyzer:
             reference_vocal_path,
             vocal_parts,
             targets,
+            recording_start_seconds,
         )
 
     def _analyze_secondary_sync(
@@ -57,30 +61,66 @@ class GeminiPracticeAnalyzer:
         reference_vocal_path: Path,
         vocal_parts: list[VocalPart],
         targets: list[dict],
+        recording_start_seconds: float = 0,
+    ) -> AcousticFindingBatch:
+        findings: list[AcousticFinding] = []
+        with _gemini_compatible_audio(audio_path) as compatible_audio:
+            for part_batch in list(_chunks(vocal_parts, 3)) or [[]]:
+                part_ids = {part.id for part in part_batch}
+                target_batch = [item for item in targets if item["partId"] in part_ids]
+                start = min(
+                    (part.start_seconds for part in part_batch),
+                    default=recording_start_seconds,
+                )
+                end = max((part.end_seconds for part in part_batch), default=start)
+                duration = max(0.5, end - start)
+                with _audio_excerpt(
+                    compatible_audio, max(0, start - recording_start_seconds), duration
+                ) as user_excerpt, _audio_excerpt(
+                    reference_vocal_path, start, duration
+                ) as reference_excerpt:
+                    batch = self._analyze_secondary_batch(
+                        user_excerpt,
+                        reference_excerpt,
+                        part_batch,
+                        target_batch,
+                        start,
+                    )
+                if not batch.recording_usable:
+                    return batch
+                findings.extend(batch.findings)
+        return AcousticFindingBatch(recording_usable=True, findings=findings)
+
+    def _analyze_secondary_batch(
+        self,
+        audio_path: Path,
+        reference_vocal_path: Path,
+        vocal_parts: list[VocalPart],
+        targets: list[dict],
+        recording_start_seconds: float,
     ) -> AcousticFindingBatch:
         last_error: Exception | None = None
-        with _gemini_compatible_audio(audio_path) as compatible_audio:
-            for attempt in range(3):
-                try:
-                    batch = self._analyze_secondary_once(
-                        compatible_audio,
-                        reference_vocal_path,
-                        vocal_parts,
-                        targets,
-                        use_reference=attempt == 0,
-                    )
-                    if batch.recording_usable and (
-                        not batch.findings
-                        or all(item.result == FindingResult.uncertain for item in batch.findings)
-                    ):
-                        if attempt < 2:
-                            continue
-                    return batch
-                except Exception as exc:
-                    last_error = exc
-                    if attempt == 2 or not _is_retryable_gemini_error(exc):
-                        raise
-                    time.sleep(2 ** (attempt + 1))
+        for attempt in range(3):
+            try:
+                batch = self._analyze_secondary_once(
+                    audio_path,
+                    reference_vocal_path,
+                    vocal_parts,
+                    targets,
+                    recording_start_seconds,
+                    use_reference=attempt == 0,
+                )
+                if batch.recording_usable and (
+                    not batch.findings
+                    or all(item.result == FindingResult.uncertain for item in batch.findings)
+                ) and attempt < 2:
+                    continue
+                return batch
+            except Exception as exc:
+                last_error = exc
+                if attempt == 2 or not _is_retryable_gemini_error(exc):
+                    raise
+                time.sleep(2 ** (attempt + 1))
         raise RuntimeError("Gemini secondary practice analysis failed") from last_error
 
     def _analyze_sync(
@@ -88,31 +128,56 @@ class GeminiPracticeAnalyzer:
         audio_path: Path,
         sentences: list[SongSentence],
         reference_vocal_path: Path | None,
+        recording_start_seconds: float = 0,
+    ) -> AcousticFindingBatch:
+        findings: list[AcousticFinding] = []
+        with _gemini_compatible_audio(audio_path) as compatible_audio:
+            for sentence_batch in list(_chunks(sentences, 4)) or [[]]:
+                start = min(
+                    (item.start_seconds for item in sentence_batch),
+                    default=recording_start_seconds,
+                )
+                end = max((item.end_seconds for item in sentence_batch), default=start)
+                duration = max(0.5, end - start)
+                with _audio_excerpt(
+                    compatible_audio, max(0, start - recording_start_seconds), duration
+                ) as user_excerpt, _optional_audio_excerpt(
+                    reference_vocal_path, start, duration
+                ) as reference_excerpt:
+                    batch = self._analyze_primary_batch(
+                        user_excerpt, sentence_batch, reference_excerpt
+                    )
+                if not batch.recording_usable:
+                    return batch
+                findings.extend(batch.findings)
+        return AcousticFindingBatch(recording_usable=True, findings=findings)
+
+    def _analyze_primary_batch(
+        self,
+        audio_path: Path,
+        sentences: list[SongSentence],
+        reference_vocal_path: Path | None,
     ) -> AcousticFindingBatch:
         last_error: Exception | None = None
-        with _gemini_compatible_audio(audio_path) as compatible_audio:
-            for attempt in range(3):
-                try:
-                    batch = self._analyze_once(
-                        compatible_audio, sentences, reference_vocal_path
+        for attempt in range(3):
+            try:
+                batch = self._analyze_once(audio_path, sentences, reference_vocal_path)
+                if batch.recording_usable and batch.findings and all(
+                    finding.result == FindingResult.uncertain for finding in batch.findings
+                ):
+                    raise RuntimeError(
+                        "temporarily unavailable: Gemini returned no conclusive target judgments"
                     )
-                    if batch.recording_usable and batch.findings and all(
-                        finding.result.value == "uncertain" for finding in batch.findings
-                    ):
-                        raise RuntimeError(
-                            "temporarily unavailable: Gemini returned no conclusive "
-                            "target judgments"
-                        )
-                    if batch.recording_usable and not batch.findings:
-                        raise RuntimeError(
-                            "temporarily unavailable: Gemini returned no target judgments"
-                        )
-                    return batch
-                except Exception as exc:
-                    last_error = exc
-                    if attempt == 2 or not _is_retryable_gemini_error(exc):
-                        raise
-                    time.sleep(2 ** (attempt + 1))
+                if batch.recording_usable and not batch.findings:
+                    raise RuntimeError(
+                        "temporarily unavailable: Gemini returned no target judgments"
+                    )
+                return batch
+            except Exception as exc:
+                last_error = exc
+                if attempt == 2 or not _is_retryable_gemini_error(exc):
+                    raise
+                time.sleep(2 ** (attempt + 1))
         raise RuntimeError("Gemini practice analysis failed") from last_error
 
     def _analyze_once(
@@ -183,6 +248,7 @@ class GeminiPracticeAnalyzer:
         reference_vocal_path: Path,
         vocal_parts: list[VocalPart],
         targets: list[dict],
+        recording_start_seconds: float = 0,
         *,
         use_reference: bool,
     ) -> AcousticFindingBatch:
@@ -225,6 +291,7 @@ class GeminiPracticeAnalyzer:
                         "text": _build_secondary_prompt(
                             vocal_parts,
                             targets,
+                            recording_start_seconds=recording_start_seconds,
                             reference_available=reference_audio is not None,
                         ),
                     },
@@ -344,6 +411,49 @@ def _gemini_compatible_audio(audio_path: Path) -> Iterator[Path]:
         yield converted
 
 
+@contextmanager
+def _audio_excerpt(
+    audio_path: Path,
+    start_seconds: float,
+    duration_seconds: float,
+) -> Iterator[Path]:
+    """Give Gemini only the relevant time window so repeated lyrics cannot bleed across parts."""
+    if not audio_path.is_file():
+        yield audio_path
+        return
+    with tempfile.TemporaryDirectory(prefix="verseviva-practice-clip-") as directory:
+        excerpt = Path(directory) / "excerpt.mp3"
+        result = subprocess.run(
+            [
+                "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                "-ss", f"{max(0, start_seconds):.3f}", "-i", str(audio_path),
+                "-t", f"{max(0.5, duration_seconds):.3f}",
+                "-ac", "1", "-ar", "16000", "-b:a", "64k", str(excerpt),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+        if result.returncode != 0 or not excerpt.is_file() or excerpt.stat().st_size == 0:
+            detail = result.stderr.strip()[-500:]
+            raise RuntimeError(f"练唱音频分段失败：{detail}")
+        yield excerpt
+
+
+@contextmanager
+def _optional_audio_excerpt(
+    audio_path: Path | None,
+    start_seconds: float,
+    duration_seconds: float,
+) -> Iterator[Path | None]:
+    if audio_path is None:
+        yield None
+        return
+    with _audio_excerpt(audio_path, start_seconds, duration_seconds) as excerpt:
+        yield excerpt
+
+
 def _build_prompt(sentences: list[SongSentence]) -> str:
     targets = []
     for sentence in sentences:
@@ -434,6 +544,7 @@ def _build_secondary_prompt(
     vocal_parts: list[VocalPart],
     targets: list[dict],
     *,
+    recording_start_seconds: float = 0,
     reference_available: bool = True,
 ) -> str:
     audio_description = (
@@ -448,6 +559,8 @@ def _build_secondary_prompt(
             "lyrics": part.lyrics,
             "referenceStartSeconds": part.start_seconds,
             "referenceEndSeconds": part.end_seconds,
+            "userAudioStartSeconds": max(0, part.start_seconds - recording_start_seconds),
+            "userAudioEndSeconds": max(0, part.end_seconds - recording_start_seconds),
         }
         for part in vocal_parts
     ]
@@ -474,9 +587,16 @@ identical_consonants_separated 检查用户是否把 └┘ 所表示的二合�
   不得仅以“缺少参考音”为由把全部项目返回 uncertain。
 - 用户录音从所选第一条次轨开始，后续每条次轨按各自 referenceStartSeconds 相对排列；不得只核查
   第一条，也不得把某条次轨错配到另一条的参考区间。
+- 每条编排的 userAudioStartSeconds/userAudioEndSeconds 是它在用户录音中的核查区间；重复歌词也必须
+  按 partId 和这个区间逐条判断，禁止把另一遍的正确发音复制为当前遍结论。
 - issue_detected 只用于参考和用户之间清楚可听的语言动作差异，issueType 必须匹配 hintId。
 - reference_matched 表示该类差异没有出现；uncertain 表示单项无法判断。
 - 必须为每个 TARGET 恰好返回一次，才能与该次轨近期练习进行同目标比较。
 - 最多返回 3 个 issue_detected；问题不足时不得凑数。
 - audibleEvidence 只用简短中文描述实际听感，不得编造频谱、舌位或波形证据。
 """.strip()
+
+
+def _chunks(items: list, size: int) -> Iterator[list]:
+    for index in range(0, len(items), size):
+        yield items[index:index + size]

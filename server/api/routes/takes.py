@@ -351,7 +351,7 @@ async def start_take_analysis(take_id: str, force: bool = Query(default=False)) 
     if take.purpose == TakePurpose.free_overdub:
         raise HTTPException(status_code=409, detail="清唱叠录不参与演唱分析或长期记忆")
     existing = PracticeStore(settings.data_dir).get_for_take(take_id)
-    if existing is not None and existing.analysis_version == "practice-language-v5" and not force:
+    if existing is not None and existing.analysis_version == "practice-language-v6" and not force:
         return {"takeId": take_id, "status": "complete"}
     running = ANALYSIS_TASKS.get(take_id)
     if running is None or running.done():

@@ -289,7 +289,6 @@ audio { width: 100%; }
 .cancel-recording-button { flex-basis: 100%; }
 .analyzing-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 .button-spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.45); border-top-color: #fff; border-radius: 50%; animation: button-spin .75s linear infinite; }
-.secondary-button .button-spinner { border-color: rgba(14,143,121,.25); border-top-color: #0e8f79; }
 @keyframes button-spin { to { transform: rotate(360deg); } }
 .recording-analysis-progress { display: grid; gap: 8px; margin: 12px 0; padding: 14px; border: 1px solid rgba(14,159,134,.24); border-radius: 14px; background: #edf8f5; }
 .recording-analysis-progress strong { color: #0c7463; font-size: 14px; }
