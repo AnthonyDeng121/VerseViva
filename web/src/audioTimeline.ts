@@ -81,6 +81,15 @@ export function estimateAnalysisProgress(elapsedSeconds: number, estimatedSecond
   return Math.min(92, 8 + (Math.max(0, elapsedSeconds) / Math.max(1, estimatedSeconds)) * 84);
 }
 
+export function buildTrackSlotId(
+  lane: "primary" | "secondary",
+  sentenceIds: string[],
+) {
+  const uniqueIds = Array.from(new Set(sentenceIds));
+  if (uniqueIds.length === 0) return `${lane}:range:none:none:0`;
+  return `${lane}:range:${uniqueIds[0]}:${uniqueIds.at(-1)}:${uniqueIds.length}`;
+}
+
 export function lyricsForLane(lyrics: string, lane: "primary" | "secondary") {
   const parenthetical = Array.from(lyrics.matchAll(/\(([^)]*)\)/g), (match) => match[1].trim())
     .filter(Boolean);

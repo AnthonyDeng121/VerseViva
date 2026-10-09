@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildTrackSlotId,
   calculateTimelinePlacement,
   canTransitionRecorder,
   estimateAnalysisProgress,
@@ -77,6 +78,20 @@ describe("practice analysis estimate", () => {
   it("keeps estimated progress below completion until a result arrives", () => {
     expect(estimateAnalysisProgress(0, 60)).toBe(8);
     expect(estimateAnalysisProgress(120, 60)).toBe(92);
+  });
+});
+
+describe("track slot identifiers", () => {
+  it("uses the same bounded format for short selections", () => {
+    expect(buildTrackSlotId("primary", ["sentence_001", "sentence_002"]))
+      .toBe("primary:range:sentence_001:sentence_002:2");
+  });
+
+  it("uses a bounded deterministic identifier for a full song", () => {
+    const ids = Array.from({ length: 200 }, (_, index) => `sentence_${index + 1}`);
+    const slotId = buildTrackSlotId("primary", ids);
+    expect(slotId).toBe("primary:range:sentence_1:sentence_200:200");
+    expect(slotId.length).toBeLessThan(128);
   });
 });
 

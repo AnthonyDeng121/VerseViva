@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  buildTrackSlotId,
   estimateAnalysisProgress,
   estimatePracticeAnalysisSeconds,
   summarizeTakeLyrics,
@@ -449,7 +450,7 @@ export function RecordingStudio({
     form.set("session_id", sessionId);
     form.set(
       "track_slot_id",
-      `${lane}:${selectedIds.join("+")}`,
+      buildTrackSlotId(lane, selectedIds),
     );
     form.set("selection_type", selectionType);
     form.set("sentence_ids", JSON.stringify(selectedIds));
@@ -859,9 +860,10 @@ export function RecordingStudio({
       })()}
 
       {purpose === "guided_practice" && (() => {
-        const trackSlotId = `${lane}:${Array.from(new Set(selectedOptions.flatMap(
-          (option) => option.sentenceIds,
-        ))).join("+")}`;
+        const trackSlotId = buildTrackSlotId(
+          lane,
+          selectedOptions.flatMap((option) => option.sentenceIds),
+        );
         const attempt = [...attempts].reverse().find((item) => item.trackSlotId === trackSlotId);
         return attempt
           ? <PracticeFeedback attempt={attempt} memory={memory} sentences={sentences} />
