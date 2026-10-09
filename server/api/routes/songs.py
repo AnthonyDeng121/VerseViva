@@ -1,7 +1,7 @@
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse
 
 from server.config import get_settings
@@ -34,7 +34,7 @@ def has_expected_audio_signature(suffix: str, header: bytes) -> bool:
 
 @router.post("/analyze", response_model=AnalysisJob, status_code=status.HTTP_202_ACCEPTED)
 async def analyze_song(
-    background_tasks: BackgroundTasks,
+    request: Request,
     audio: UploadFile = File(...),  # noqa: B008
     title: str = Form(...),
     artist: str = Form(...),
@@ -98,10 +98,10 @@ async def analyze_song(
     if lyrics and lyrics.strip():
         (input_dir / "lyrics.txt").write_text(lyrics.strip(), encoding="utf-8")
     if settings.auto_run_analysis_pipeline:
-        background_tasks.add_task(
-            build_default_pipeline(settings).run,
+        await request.app.state.analysis_queue.enqueue(
             job.job_id,
             destination,
+            build_default_pipeline(settings).run,
         )
     return job
 
@@ -141,7 +141,7 @@ async def get_analysis_job(job_id: str) -> AnalysisJob:
     response_model=AnalysisJob,
     status_code=status.HTTP_202_ACCEPTED,
 )
-async def retry_analysis_job(job_id: str, background_tasks: BackgroundTasks) -> AnalysisJob:
+async def retry_analysis_job(job_id: str, request: Request) -> AnalysisJob:
     settings = get_settings()
     store = JobStore(settings.data_dir)
     job = store.get(job_id)
@@ -164,10 +164,10 @@ async def retry_analysis_job(job_id: str, background_tasks: BackgroundTasks) -> 
     job.stage = previous_stage
     job.error = None
     store.save(job)
-    background_tasks.add_task(
-        build_default_pipeline(settings).run,
+    await request.app.state.analysis_queue.enqueue(
         job.job_id,
         sources[0],
+        build_default_pipeline(settings).run,
     )
     return job
 

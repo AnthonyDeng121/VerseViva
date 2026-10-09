@@ -9,17 +9,25 @@ from starlette.responses import Response
 
 from server.api.router import api_router
 from server.config import get_settings
+from server.services.analysis_queue import AnalysisTaskQueue
 from server.storage.job_store import JobStore
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
+async def lifespan(application: FastAPI):
     settings = get_settings()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     (settings.data_dir / "jobs").mkdir(exist_ok=True)
     (settings.data_dir / "songs").mkdir(exist_ok=True)
-    JobStore(settings.data_dir).recover_interrupted_jobs()
-    yield
+    job_store = JobStore(settings.data_dir)
+    job_store.recover_interrupted_jobs()
+    analysis_queue = AnalysisTaskQueue(job_store)
+    analysis_queue.start()
+    application.state.analysis_queue = analysis_queue
+    try:
+        yield
+    finally:
+        await analysis_queue.stop()
 
 
 settings = get_settings()

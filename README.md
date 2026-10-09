@@ -76,6 +76,8 @@ LRCLIB 默认启用且不需要 API Key。可通过 `VERSEVIVA_LYRICS_PROVIDER=d
 
 分析任务支持断点恢复。Demucs、WhisperX、LRCLIB 和语言模型的完整产物会保存在对应 job 目录；失败后可在前端查看真实阶段与错误详情，并点击“从失败处重试”。重试会校验已有产物的存在性和非空完整性，只重新执行缺失或未成功的阶段。Gemini 的 `429` / `5xx` / 超时等短暂错误会先自动退避重试，仍失败才转为可手动恢复状态。
 
+歌曲上传进入单 FastAPI 进程内的 FIFO 分析队列。当前 Docker 只启动一个 Uvicorn worker，因此任意时刻最多运行一个 Demucs/WhisperX Pipeline，后续上传保持 `queued`，避免低配比赛服务器因多个 PyTorch 任务并发而耗尽内存。该队列不是跨进程队列；若未来增加 Uvicorn worker 或拆分多实例，必须先迁移到 Redis/Celery 等持久任务系统。
+
 ## 启动
 
 后端（WSL，仓库根目录）：
@@ -274,7 +276,7 @@ WhisperX 词级时间继续用于内部语言分析，但歌词播放界面只�
 日韩歌曲的标记只显示在罗马音行，详情卡继续显示原文、辅助读音与演唱提示。三首 Hero 的人工校正可通过
 `python scripts/curate_hero_hints.py` 幂等重放，校正后需重新构建 Hero 部署包。
 
-截至 2026-10-09，Demo 代码链路已经冻结：后端 115 项与前端 12 项测试通过，Ruff、ESLint、生产构建通过；
+截至 2026-10-09，Demo 代码链路已经冻结：后端 117 项与前端 12 项测试通过，Ruff、ESLint、生产构建通过；
 Hero ZIP 已在空数据目录完成恢复验收，三首 Profile、H5 入口与音频 Range 请求正常。代码审计未发现仍可稳定
 复现的核心链路阻塞。
 

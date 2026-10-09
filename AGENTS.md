@@ -81,6 +81,7 @@ Pipeline 每阶段记录实际/估算耗时、API 调用次数、缓存命中和
 - 次轨多句分析必须覆盖所选的全部 Vocal Part；每条次轨起点锚定对应主轨句首。`lyrics_provider` 的确定歌词和人工时间锚点不可被 Gemini 以 stem 分离困难为由推翻。
 - 次轨 Gemini 目标必须来自 Song Profile 中已有的具体 `×`、`‿`、`└─┘` 标记，不得按问题类型机械补齐；混合参考导致全部 `uncertain` 时，Plan B 只发送用户录音和确定目标直接核查。
 - 前端通过短请求启动 Practice 后台任务并轮询 Attempt，不得用单个 20–90 秒 HTTP 请求等待 Gemini；任务消失时明确提示中断并保留重分析入口。
+- 歌曲 Demucs/WhisperX Pipeline 使用单 FastAPI 进程内的 FIFO 队列，任意时刻只运行一个重型歌曲分析任务；当前 Docker 固定单 Uvicorn worker。扩展为多 API 进程前必须迁移到跨进程持久任务队列，不得误以为进程内队列能限制多进程总并发。
 - Practice 等待界面按“仅分析”和“分析并保存”分别显示按钮状态、已等待秒数和基于录音时长的粗略预估；预估不是模型承诺，完成前进度不得显示 100%。
 - 较长练唱按少量句子/次轨编排分批送入 Gemini；次轨提示必须包含相对于用户录音起点的核查区间，避免重复歌词跨段套用结论。用户界面不得出现 Plan B 等内部实现名。
 - Take 的 `track_slot_id` 统一使用 lane、起始句、结束句与句数构成的固定长度确定性标识，仅供内部识别相同练习范围；不得因13句或整首歌的句数增加而在上传阶段失败。
@@ -116,9 +117,9 @@ python scripts/hero_assets.py restore artifacts/verseviva-hero-assets.zip --data
 
 ## 6. Demo 冻结结论与复赛优化
 
-当前 Demo 代码链路已定型：歌曲上传与恢复、三首 Hero、语言技巧展示、主/次轨录音、Gemini
+当前 Demo 代码链路已定型：歌曲上传与恢复、单并发歌曲分析队列、三首 Hero、语言技巧展示、主/次轨录音、Gemini
 练唱分析、Attempt/Memory、多 Take 对齐混音与 MP3 导出均已有实现和回归覆盖。Hero 部署包已通过
-空数据目录恢复验收；冻结检查为后端 115 项、前端 12 项全绿，Ruff、ESLint 和生产构建通过。
+空数据目录恢复验收；冻结检查为后端 117 项、前端 12 项全绿，Ruff、ESLint 和生产构建通过。
 
 部署前置条件不是待开发功能：必须填写生产环境 Gemini Key（GLM Key 可选）、用
 `docker compose --env-file .env.production` 启动、恢复 Hero ZIP、挂载
