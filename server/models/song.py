@@ -59,6 +59,7 @@ class AnalysisJob(BaseModel):
     title: str
     artist: str | None = None
     has_lyrics: bool
+    session_id: str | None = None
     attempt_count: int = Field(default=0, ge=0)
     error: AnalysisError | None = None
     warnings: list[AnalysisWarning] = Field(default_factory=list)

@@ -2,3 +2,7 @@
     encode zstd gzip
     reverse_proxy app:8000
 }
+
+verseviva.top {
+    redir https://www.verseviva.top{uri} permanent
+}

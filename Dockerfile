@@ -26,8 +26,14 @@ COPY scripts ./scripts
 RUN python -m pip install --upgrade pip setuptools wheel \
     && python -m pip install . \
     && python -m venv /opt/verseviva/demucs \
+    && /opt/verseviva/demucs/bin/pip install \
+      --index-url https://download.pytorch.org/whl/cpu \
+      torch==2.14.1 \
     && /opt/verseviva/demucs/bin/pip install -r requirements-demucs.txt \
     && python -m venv /opt/verseviva/whisperx \
+    && /opt/verseviva/whisperx/bin/pip install \
+      --index-url https://download.pytorch.org/whl/cpu \
+      torch==2.8.0 torchaudio==2.8.0 torchvision==0.23.0 \
     && /opt/verseviva/whisperx/bin/pip install -r requirements-whisperx.txt
 
 COPY --from=web-builder /app/web/dist /app/web/dist

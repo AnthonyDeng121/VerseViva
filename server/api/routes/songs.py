@@ -7,11 +7,17 @@ from fastapi.responses import FileResponse
 from server.config import get_settings
 from server.models.song import AnalysisJob, AnalysisStage, AnalysisStatus, SongProfile
 from server.pipelines.song_analysis import build_default_pipeline
+from server.services.anonymous_session import session_id
 from server.services.language import add_pronunciation_guides
 from server.storage.job_store import JobStore
 from server.storage.profile_store import ProfileStore
 
 router = APIRouter()
+PUBLIC_HERO_SONG_IDS = {
+    "song_00000000000000000000000000000003",
+    "song_00000000000000000000000000000004",
+    "song_00000000000000000000000000000005",
+}
 CHUNK_SIZE = 1024 * 1024
 ALLOWED_CONTENT_TYPES = {
     ".mp3": {"audio/mpeg", "audio/mp3", "application/octet-stream"},
@@ -93,6 +99,7 @@ async def analyze_song(
         title=inferred_title,
         artist=inferred_artist,
         has_lyrics=bool(lyrics and lyrics.strip()),
+        session_id=session_id(request),
     )
     JobStore(settings.data_dir).save(job)
     if lyrics and lyrics.strip():
@@ -121,17 +128,17 @@ def _infer_song_identity(
 
 
 @router.get("/jobs/latest", response_model=AnalysisJob)
-async def get_latest_analysis_job() -> AnalysisJob:
-    job = JobStore(get_settings().data_dir).latest()
+async def get_latest_analysis_job(request: Request) -> AnalysisJob:
+    job = JobStore(get_settings().data_dir).latest(session_id(request))
     if job is None:
         raise HTTPException(status_code=404, detail="No analysis jobs found")
     return job
 
 
 @router.get("/jobs/{job_id}", response_model=AnalysisJob)
-async def get_analysis_job(job_id: str) -> AnalysisJob:
+async def get_analysis_job(job_id: str, request: Request) -> AnalysisJob:
     job = JobStore(get_settings().data_dir).get(job_id)
-    if job is None:
+    if job is None or job.session_id != session_id(request):
         raise HTTPException(status_code=404, detail="Analysis job not found")
     return job
 
@@ -145,7 +152,7 @@ async def retry_analysis_job(job_id: str, request: Request) -> AnalysisJob:
     settings = get_settings()
     store = JobStore(settings.data_dir)
     job = store.get(job_id)
-    if job is None:
+    if job is None or job.session_id != session_id(request):
         raise HTTPException(status_code=404, detail="Analysis job not found")
     if job.status != AnalysisStatus.failed:
         raise HTTPException(status_code=409, detail="Only failed analysis jobs can be retried")
@@ -173,7 +180,8 @@ async def retry_analysis_job(job_id: str, request: Request) -> AnalysisJob:
 
 
 @router.get("/{song_id}", response_model=SongProfile)
-async def get_song_profile(song_id: str) -> SongProfile:
+async def get_song_profile(song_id: str, request: Request) -> SongProfile:
+    _require_song_access(song_id, request)
     store = ProfileStore(get_settings().data_dir)
     profile = store.get(song_id)
     if profile is None:
@@ -190,7 +198,8 @@ async def get_song_profile(song_id: str) -> SongProfile:
 
 
 @router.get("/{song_id}/audio/{asset}", response_class=FileResponse)
-async def get_song_audio(song_id: str, asset: str) -> FileResponse:
+async def get_song_audio(song_id: str, asset: str, request: Request) -> FileResponse:
+    _require_song_access(song_id, request)
     settings = get_settings()
     profile = ProfileStore(settings.data_dir).get(song_id)
     if profile is None:
@@ -211,3 +220,11 @@ async def get_song_audio(song_id: str, asset: str) -> FileResponse:
     if not source.is_file():
         raise HTTPException(status_code=404, detail="Audio asset not found")
     return FileResponse(source)
+
+
+def _require_song_access(song_id: str, request: Request) -> None:
+    if song_id in PUBLIC_HERO_SONG_IDS:
+        return
+    settings = get_settings()
+    if not JobStore(settings.data_dir).owns_song(song_id, session_id(request)):
+        raise HTTPException(status_code=404, detail="Song profile not found")

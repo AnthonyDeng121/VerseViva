@@ -138,18 +138,31 @@ def test_practice_replace_only_supersedes_current_session_track(take_client) -> 
     client, _, song_id = take_client
     first = _webm_upload(client, song_id).json()
     second = _webm_upload(client, song_id).json()
+    first_session_cookie = client.cookies.get("verseviva_session")
+    client.cookies.clear()
     other_session = _webm_upload(
         client,
         song_id,
         session_id="session_mobile_02",
     ).json()
 
+    assert client.get(first["audioUrl"]).status_code == 404
+    cross_session_patch = client.patch(
+        first["audioUrl"].removesuffix("/audio"), json={"muted": True}
+    )
+    assert cross_session_patch.status_code == 404
+    assert client.delete(first["audioUrl"].removesuffix("/audio")).status_code == 404
+    forged = client.get(
+        f"/api/v1/songs/{song_id}/takes?session_id={first['sessionId']}"
+    ).json()
+    assert [item["takeId"] for item in forged] == [other_session["takeId"]]
+    client.cookies.set("verseviva_session", first_session_cookie)
     takes = client.get(f"/api/v1/songs/{song_id}/takes").json()
     by_id = {take["takeId"]: take for take in takes}
     assert by_id[first["takeId"]]["isCurrent"] is False
     assert by_id[first["takeId"]]["supersededByTakeId"] == second["takeId"]
     assert by_id[second["takeId"]]["isCurrent"] is True
-    assert by_id[other_session["takeId"]]["isCurrent"] is True
+    assert other_session["takeId"] not in by_id
     assert client.get(first["audioUrl"]).status_code == 200
 
 

@@ -37,24 +37,34 @@ class JobStore:
             return None
         return AnalysisJob.model_validate_json(source.read_text(encoding="utf-8"))
 
-    def latest(self) -> AnalysisJob | None:
+    def latest(self, session_id: str | None = None) -> AnalysisJob | None:
         latest_pointer = self.jobs_dir / "latest-job-id"
         if latest_pointer.is_file():
             try:
                 pointed = self.get(latest_pointer.read_text(encoding="utf-8").strip())
             except OSError:
                 pointed = None
-            if pointed is not None:
+            if pointed is not None and (session_id is None or pointed.session_id == session_id):
                 return pointed
         jobs: list[AnalysisJob] = []
         for source in self.jobs_dir.glob("job_*/job.json"):
             try:
-                jobs.append(
-                    AnalysisJob.model_validate_json(source.read_text(encoding="utf-8"))
-                )
+                job = AnalysisJob.model_validate_json(source.read_text(encoding="utf-8"))
+                if session_id is None or job.session_id == session_id:
+                    jobs.append(job)
             except (OSError, ValueError):
                 continue
         return max(jobs, key=lambda job: job.updated_at, default=None)
+
+    def owns_song(self, song_id: str, session_id: str) -> bool:
+        for source in self.jobs_dir.glob("job_*/job.json"):
+            try:
+                job = AnalysisJob.model_validate_json(source.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if job.song_id == song_id and job.session_id == session_id:
+                return True
+        return False
 
     def recover_interrupted_jobs(self) -> list[AnalysisJob]:
         """Turn states orphaned by a worker restart into explicit retryable failures."""

@@ -2,13 +2,16 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     app_name: str = "VerseViva API"
-    environment: str = "development"
+    environment: str = Field(
+        default="development",
+        validation_alias=AliasChoices("VERSEVIVA_ENVIRONMENT", "VERSEVIVA_ENV"),
+    )
     api_prefix: str = "/api/v1"
     data_dir: Path = Path("data")
     web_dist_dir: Path = Path("web/dist")

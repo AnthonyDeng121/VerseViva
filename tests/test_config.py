@@ -4,6 +4,7 @@ from server.config import Settings
 
 
 def test_settings_use_verseviva_environment_names(monkeypatch) -> None:
+    monkeypatch.setenv("VERSEVIVA_ENV", "production")
     monkeypatch.setenv("VERSEVIVA_DATA_DIR", "./data")
     monkeypatch.setenv(
         "VERSEVIVA_CORS_ORIGINS",
@@ -14,6 +15,7 @@ def test_settings_use_verseviva_environment_names(monkeypatch) -> None:
     settings = Settings(_env_file=None)
 
     assert settings.data_dir == Path("data")
+    assert settings.environment == "production"
     assert settings.cors_origins == [
         "http://localhost:5173",
         "http://127.0.0.1:5173",

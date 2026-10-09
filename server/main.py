@@ -10,6 +10,7 @@ from starlette.responses import Response
 from server.api.router import api_router
 from server.config import get_settings
 from server.services.analysis_queue import AnalysisTaskQueue
+from server.services.anonymous_session import AnonymousSessionMiddleware
 from server.storage.job_store import JobStore
 
 
@@ -32,6 +33,11 @@ async def lifespan(application: FastAPI):
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
+app.add_middleware(
+    AnonymousSessionMiddleware,
+    data_dir=settings.data_dir,
+    secure=settings.environment == "production",
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,

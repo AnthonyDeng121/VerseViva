@@ -191,7 +191,7 @@ docker compose --env-file .env.production up --build -d
 docker compose --env-file .env.production -f compose.yaml -f compose.tunnel.yaml up --build
 ```
 
-完整模型镜像包含 Demucs、WhisperX 和 ffmpeg，因此第一次构建时间和镜像体积仍然较大。Hero Song 应继续使用预缓存；临时上传应限制为短片段。
+完整模型镜像包含 Demucs、WhisperX 和 ffmpeg，因此第一次构建时间和镜像体积仍然较大。Dockerfile 会先从 PyTorch 官方 CPU 仓库安装 CPU-only Torch/Torchaudio/Torchvision，避免纯 CPU 比赛服务器下载无用的 CUDA/NVIDIA 运行库。Hero Song 应继续使用预缓存；临时上传应限制为短片段。
 
 `VERSEVIVA_LANGUAGE_WORKER_URL` 与 `VERSEVIVA_LANGUAGE_WORKER_TOKEN` 已为后续独立 Gemini Worker 预留。当前版本尚未将 Gemini 请求改为远程 Worker；迁移时保持现有 LanguageObservation / VocalCueTiming Schema，不改变前端合同。
 
@@ -245,6 +245,12 @@ DELETE /api/v1/takes/{take_id}?preserve_attempt=...
 GET  /api/v1/songs/{song_id}/attempts?session_id=...
 GET  /api/v1/practice/memory?session_id=...
 ```
+
+公网版本会在首次请求时签发带签名的匿名会话 Cookie（`HttpOnly`、`Secure`、
+`SameSite=Lax`）。Hero Profile 和参考音频保持公共只读；用户上传歌曲的 Job/Profile、Take、
+录音、Attempt、Memory、混音与删除操作均按 Cookie 会话隔离，跨会话统一返回 404。URL 或表单中的
+`session_id` 只为兼容现有前端请求形状，后端不会将其用作身份或授权依据。清理 Cookie、无痕窗口、
+更换浏览器或设备都会创建新的匿名会话，因此不会恢复原会话记录。
 
 Take 上传接受浏览器常见的 WebM、MP4/M4A、OGG 和 WAV。Hero 网页播放与下载优先使用 MP3，
 内部仍保留 WAV 母文件用于音频分析和降级，不应把所有内部音频描述成 MP3。

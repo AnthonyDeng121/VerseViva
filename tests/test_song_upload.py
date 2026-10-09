@@ -47,6 +47,14 @@ def test_upload_creates_independent_ids_and_isolated_task_directory(upload_clien
     assert query_response.status_code == 200
     assert query_response.json() == payload
 
+    original_cookie = client.cookies.get("verseviva_session")
+    assert original_cookie is not None
+    assert "HttpOnly" in response.headers["set-cookie"]
+    client.cookies.clear()
+    assert client.get(f"/api/v1/songs/jobs/{payload['job_id']}").status_code == 404
+    client.cookies.set("verseviva_session", original_cookie)
+    assert client.get(f"/api/v1/songs/jobs/{payload['job_id']}").status_code == 200
+
 
 @pytest.mark.parametrize(
     ("filename", "content", "content_type", "expected_status"),
@@ -245,7 +253,7 @@ def test_failed_job_can_retry_with_original_audio(
 
 def test_song_profile_query_returns_saved_profile(upload_client) -> None:
     client, data_dir = upload_client
-    song_id = "song_0123456789abcdef0123456789abcdef"
+    song_id = "song_00000000000000000000000000000003"
     profile = make_profile().model_copy(update={"song_id": song_id})
     ProfileStore(data_dir).save(profile)
 
@@ -269,7 +277,7 @@ def test_missing_or_malformed_song_profile_returns_404(upload_client) -> None:
 
 def test_song_audio_assets_are_served_only_for_existing_profiles(upload_client) -> None:
     client, data_dir = upload_client
-    song_id = "song_0123456789abcdef0123456789abcdef"
+    song_id = "song_00000000000000000000000000000003"
     ProfileStore(data_dir).save(make_profile().model_copy(update={"song_id": song_id}))
     audio_dir = data_dir / "songs" / song_id / "audio"
     audio_dir.mkdir(parents=True)

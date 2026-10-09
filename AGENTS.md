@@ -87,6 +87,7 @@ Pipeline 每阶段记录实际/估算耗时、API 调用次数、缓存命中和
 - Take 的 `track_slot_id` 统一使用 lane、起始句、结束句与句数构成的固定长度确定性标识，仅供内部识别相同练习范围；不得因13句或整首歌的句数增加而在上传阶段失败。
 - `practice-language-v6` 将长录音按最多4句主轨或3段次轨分批，并按用户录音相对时间窗同步裁切用户音频与参考音频，避免长请求过载和重复副轨歌词串段。
 - 当前会话可导出 192 kbps MP3 整体混音；导出必须应用 Take 的 mute/gain、延迟补偿、手动偏移和整体增益。
+- 公网 Demo 使用后端签名的 HttpOnly、Secure、SameSite=Lax 匿名会话 Cookie；歌曲 Job、非 Hero Song、Take、录音、Attempt、Memory、混音和删除操作都按该会话隔离。客户端提交的 `session_id` 仅为旧接口兼容字段，不得作为授权依据；无归属的旧数据不得在生产环境公开。
 - 后端回归、Ruff、前端 test/lint/build 构成冻结检查。
 
 当前 Hero：
@@ -125,6 +126,9 @@ python scripts/hero_assets.py restore artifacts/verseviva-hero-assets.zip --data
 `docker compose --env-file .env.production` 启动、恢复 Hero ZIP、挂载
 持久数据卷并配置固定域名/HTTPS。代码审计未发现仍可稳定复现的核心链路阻塞；真实设备、外部模型
 额度和云环境属于交付验收边界，不能由单元测试替代。
+
+当前比赛 Docker 运行于纯 CPU Linux，构建时必须先使用 PyTorch 官方 CPU index 安装两套隔离环境的
+Torch 依赖，避免默认 PyPI 解析并下载无用的 CUDA/NVIDIA 运行库。
 
 复赛阶段优化：
 

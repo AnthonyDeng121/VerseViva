@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
@@ -17,6 +17,7 @@ from server.models.recording import (
     TakePurpose,
     TakeSaveMode,
 )
+from server.services.anonymous_session import session_id as request_session_id
 from server.services.mixdown import render_mixdown
 from server.services.practice.service import analyze_practice_take
 from server.storage.practice_store import PracticeStore
@@ -70,6 +71,7 @@ def _parse_sentence_ids(value: str) -> list[str]:
     status_code=status.HTTP_201_CREATED,
 )
 async def upload_take(
+    request: Request,
     song_id: str,
     audio: UploadFile = File(...),  # noqa: B008
     session_id: str = Form(...),
@@ -87,6 +89,7 @@ async def upload_take(
     manual_offset_ms: float = Form(default=0),
 ) -> RecordingTake:
     settings = get_settings()
+    session_id = request_session_id(request)
     profile = ProfileStore(settings.data_dir).get(song_id)
     if profile is None:
         raise HTTPException(status_code=404, detail="Song profile not found")
@@ -198,17 +201,21 @@ async def upload_take(
 
 @router.get("/songs/{song_id}/takes", response_model=list[RecordingTake])
 async def list_song_takes(
+    request: Request,
     song_id: str,
     session_id: str | None = Query(default=None),
 ) -> list[RecordingTake]:
     settings = get_settings()
     if ProfileStore(settings.data_dir).get(song_id) is None:
         raise HTTPException(status_code=404, detail="Song profile not found")
-    return TakeStore(settings.data_dir).list_for_song(song_id, session_id=session_id)
+    return TakeStore(settings.data_dir).list_for_song(
+        song_id, session_id=request_session_id(request)
+    )
 
 
 @router.get("/songs/{song_id}/mixdown", response_class=FileResponse)
 async def download_song_mixdown(
+    request: Request,
     song_id: str,
     session_id: str = Query(...),
     accompaniment_volume: float = Query(default=0.55, ge=0, le=1),
@@ -223,7 +230,9 @@ async def download_song_mixdown(
         accompaniment = accompaniment.with_suffix(".wav")
     if not accompaniment.is_file():
         raise HTTPException(status_code=409, detail="当前歌曲没有可用伴奏")
-    takes = TakeStore(settings.data_dir).list_for_song(song_id, session_id=session_id)
+    takes = TakeStore(settings.data_dir).list_for_song(
+        song_id, session_id=request_session_id(request)
+    )
     current = [take for take in takes if take.is_current]
     if not current:
         raise HTTPException(status_code=409, detail="当前会话还没有可混音的录音")
@@ -260,19 +269,16 @@ async def download_song_mixdown(
 
 
 @router.get("/takes/{take_id}", response_model=RecordingTake)
-async def get_take(take_id: str) -> RecordingTake:
-    take = TakeStore(get_settings().data_dir).get(take_id)
-    if take is None:
-        raise HTTPException(status_code=404, detail="Recording Take not found")
-    return take
+async def get_take(take_id: str, request: Request) -> RecordingTake:
+    return _owned_take(take_id, request)
 
 
 @router.patch("/takes/{take_id}", response_model=RecordingTake)
-async def update_take(take_id: str, update: RecordingTakeUpdate) -> RecordingTake:
+async def update_take(
+    take_id: str, update: RecordingTakeUpdate, request: Request
+) -> RecordingTake:
     store = TakeStore(get_settings().data_dir)
-    take = store.get(take_id)
-    if take is None:
-        raise HTTPException(status_code=404, detail="Recording Take not found")
+    take = _owned_take(take_id, request)
     changes = update.model_dump(exclude_none=True)
     updated = take.model_copy(update=changes)
     store.save(updated)
@@ -281,10 +287,12 @@ async def update_take(take_id: str, update: RecordingTakeUpdate) -> RecordingTak
 
 @router.delete("/takes/{take_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_take(
+    request: Request,
     take_id: str,
     preserve_attempt: bool = Query(default=False),
 ) -> None:
     settings = get_settings()
+    _owned_take(take_id, request)
     take = TakeStore(settings.data_dir).delete(take_id)
     if take is None:
         raise HTTPException(status_code=404, detail="Recording Take not found")
@@ -297,11 +305,9 @@ async def delete_take(
 
 
 @router.get("/takes/{take_id}/audio", response_class=FileResponse)
-async def get_take_audio(take_id: str) -> FileResponse:
+async def get_take_audio(take_id: str, request: Request) -> FileResponse:
     settings = get_settings()
-    take = TakeStore(settings.data_dir).get(take_id)
-    if take is None:
-        raise HTTPException(status_code=404, detail="Recording Take not found")
+    take = _owned_take(take_id, request)
     source = settings.data_dir / "takes" / take.take_id / take.stored_filename
     if not source.is_file():
         raise HTTPException(status_code=404, detail="Recording audio not found")
@@ -309,11 +315,9 @@ async def get_take_audio(take_id: str) -> FileResponse:
 
 
 @router.post("/takes/{take_id}/analyze", response_model=PracticeAttempt)
-async def analyze_take(take_id: str) -> PracticeAttempt:
+async def analyze_take(take_id: str, request: Request) -> PracticeAttempt:
     settings = get_settings()
-    take = TakeStore(settings.data_dir).get(take_id)
-    if take is None:
-        raise HTTPException(status_code=404, detail="Recording Take not found")
+    take = _owned_take(take_id, request)
     if take.purpose == TakePurpose.free_overdub:
         raise HTTPException(
             status_code=409,
@@ -343,11 +347,11 @@ async def _run_take_analysis(take_id: str) -> None:
 
 
 @router.post("/takes/{take_id}/analysis-jobs", status_code=status.HTTP_202_ACCEPTED)
-async def start_take_analysis(take_id: str, force: bool = Query(default=False)) -> dict:
+async def start_take_analysis(
+    take_id: str, request: Request, force: bool = Query(default=False)
+) -> dict:
     settings = get_settings()
-    take = TakeStore(settings.data_dir).get(take_id)
-    if take is None:
-        raise HTTPException(status_code=404, detail="Recording Take not found")
+    take = _owned_take(take_id, request)
     if take.purpose == TakePurpose.free_overdub:
         raise HTTPException(status_code=409, detail="清唱叠录不参与演唱分析或长期记忆")
     existing = PracticeStore(settings.data_dir).get_for_take(take_id)
@@ -362,7 +366,8 @@ async def start_take_analysis(take_id: str, force: bool = Query(default=False)) 
 
 
 @router.get("/takes/{take_id}/attempt")
-async def get_take_attempt(take_id: str):
+async def get_take_attempt(take_id: str, request: Request):
+    _owned_take(take_id, request)
     attempt = PracticeStore(get_settings().data_dir).get_for_take(take_id)
     if attempt is not None:
         return attempt
@@ -373,15 +378,27 @@ async def get_take_attempt(take_id: str):
 
 @router.get("/songs/{song_id}/attempts", response_model=list[PracticeAttempt])
 async def list_practice_attempts(
+    request: Request,
     song_id: str,
     session_id: str = Query(...),
 ) -> list[PracticeAttempt]:
     settings = get_settings()
     if ProfileStore(settings.data_dir).get(song_id) is None:
         raise HTTPException(status_code=404, detail="Song profile not found")
-    return PracticeStore(settings.data_dir).list_for_session(session_id, song_id)
+    return PracticeStore(settings.data_dir).list_for_session(
+        request_session_id(request), song_id
+    )
 
 
 @router.get("/practice/memory", response_model=PracticeMemory)
-async def get_practice_memory(session_id: str = Query(...)) -> PracticeMemory:
-    return PracticeStore(get_settings().data_dir).memory(session_id)
+async def get_practice_memory(
+    request: Request, session_id: str = Query(...)
+) -> PracticeMemory:
+    return PracticeStore(get_settings().data_dir).memory(request_session_id(request))
+
+
+def _owned_take(take_id: str, request: Request) -> RecordingTake:
+    take = TakeStore(get_settings().data_dir).get(take_id)
+    if take is None or take.session_id != request_session_id(request):
+        raise HTTPException(status_code=404, detail="Recording Take not found")
+    return take
