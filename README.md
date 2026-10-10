@@ -193,6 +193,33 @@ docker compose --env-file .env.production -f compose.yaml -f compose.tunnel.yaml
 
 完整模型镜像包含 Demucs、WhisperX 和 ffmpeg，因此第一次构建时间和镜像体积仍然较大。Dockerfile 会先从 PyTorch 官方 CPU 仓库安装 CPU-only Torch/Torchaudio/Torchvision，避免纯 CPU 比赛服务器下载无用的 CUDA/NVIDIA 运行库。Hero Song 应继续使用预缓存；临时上传应限制为短片段。
 
+### 当前比赛部署（2026-10-10）
+
+- 正式链接：`https://verseviva.top`，跳转到 `https://www.verseviva.top`。
+- DNS A 记录：`verseviva.top` 与 `www.verseviva.top` 均指向 `43.161.219.71`。
+- 主机：腾讯云轻量应用服务器（中国香港），Ubuntu 24.04 LTS、x86_64、2 vCPU、约 8 GB RAM、80 GB 系统盘，并配置约 6 GB 额外 swap。
+- 入口：Caddy 自动管理 Let's Encrypt HTTPS，80/TCP 自动跳转 443/TCP；443/UDP 仅用于可选 HTTP/3。腾讯云防火墙必须保留 22/TCP、80/TCP、443/TCP 放行。
+- 运行方式：Docker Compose 单 Uvicorn worker；`app` 不直接发布 8000 端口，只通过 Caddy 同源提供 H5、API 与音频。
+- 数据：三首 Hero 已恢复到 `verseviva-data`；SQLite、Take 音频与匿名会话密钥均位于持久卷。Caddy 证书状态位于独立持久卷。
+- 镜像：完整 CPU 模型基础镜像约 6.51 GB。线上已验证健康接口、Hero Profile/音频、HTTPS 证书、HTTP 跳转和匿名会话隔离。
+- 恢复：会话隔离发布前已使用 SQLite backup API 留存数据库快照，并保留发布前镜像标签作为短期回滚点。不得把这些临时回滚点视为自动备份方案。
+
+本次会话隔离首次上线时，服务器下载 Python 包的速度一度只有约 50 KB/s，因此先以已经验证的完整
+镜像为基础增加 Python 代码覆盖层。2026-10-10 已从当前仓库完成自包含完整镜像重建、临时容器验收
+和生产切换；当前生产镜像不再依赖临时 `pre-*` 镜像标签，旧标签只作为短期回滚点保留。
+
+后续所说的“完整镜像重建”是指：使用已经把稳定系统/模型依赖层放在应用源码层之前的 Dockerfile，
+从当前仓库和锁定依赖重新执行正式 Docker 构建，生成一个不依赖临时 `pre-*` 镜像标签、自身即可迁移
+和恢复的 `verseviva-app` 镜像。它不要求每次禁用 Docker 缓存，也不要求重新运行三首 Hero Pipeline；
+Hero 仍从独立 ZIP 恢复。以后执行同类发布时仍需先验收健康接口、Hero、录音与会话隔离，再按保留策略删除旧覆盖层和回滚标签。
+
+本次完整构建后的重复构建实测约 2 秒，Demucs/WhisperX 模型依赖层、应用层与前端层均命中 Docker
+缓存。仅修改 `server/` 或 `scripts/` 时会重建较小的应用安装层，不会重新下载模型依赖；只有模型
+requirements、基础镜像或相关安装命令变化时才会使模型层失效。
+
+该公网实例当前适合受控比赛评审，不是已完成全部防滥用能力的公共 SaaS。大范围公开前仍需增加上传与
+Gemini 调用限频、每会话配额、监控告警、自动备份/恢复演练和隐私数据保留期清理。
+
 `VERSEVIVA_LANGUAGE_WORKER_URL` 与 `VERSEVIVA_LANGUAGE_WORKER_TOKEN` 已为后续独立 Gemini Worker 预留。当前版本尚未将 Gemini 请求改为远程 Worker；迁移时保持现有 LanguageObservation / VocalCueTiming Schema，不改变前端合同。
 
 ## 开发检查

@@ -20,11 +20,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY pyproject.toml requirements-*.txt ./
-COPY server ./server
-COPY scripts ./scripts
+COPY requirements-demucs.txt requirements-whisperx.txt ./
+
+# Keep the large, rarely changed model environments independent from application
+# source so ordinary backend edits can reuse this layer.
 RUN python -m pip install --upgrade pip setuptools wheel \
-    && python -m pip install . \
     && python -m venv /opt/verseviva/demucs \
     && /opt/verseviva/demucs/bin/pip install \
       --index-url https://download.pytorch.org/whl/cpu \
@@ -35,6 +35,11 @@ RUN python -m pip install --upgrade pip setuptools wheel \
       --index-url https://download.pytorch.org/whl/cpu \
       torch==2.8.0 torchaudio==2.8.0 torchvision==0.23.0 \
     && /opt/verseviva/whisperx/bin/pip install -r requirements-whisperx.txt
+
+COPY pyproject.toml ./
+COPY server ./server
+COPY scripts ./scripts
+RUN python -m pip install .
 
 COPY --from=web-builder /app/web/dist /app/web/dist
 RUN mkdir -p /app/data
