@@ -116,6 +116,7 @@ function getOrCreateSessionId(songId: string) {
 
 export function RecordingStudio({
   songId,
+  language,
   sentences,
   vocalParts,
   accompanimentUrl,
@@ -128,6 +129,7 @@ export function RecordingStudio({
   playbackStopToken,
 }: {
   songId: string;
+  language?: string | null;
   sentences: RecordingSentence[];
   vocalParts: RecordingVocalPart[];
   accompanimentUrl?: string | null;
@@ -142,7 +144,10 @@ export function RecordingStudio({
   const [startIndex, setStartIndex] = useState(0);
   const [endIndex, setEndIndex] = useState(0);
   const [lane, setLane] = useState<"primary" | "secondary">("primary");
-  const [purpose, setPurpose] = useState<"guided_practice" | "free_overdub">("guided_practice");
+  const languageAnalysisEnabled = language?.toLowerCase().split("-")[0] !== "zh";
+  const [purpose, setPurpose] = useState<"guided_practice" | "free_overdub">(
+    languageAnalysisEnabled ? "guided_practice" : "free_overdub",
+  );
   const [recordingReference, setRecordingReference] = useState<"accompaniment" | "source">("accompaniment");
   const [state, setState] = useState<RecorderState>("idle");
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -247,6 +252,10 @@ export function RecordingStudio({
   }, [accompanimentUrl, sourceUrl]);
 
   useEffect(() => { setStartIndex(0); setEndIndex(0); }, [lane, songId]);
+
+  useEffect(() => {
+    if (!languageAnalysisEnabled) setPurpose("free_overdub");
+  }, [languageAnalysisEnabled, songId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -701,19 +710,21 @@ export function RecordingStudio({
           onClick={() => setLane("secondary")}>次轨</button>
       </div>
 
-      <div className="recording-mode-switch purpose-switch" role="group" aria-label="录音用途">
+      {languageAnalysisEnabled && <div className="recording-mode-switch purpose-switch" role="group" aria-label="录音用途">
         <button type="button" className={purpose === "guided_practice" ? "active" : ""}
           onClick={() => setPurpose("guided_practice")}>分析</button>
         <button type="button" className={purpose === "free_overdub" ? "active" : ""}
           onClick={() => setPurpose("free_overdub")}>纯唱</button>
-      </div>
+      </div>}
       <div className="recording-mode-switch reference-switch" role="group" aria-label="录制参考音源">
         <button type="button" className={recordingReference === "accompaniment" ? "active" : ""}
           onClick={() => setRecordingReference("accompaniment")}>伴奏</button>
         <button type="button" className={recordingReference === "source" ? "active" : ""}
           onClick={() => setRecordingReference("source")}>原唱</button>
       </div></div>
-      <p className="recording-purpose-note">{purpose === "guided_practice"
+      <p className="recording-purpose-note">{!languageAnalysisEnabled
+        ? "中文歌曲无需语言与练唱分析；录音仍可保存为叠录音轨，并参与多轨回放和整体混音。"
+        : purpose === "guided_practice"
         ? "两种方式都会保存分析记忆；“仅分析”不会把录音保留为正式音轨。"
         : "自由选择句子并保存为叠录音轨，不分析，也不计入个人练唱记忆。"}</p>
 
@@ -927,7 +938,7 @@ export function RecordingStudio({
               onClick={() => patchTake(take.takeId, { muted: !take.muted }, true)}>
               {take.muted ? "🔇" : "🔊"}
             </button>
-            {take.purpose === "guided_practice" && <button type="button" className="secondary-button"
+            {languageAnalysisEnabled && take.purpose === "guided_practice" && <button type="button" className="secondary-button"
               disabled={analyzingTakeId === take.takeId}
               onClick={() => void analyzeTake(take.takeId, true, true)}>
               {analyzingTakeId === take.takeId ? "分析中…" : "重分析"}

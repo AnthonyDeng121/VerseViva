@@ -261,6 +261,41 @@ def test_pipeline_maps_audio_model_observation_into_profile_hint(tmp_path: Path)
     assert profile.analysis.language_analysis_provider == "fake-audio-llm"
 
 
+def test_chinese_song_skips_language_model_but_builds_profile(tmp_path: Path) -> None:
+    job, source, job_store, profile_store = make_job(tmp_path)
+    lyrics_path = source.parents[1] / "input" / "lyrics.txt"
+    lyrics_path.write_text("听见下雨的声音\n一滴滴清晰", encoding="utf-8")
+    coach = FakeLanguageCoach()
+    coach.called = False
+    original_analyze = coach.analyze
+
+    async def tracked_analyze(*args, **kwargs):
+        coach.called = True
+        return await original_analyze(*args, **kwargs)
+
+    coach.analyze = tracked_analyze
+
+    asyncio.run(
+        make_pipeline(job_store, profile_store, language_coach=coach).run(
+            job.job_id, source
+        )
+    )
+
+    completed = job_store.get(job.job_id)
+    profile = profile_store.get(job.song_id)
+    assert completed is not None
+    assert completed.status == AnalysisStatus.completed
+    assert AnalysisStage.analyzing_language not in {
+        runtime.stage for runtime in completed.stage_runtimes
+    }
+    assert coach.called is False
+    assert profile is not None
+    assert profile.language == "zh"
+    assert profile.analysis.language_analysis_provider == "skipped_chinese"
+    assert profile.analysis.language_analysis_model is None
+    assert all(not sentence.language_hints for sentence in profile.sentences)
+
+
 def test_pipeline_uses_lrclib_lyrics_and_records_provenance(tmp_path: Path) -> None:
     job, source, job_store, profile_store = make_job(tmp_path)
 

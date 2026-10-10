@@ -18,6 +18,7 @@ from server.models.recording import (
     TakeSaveMode,
 )
 from server.services.anonymous_session import session_id as request_session_id
+from server.services.language import supports_language_coaching
 from server.services.mixdown import render_mixdown
 from server.services.practice.service import analyze_practice_take
 from server.storage.practice_store import PracticeStore
@@ -326,6 +327,11 @@ async def analyze_take(take_id: str, request: Request) -> PracticeAttempt:
     profile = ProfileStore(settings.data_dir).get(take.song_id)
     if profile is None:
         raise HTTPException(status_code=404, detail="Song profile not found")
+    if not supports_language_coaching(profile.language):
+        raise HTTPException(
+            status_code=409,
+            detail="中文歌曲不进行语言现象或练唱分析，可使用纯唱录音与多轨混音",
+        )
     source = settings.data_dir / "takes" / take.take_id / take.stored_filename
     if not source.is_file():
         raise HTTPException(status_code=404, detail="Recording audio not found")
@@ -354,6 +360,14 @@ async def start_take_analysis(
     take = _owned_take(take_id, request)
     if take.purpose == TakePurpose.free_overdub:
         raise HTTPException(status_code=409, detail="清唱叠录不参与演唱分析或长期记忆")
+    profile = ProfileStore(settings.data_dir).get(take.song_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Song profile not found")
+    if not supports_language_coaching(profile.language):
+        raise HTTPException(
+            status_code=409,
+            detail="中文歌曲不进行语言现象或练唱分析，可使用纯唱录音与多轨混音",
+        )
     existing = PracticeStore(settings.data_dir).get_for_take(take_id)
     if existing is not None and existing.analysis_version == "practice-language-v6" and not force:
         return {"takeId": take_id, "status": "complete"}

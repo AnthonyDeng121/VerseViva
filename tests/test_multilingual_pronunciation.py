@@ -55,3 +55,8 @@ def test_romanizers_leave_english_available_in_mixed_lyrics() -> None:
 def test_lyrics_script_wins_over_mixed_english_intro() -> None:
     assert _detect_lyrics_language("BLACKPINK in your area\nBaby 날 터질 것처럼 안아줘") == "ko"
     assert _detect_lyrics_language("大人になったら忘れちゃうのかな") == "ja"
+
+
+def test_chinese_lyrics_are_detected_without_misclassifying_japanese() -> None:
+    assert _detect_lyrics_language("听见下雨的声音\n一滴滴清晰") == "zh"
+    assert _detect_lyrics_language("大人になったら忘れちゃうのかな") == "ja"

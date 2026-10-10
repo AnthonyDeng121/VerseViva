@@ -343,3 +343,28 @@ def test_free_overdub_is_saved_but_cannot_enter_practice_analysis(take_client) -
     analysis = client.post(f"/api/v1/takes/{payload['takeId']}/analyze")
     assert analysis.status_code == 409
     assert "不参与演唱分析或长期记忆" in analysis.json()["detail"]
+
+
+def test_chinese_song_can_save_take_but_cannot_enter_practice_analysis(
+    take_client,
+) -> None:
+    client, data_dir, song_id = take_client
+    profile = ProfileStore(data_dir).get(song_id)
+    assert profile is not None
+    ProfileStore(data_dir).save(profile.model_copy(update={"language": "zh"}))
+    created = _webm_upload(
+        client,
+        song_id,
+        purpose="guided_practice",
+        save_mode="overdub_append",
+    )
+
+    assert created.status_code == 201
+    take_id = created.json()["takeId"]
+    direct = client.post(f"/api/v1/takes/{take_id}/analyze")
+    background = client.post(f"/api/v1/takes/{take_id}/analysis-jobs")
+
+    assert direct.status_code == 409
+    assert background.status_code == 409
+    assert "中文歌曲不进行" in direct.json()["detail"]
+    assert client.get(created.json()["audioUrl"]).status_code == 200

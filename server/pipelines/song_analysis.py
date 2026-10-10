@@ -33,6 +33,7 @@ from server.services.language import (
     add_pronunciation_guides,
     apply_language_observations,
     generate_language_candidates,
+    supports_language_coaching,
 )
 from server.services.language.models import LanguageCandidate, LanguageObservationBatch
 from server.services.lyrics import DisabledLyricsProvider, LrclibLyricsProvider
@@ -250,36 +251,43 @@ class SongAnalysisPipeline:
 
             profile_language = _detect_lyrics_language(lyrics) or alignment.language
             sentences = add_pronunciation_guides(sentences, profile_language)
-            candidates = generate_language_candidates(
-                sentences, language=profile_language
-            )
-            self._advance(job, AnalysisStage.analyzing_language)
-            observation_fingerprint = _language_cache_fingerprint(lyrics, candidates)
-            observations_path = (
-                job_dir
-                / "language"
-                / f"observations-v6-{observation_fingerprint}.json"
-            )
-            observations = _load_observations(observations_path)
-            if observations is None:
-                if self.language_coach.provider != "disabled":
-                    self._record_api_call(job, AnalysisStage.analyzing_language)
-                observations = await self.language_coach.analyze(
-                    analysis_vocals, lyrics, sentences, candidates
+            language_analysis_provider = self.language_coach.provider
+            language_analysis_model = self.language_coach.model
+            if supports_language_coaching(profile_language):
+                candidates = generate_language_candidates(
+                    sentences, language=profile_language
                 )
-                _save_json(
-                    observations_path,
-                    observations.model_dump(mode="json", by_alias=True),
+                self._advance(job, AnalysisStage.analyzing_language)
+                observation_fingerprint = _language_cache_fingerprint(lyrics, candidates)
+                observations_path = (
+                    job_dir
+                    / "language"
+                    / f"observations-v6-{observation_fingerprint}.json"
+                )
+                observations = _load_observations(observations_path)
+                if observations is None:
+                    if self.language_coach.provider != "disabled":
+                        self._record_api_call(job, AnalysisStage.analyzing_language)
+                    observations = await self.language_coach.analyze(
+                        analysis_vocals, lyrics, sentences, candidates
+                    )
+                    _save_json(
+                        observations_path,
+                        observations.model_dump(mode="json", by_alias=True),
+                    )
+                else:
+                    self._mark_cache_hit(job, AnalysisStage.analyzing_language)
+                annotated_sentences = apply_language_observations(
+                    sentences,
+                    candidates,
+                    observations.observations,
+                    provider=self.language_coach.provider,
+                    model=self.language_coach.model,
                 )
             else:
-                self._mark_cache_hit(job, AnalysisStage.analyzing_language)
-            annotated_sentences = apply_language_observations(
-                sentences,
-                candidates,
-                observations.observations,
-                provider=self.language_coach.provider,
-                model=self.language_coach.model,
-            )
+                annotated_sentences = sentences
+                language_analysis_provider = "skipped_chinese"
+                language_analysis_model = None
 
             self._advance(job, AnalysisStage.building_profile)
             _publish_audio_assets(
@@ -304,8 +312,8 @@ class SongAnalysisPipeline:
                 pipeline_version=PIPELINE_VERSION,
                 separation_model=self.separation_model,
                 alignment_model=self.alignment_model,
-                language_analysis_provider=self.language_coach.provider,
-                language_analysis_model=self.language_coach.model,
+                language_analysis_provider=language_analysis_provider,
+                language_analysis_model=language_analysis_model,
                 lyrics_source=lyrics_source,
                 lyrics_provider=lyrics_lookup.provider if lyrics_lookup else None,
                 lyrics_provider_track_id=(
@@ -589,6 +597,8 @@ def _detect_lyrics_language(lyrics: str) -> str | None:
         and japanese_kana >= latin * 0.2
     ):
         return "ja"
+    if japanese_kanji >= 2 and japanese_kana == 0 and korean == 0:
+        return "zh"
     return None
 
 

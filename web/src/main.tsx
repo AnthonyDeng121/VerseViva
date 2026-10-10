@@ -531,6 +531,7 @@ function ProfileView({
       <div className={mode === "sing" ? "recording-page" : "recording-page hidden"}>
       <RecordingStudio
         songId={profile.songId}
+        language={profile.language}
         sentences={profile.sentences}
         vocalParts={profile.vocalParts}
         accompanimentUrl={profile.audio.accompanimentUrl}

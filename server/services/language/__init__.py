@@ -8,6 +8,7 @@ from server.services.language.models import (
     LanguageObservationBatch,
     ObservationResult,
 )
+from server.services.language.policy import supports_language_coaching
 from server.services.language.pronunciation import (
     add_pronunciation_guides,
     romanize_japanese,
@@ -26,4 +27,5 @@ __all__ = [
     "generate_language_candidates",
     "romanize_japanese",
     "romanize_korean",
+    "supports_language_coaching",
 ]
