@@ -128,7 +128,7 @@ python scripts/hero_assets.py restore artifacts/verseviva-hero-assets.zip --data
 - Windows 开发机使用 `ssh -i "D:\0Desktop2\项目\VerseViva\VerseVivaNEW.pem" ubuntu@43.160.230.111` 登录；该 PEM 已由 `*.pem` 规则忽略，严禁提交或复制进部署包。服务器项目目录为 `/home/ubuntu/verseviva`，当前是无 `.git` 的部署副本，发布时需从本地同步变更文件后在该目录构建，不能直接执行 `git pull`。
 - 腾讯云轻量应用服务器位于新加坡，Ubuntu 24.04 LTS、x86_64、2 vCPU、约 8 GB 内存、80 GB 系统盘，并额外配置约 6 GB swap。2026-10-11 已从原中国香港实例原样迁移，以使服务器出口位于 Gemini Developer API 支持区域。
 - Docker Compose 固定运行一个 FastAPI/Uvicorn `app` 容器和一个 Caddy 容器。Caddy 负责 80 → 443 跳转、反向代理和 Let's Encrypt 自动证书；云防火墙放行 22/TCP、80/TCP、443/TCP，443/UDP 仅用于可选 HTTP/3。迁移后 Caddy 容器一度保留默认 `SITE_ADDRESS=:80`；现已使用 `docker compose --env-file .env.production up -d --force-recreate caddy` 重建，容器内为 `SITE_ADDRESS=www.verseviva.top`，新加坡 IP 定向验收结果为 `www` HTTPS 200、根域名 HTTPS 301、健康接口 `ok`。
-- `verseviva-data`、`caddy-data`、`caddy-config` 均为持久卷；三首 Hero 已从带 SHA-256 清单的独立 ZIP 恢复到 `verseviva-data`。`.env.production` 权限为 600，不得把其中的 Key 写入仓库或文档。
+- `verseviva-data`、`verseviva-model-cache`、`caddy-data`、`caddy-config` 均为持久卷；其中 `verseviva-model-cache` 挂载到 `/root/.cache`，保留 Hugging Face/Torch 运行期模型缓存，避免应用容器重建后重新下载。三首 Hero 已从带 SHA-256 清单的独立 ZIP 恢复到 `verseviva-data`。`.env.production` 权限为 600，不得把其中的 Key 写入仓库或文档。
 - 完整基础镜像约 6.51 GB，包含 CPU-only Demucs、WhisperX 与 ffmpeg。线上健康检查、两个域名 HTTPS、Hero Profile/音频和匿名会话隔离已完成黑盒验收；新加坡实例使用生产 Gemini Key 的最小真实生成请求返回 HTTP 200，确认该出口具备 Gemini 实际推理权限。
 - 会话隔离上线前已通过 SQLite backup API 生成部署前备份；服务器当前还保留覆盖层发布前的镜像标签作为短期回滚点。它们不是长期备份策略，后续仍需自动备份、恢复演练和保留期清理。
 - 为避免香港实例以约 50 KB/s 再次下载数 GB Python 模型依赖，会话隔离首次上线采用“已验证完整基础镜像 + 仅复制变更应用文件”的覆盖层镜像发布。2026-10-10 已完成自包含完整镜像重建并切换生产：Dockerfile 将稳定的 Demucs/WhisperX 环境放在应用源码之前，重复构建实测约 2 秒且模型层命中缓存；生产镜像不再依赖临时 `pre-*` 覆盖层链，旧标签仅作为短期回滚点保留。

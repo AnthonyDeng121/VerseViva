@@ -210,7 +210,7 @@ docker compose --env-file .env.production -f compose.yaml -f compose.tunnel.yaml
 - 主机：腾讯云轻量应用服务器（新加坡），Ubuntu 24.04 LTS、x86_64、2 vCPU、约 8 GB RAM、80 GB 系统盘，并配置约 6 GB 额外 swap。2026-10-11 已从原中国香港实例原样迁移，以使服务器出口位于 Gemini Developer API 支持区域。
 - 入口：Caddy 自动管理 Let's Encrypt HTTPS，80/TCP 自动跳转 443/TCP；443/UDP 仅用于可选 HTTP/3。腾讯云防火墙必须保留 22/TCP、80/TCP、443/TCP 放行。迁移后已使用生产环境文件强制重建 Caddy，定向新加坡 IP 验收为 `www` HTTPS 200、根域名 HTTPS 301、健康接口 `ok`；最小 Gemini 真实生成请求返回 HTTP 200。
 - 运行方式：Docker Compose 单 Uvicorn worker；`app` 不直接发布 8000 端口，只通过 Caddy 同源提供 H5、API 与音频。
-- 数据：三首 Hero 已恢复到 `verseviva-data`；SQLite、Take 音频与匿名会话密钥均位于持久卷。Caddy 证书状态位于独立持久卷。
+- 数据：三首 Hero 已恢复到 `verseviva-data`；SQLite、Take 音频与匿名会话密钥均位于持久卷。Caddy 证书状态位于独立持久卷，Hugging Face/Torch 运行期模型缓存位于 `verseviva-model-cache`，重建应用容器时不再重新下载。
 - 镜像：完整 CPU 模型基础镜像约 6.51 GB。线上已验证健康接口、Hero Profile/音频、HTTPS 证书、HTTP 跳转和匿名会话隔离。
 - 恢复：会话隔离发布前已使用 SQLite backup API 留存数据库快照，并保留发布前镜像标签作为短期回滚点。不得把这些临时回滚点视为自动备份方案。
 

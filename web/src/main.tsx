@@ -124,6 +124,14 @@ function App() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!title.trim()) {
+      setError("请填写歌曲名");
+      return;
+    }
+    if (!artist.trim()) {
+      setError("请填写歌手");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     setProfile(null);
@@ -276,25 +284,23 @@ function App() {
           <input name="audio" type="file" accept=".mp3,.wav,.flac,audio/*" required />
         </label>
         <label>
-          <span className="input-warning">歌曲名（必填，请严格写出正确的歌名，区分大小写，不支持模糊匹配）</span>
+          <span>歌曲名 <span className="input-warning">（请严格写出正确的歌名，区分大小写，不支持模糊匹配）</span></span>
           <input
             name="title"
             type="text"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             placeholder="例如：Poker Face"
-            required
           />
         </label>
         <label>
-          <span className="input-warning">歌手（必填，请严格写出正确的歌手名，区分大小写，不支持模糊匹配）</span>
+          <span>歌手 <span className="input-warning">（请严格写出正确的歌手名，区分大小写，不支持模糊匹配）</span></span>
           <input
             name="artist"
             type="text"
             value={artist}
             onChange={(event) => setArtist(event.target.value)}
             placeholder="例如：Lady Gaga"
-            required
           />
         </label>
         <details>
@@ -352,7 +358,7 @@ function App() {
               <span>{job.progress}%</span>
               {(job.status === "queued" || job.status === "processing") && (
                 <button className="danger-link" type="button"
-                  onClick={() => void cancelAnalysis()}>取消分析</button>
+                  onClick={() => void cancelAnalysis()}>取消</button>
               )}
             </span>
           </div>
