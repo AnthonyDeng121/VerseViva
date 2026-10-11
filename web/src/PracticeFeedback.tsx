@@ -22,6 +22,17 @@ export function PracticeFeedback({ attempt, memory, sentences }: {
   }));
   const [index, setIndex] = useState(0);
   useEffect(() => setIndex(0), [attempt.attemptId]);
+  if (attempt.status === "failed") {
+    return <section className="practice-feedback" aria-live="polite">
+      <div className="practice-feedback-card">
+        <p className="eyebrow">本次分析未完成</p>
+        <p className="recording-error">
+          {attempt.insufficientReason ?? "分析服务暂时不可用，请稍后重试。"}
+        </p>
+        <p className="feedback-comparison">没有生成逐句结论，也不会计入练唱趋势。</p>
+      </div>
+    </section>;
+  }
   const card = cards[Math.min(index, Math.max(cards.length - 1, 0))];
   if (!card) return null;
   const issueIds = new Set(card.issues.map((issue) => issue.issueId));
@@ -43,9 +54,7 @@ export function PracticeFeedback({ attempt, memory, sentences }: {
         <h4>{card.lyrics}</h4>
         <p className="feedback-comparison">{attempt.status === "analyzed"
           ? comparisonLabels[comparison.result] : "暂不下结论"}</p>
-        {attempt.status === "failed"
-          ? <p className="recording-error">{attempt.insufficientReason ?? "分析服务暂时不可用，请稍后重试。"}</p>
-          : attempt.status === "insufficient_data"
+        {attempt.status === "insufficient_data"
           ? <p className="recording-warning">{attempt.insufficientReason ?? "本次录音不足以可靠判断，请重录。"}</p>
           : recommendations.length > 0
             ? <ol className="practice-recommendations">

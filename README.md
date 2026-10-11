@@ -78,6 +78,8 @@ LRCLIB 默认启用且不需要 API Key。可通过 `VERSEVIVA_LYRICS_PROVIDER=d
 
 分析任务支持断点恢复。Demucs、WhisperX、LRCLIB 和语言模型的完整产物会保存在对应 job 目录；失败后可在前端查看真实阶段与错误详情，并点击“从失败处重试”。重试会校验已有产物的存在性和非空完整性，只重新执行缺失或未成功的阶段。Gemini 的 `429` / `5xx` / 超时等短暂错误会先自动退避重试，仍失败才转为可手动恢复状态。
 
+若 Gemini 明确返回当前服务器区域不支持，歌曲分析不会丢弃已经完成的 Demucs、WhisperX 和歌词产物，而会记录 warning、跳过语言技巧核查并继续生成 Profile。练唱分析仍记录为模型服务 `failed`，但界面只显示一次友好说明，不展示供应商原始错误，也不生成逐句建议或计入 Memory。
+
 歌曲上传进入单 FastAPI 进程内的 FIFO 分析队列。当前 Docker 只启动一个 Uvicorn worker，因此任意时刻最多运行一个 Demucs/WhisperX Pipeline，后续上传保持 `queued`，避免低配比赛服务器因多个 PyTorch 任务并发而耗尽内存。该队列不是跨进程队列；若未来增加 Uvicorn worker 或拆分多实例，必须先迁移到 Redis/Celery 等持久任务系统。
 
 ## 启动
@@ -169,6 +171,12 @@ Windows 上可用一个命令完成前端构建、统一服务启动和临时 Tu
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start_public_preview.ps1
 ```
 
+脚本默认等待 WSL/Uvicorn 最多 60 秒；Windows 挂载盘或 WSL 冷启动较慢时可显式延长：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start_public_preview.ps1 -StartupTimeoutSeconds 120
+```
+
 保持该窗口打开，并使用输出中的最新 `https://...trycloudflare.com` 地址。关闭窗口、按 Ctrl+C、电脑休眠或校园网断线后，临时地址都会失效；重新运行会生成新地址。脚本固定使用 HTTP/2，以绕开校园网常见的 QUIC/UDP 7844 限制。
 
 ## Docker 与正式域名
@@ -195,11 +203,11 @@ docker compose --env-file .env.production -f compose.yaml -f compose.tunnel.yaml
 
 完整模型镜像包含 Demucs、WhisperX 和 ffmpeg，因此第一次构建时间和镜像体积仍然较大。Dockerfile 会先从 PyTorch 官方 CPU 仓库安装 CPU-only Torch/Torchaudio/Torchvision，避免纯 CPU 比赛服务器下载无用的 CUDA/NVIDIA 运行库。Hero Song 应继续使用预缓存；临时上传应限制为短片段。
 
-### 当前比赛部署（2026-10-10）
+### 当前比赛部署（2026-10-11）
 
 - 正式链接：`https://verseviva.top`，跳转到 `https://www.verseviva.top`。
-- DNS A 记录：`verseviva.top` 与 `www.verseviva.top` 均指向 `43.161.219.71`。
-- 主机：腾讯云轻量应用服务器（中国香港），Ubuntu 24.04 LTS、x86_64、2 vCPU、约 8 GB RAM、80 GB 系统盘，并配置约 6 GB 额外 swap。
+- DNS A 记录：`verseviva.top` 与 `www.verseviva.top` 均指向 `43.160.230.111`。
+- 主机：腾讯云轻量应用服务器（新加坡），Ubuntu 24.04 LTS、x86_64、2 vCPU、约 8 GB RAM、80 GB 系统盘，并配置约 6 GB 额外 swap。2026-10-11 已从原中国香港实例原样迁移，以使服务器出口位于 Gemini Developer API 支持区域。
 - 入口：Caddy 自动管理 Let's Encrypt HTTPS，80/TCP 自动跳转 443/TCP；443/UDP 仅用于可选 HTTP/3。腾讯云防火墙必须保留 22/TCP、80/TCP、443/TCP 放行。
 - 运行方式：Docker Compose 单 Uvicorn worker；`app` 不直接发布 8000 端口，只通过 Caddy 同源提供 H5、API 与音频。
 - 数据：三首 Hero 已恢复到 `verseviva-data`；SQLite、Take 音频与匿名会话密钥均位于持久卷。Caddy 证书状态位于独立持久卷。

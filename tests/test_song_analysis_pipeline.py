@@ -88,6 +88,16 @@ class FakeLanguageCoach:
         )
 
 
+class LocationBlockedLanguageCoach:
+    provider = "gemini"
+    model = "fake-gemini-model"
+
+    async def analyze(self, vocal_audio, lyrics, sentences, candidates):
+        raise RuntimeError(
+            "400 FAILED_PRECONDITION: User location is not supported for the API use."
+        )
+
+
 class FakeLyricsProvider:
     provider = "lrclib"
 
@@ -292,6 +302,30 @@ def test_chinese_song_skips_language_model_but_builds_profile(tmp_path: Path) ->
     assert profile is not None
     assert profile.language == "zh"
     assert profile.analysis.language_analysis_provider == "skipped_chinese"
+    assert profile.analysis.language_analysis_model is None
+    assert all(not sentence.language_hints for sentence in profile.sentences)
+
+
+def test_gemini_location_failure_keeps_song_profile_usable(tmp_path: Path) -> None:
+    job, source, job_store, profile_store = make_job(tmp_path)
+
+    asyncio.run(
+        make_pipeline(
+            job_store,
+            profile_store,
+            language_coach=LocationBlockedLanguageCoach(),
+        ).run(job.job_id, source)
+    )
+
+    completed = job_store.get(job.job_id)
+    profile = profile_store.get(job.song_id)
+    assert completed is not None
+    assert completed.status == AnalysisStatus.completed
+    assert completed.error is None
+    assert completed.warnings[-1].stage == AnalysisStage.analyzing_language
+    assert completed.warnings[-1].detail == "gemini_location_unsupported"
+    assert profile is not None
+    assert profile.analysis.language_analysis_provider == "gemini_unavailable"
     assert profile.analysis.language_analysis_model is None
     assert all(not sentence.language_hints for sentence in profile.sentences)
 

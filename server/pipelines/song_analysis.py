@@ -42,6 +42,7 @@ from server.services.lyrics_reconciliation import (
     reconcile_provided_lyrics,
     reconcile_synced_lyrics_excerpt,
 )
+from server.services.model_errors import is_gemini_location_unsupported
 from server.services.song_profile_builder import build_song_profile
 from server.services.vocal_parts import GeminiVocalPartAnalyzer
 from server.services.vocal_parts.arrangement import (
@@ -268,13 +269,35 @@ class SongAnalysisPipeline:
                 if observations is None:
                     if self.language_coach.provider != "disabled":
                         self._record_api_call(job, AnalysisStage.analyzing_language)
-                    observations = await self.language_coach.analyze(
-                        analysis_vocals, lyrics, sentences, candidates
-                    )
-                    _save_json(
-                        observations_path,
-                        observations.model_dump(mode="json", by_alias=True),
-                    )
+                    try:
+                        observations = await self.language_coach.analyze(
+                            analysis_vocals, lyrics, sentences, candidates
+                        )
+                    except Exception as exc:
+                        if not is_gemini_location_unsupported(exc):
+                            raise
+                        job.warnings.append(
+                            AnalysisWarning(
+                                stage=AnalysisStage.analyzing_language,
+                                message=(
+                                    "当前服务器区域无法使用 Gemini，"
+                                    "已跳过语言技巧核查并保留其他分析结果。"
+                                ),
+                                detail="gemini_location_unsupported",
+                            )
+                        )
+                        self.job_store.save(job)
+                        observations = LanguageObservationBatch(
+                            lyrics_match="not_analyzed",
+                            observations=[],
+                        )
+                        language_analysis_provider = "gemini_unavailable"
+                        language_analysis_model = None
+                    else:
+                        _save_json(
+                            observations_path,
+                            observations.model_dump(mode="json", by_alias=True),
+                        )
                 else:
                     self._mark_cache_hit(job, AnalysisStage.analyzing_language)
                 annotated_sentences = apply_language_observations(

@@ -545,10 +545,10 @@ export function RecordingStudio({
         break;
       }
       if (!attempt) throw new Error("分析时间超过 6 分钟，请稍后在已保存音轨中查看或重分析。");
-      setAttempts((current) => [...current.filter((item) => item.takeId !== takeId), attempt]);
       if (attempt.status === "failed") {
         throw new Error(attempt.insufficientReason ?? "本次练唱分析失败，请稍后重试。");
       }
+      setAttempts((current) => [...current.filter((item) => item.takeId !== takeId), attempt]);
       if (refreshMemory) {
         const memoryResponse = await fetch(
           `/api/v1/practice/memory?session_id=${encodeURIComponent(sessionId)}`,

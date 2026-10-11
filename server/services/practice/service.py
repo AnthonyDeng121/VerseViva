@@ -16,6 +16,7 @@ from server.models.practice import (
 )
 from server.models.recording import RecordingTake
 from server.models.song import SongProfile, SongSentence, VocalPart
+from server.services.model_errors import public_model_failure_message
 from server.services.practice.analyzer import (
     GeminiPracticeAnalyzer,
     issue_type_for_hint,
@@ -162,7 +163,7 @@ async def analyze_practice_take(
             **base,
             status=PracticeStatus.failed,
             comparison=AttemptComparison(result=ComparisonResult.insufficient_data),
-            insufficient_reason=f"分析服务暂时不可用，请稍后重试：{exc}",
+            insufficient_reason=public_model_failure_message(exc),
         )
         store.save(attempt)
         return attempt

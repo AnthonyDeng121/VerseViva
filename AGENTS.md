@@ -63,6 +63,7 @@ Pipeline 每阶段记录实际/估算耗时、API 调用次数、缓存命中和
 - Gemini 整句分析、同指标前后比较、最近 3–5 次趋势和 Memory。
 - Take/PracticeAttempt SQLite 持久化；旧逐目录 `take.json` 已退出运行链路。
 - 模型故障与证据不足分开表达。
+- Gemini 返回部署区域不支持时，歌曲 Pipeline 以 warning 跳过语言技巧核查并继续生成 Profile；Practice 保持 `failed`，但不得向用户暴露供应商原始 JSON，也不得生成逐句建议或计入 Memory。
 - 三首 Hero 预缓存及带 SHA-256 校验的独立部署 ZIP。
 - 前端依赖固定版本；Vitest 覆盖时间轴、偏移、循环边界和录音状态迁移。
 - 浏览器录音送入 Gemini 前临时转为 16 kHz、64 kbps 单声道 MP3，原始 Take 保持不变；录音上限为 100 MB。
@@ -117,10 +118,10 @@ python scripts/hero_assets.py restore artifacts/verseviva-hero-assets.zip --data
 
 部署包不包含 SQLite、用户录音、历史 Job 或密钥。远程模型 Worker 本阶段不部署；配置只保留兼容性，当前模型由主 FastAPI 进程调用。
 
-### 当前比赛线上实例（2026-10-10）
+### 当前比赛线上实例（2026-10-11）
 
-- 正式入口为 `https://verseviva.top`，永久跳转到 `https://www.verseviva.top`；DNS A 记录指向 `43.161.219.71`。
-- 腾讯云轻量应用服务器位于中国香港，Ubuntu 24.04 LTS、x86_64、2 vCPU、约 8 GB 内存、80 GB 系统盘，并额外配置约 6 GB swap。
+- 正式入口为 `https://verseviva.top`，永久跳转到 `https://www.verseviva.top`；DNS A 记录指向 `43.160.230.111`。
+- 腾讯云轻量应用服务器位于新加坡，Ubuntu 24.04 LTS、x86_64、2 vCPU、约 8 GB 内存、80 GB 系统盘，并额外配置约 6 GB swap。2026-10-11 已从原中国香港实例原样迁移，以使服务器出口位于 Gemini Developer API 支持区域。
 - Docker Compose 固定运行一个 FastAPI/Uvicorn `app` 容器和一个 Caddy 容器。Caddy 负责 80 → 443 跳转、反向代理和 Let's Encrypt 自动证书；云防火墙放行 22/TCP、80/TCP、443/TCP，443/UDP 仅用于可选 HTTP/3。
 - `verseviva-data`、`caddy-data`、`caddy-config` 均为持久卷；三首 Hero 已从带 SHA-256 清单的独立 ZIP 恢复到 `verseviva-data`。`.env.production` 权限为 600，不得把其中的 Key 写入仓库或文档。
 - 完整基础镜像约 6.51 GB，包含 CPU-only Demucs、WhisperX 与 ffmpeg。线上健康检查、两个域名 HTTPS、Hero Profile/音频和匿名会话隔离已完成黑盒验收。

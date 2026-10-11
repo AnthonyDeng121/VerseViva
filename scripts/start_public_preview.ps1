@@ -1,5 +1,7 @@
 param(
     [int]$Port = 8001,
+    [ValidateRange(10, 300)]
+    [int]$StartupTimeoutSeconds = 60,
     [switch]$SkipBuild
 )
 
@@ -59,8 +61,9 @@ $server = Start-Process -FilePath $wsl `
 
 try {
     $healthy = $false
-    for ($attempt = 0; $attempt -lt 20; $attempt++) {
-        Start-Sleep -Milliseconds 500
+    $deadline = [DateTime]::UtcNow.AddSeconds($StartupTimeoutSeconds)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        Start-Sleep -Seconds 1
         try {
             $health = Invoke-RestMethod "http://127.0.0.1:$Port/api/v1/health" -TimeoutSec 2
             if ($health.status -eq "ok") {
@@ -75,7 +78,7 @@ try {
         }
     }
     if (-not $healthy) {
-        throw "VerseViva health check timed out. See $stderr"
+        throw "VerseViva health check timed out after $StartupTimeoutSeconds seconds. See $stderr"
     }
 
     Write-Host "[3/3] Creating a temporary public HTTPS address..." -ForegroundColor Cyan
