@@ -206,9 +206,9 @@ docker compose --env-file .env.production -f compose.yaml -f compose.tunnel.yaml
 ### 当前比赛部署（2026-10-11）
 
 - 正式链接：`https://verseviva.top`，跳转到 `https://www.verseviva.top`。
-- DNS A 记录：`verseviva.top` 与 `www.verseviva.top` 均指向 `43.160.230.111`。
+- DNS A 记录目标：`verseviva.top` 与 `www.verseviva.top` 均只指向 `43.160.230.111`。2026-10-11 迁移验收时公共解析仍同时返回旧香港地址 `43.161.219.71`；需在 DNSPod 删除两处旧 A 记录并等待缓存过期。
 - 主机：腾讯云轻量应用服务器（新加坡），Ubuntu 24.04 LTS、x86_64、2 vCPU、约 8 GB RAM、80 GB 系统盘，并配置约 6 GB 额外 swap。2026-10-11 已从原中国香港实例原样迁移，以使服务器出口位于 Gemini Developer API 支持区域。
-- 入口：Caddy 自动管理 Let's Encrypt HTTPS，80/TCP 自动跳转 443/TCP；443/UDP 仅用于可选 HTTP/3。腾讯云防火墙必须保留 22/TCP、80/TCP、443/TCP 放行。
+- 入口：Caddy 自动管理 Let's Encrypt HTTPS，80/TCP 自动跳转 443/TCP；443/UDP 仅用于可选 HTTP/3。腾讯云防火墙必须保留 22/TCP、80/TCP、443/TCP 放行。迁移后已使用生产环境文件强制重建 Caddy，定向新加坡 IP 验收为 `www` HTTPS 200、根域名 HTTPS 301、健康接口 `ok`；最小 Gemini 真实生成请求返回 HTTP 200。
 - 运行方式：Docker Compose 单 Uvicorn worker；`app` 不直接发布 8000 端口，只通过 Caddy 同源提供 H5、API 与音频。
 - 数据：三首 Hero 已恢复到 `verseviva-data`；SQLite、Take 音频与匿名会话密钥均位于持久卷。Caddy 证书状态位于独立持久卷。
 - 镜像：完整 CPU 模型基础镜像约 6.51 GB。线上已验证健康接口、Hero Profile/音频、HTTPS 证书、HTTP 跳转和匿名会话隔离。
