@@ -85,3 +85,108 @@ def test_analysis_queue_persists_unhandled_runner_failure(tmp_path: Path) -> Non
         assert "unexpected worker error" in (failed.error.detail or "")
 
     asyncio.run(scenario())
+
+
+def test_analysis_queue_reports_live_fifo_positions(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        queue = AnalysisTaskQueue(JobStore(tmp_path))
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def runner(job_id: str, source: Path) -> None:
+            started.set()
+            await release.wait()
+
+        queue.start()
+        try:
+            first = "job_00000000000000000000000000000001"
+            second = "job_00000000000000000000000000000002"
+            third = "job_00000000000000000000000000000003"
+            await queue.enqueue(first, tmp_path / "1.mp3", runner)
+            await started.wait()
+            await queue.enqueue(second, tmp_path / "2.mp3", runner)
+            await queue.enqueue(third, tmp_path / "3.mp3", runner)
+
+            assert queue.position(first) == 0
+            assert queue.position(second) == 1
+            assert queue.position(third) == 2
+            assert queue.pending_count == 2
+
+            release.set()
+            await queue.join()
+            assert queue.position(first) is None
+            assert queue.position(second) is None
+            assert queue.position(third) is None
+        finally:
+            await queue.stop()
+
+    asyncio.run(scenario())
+
+
+def test_analysis_queue_cancels_active_job_and_continues_fifo(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        queue = AnalysisTaskQueue(JobStore(tmp_path))
+        first_started = asyncio.Event()
+        first_cancelled = asyncio.Event()
+        second_finished = asyncio.Event()
+        first = "job_00000000000000000000000000000011"
+        second = "job_00000000000000000000000000000012"
+
+        async def runner(job_id: str, source: Path) -> None:
+            if job_id == first:
+                first_started.set()
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    first_cancelled.set()
+                    raise
+            second_finished.set()
+
+        queue.start()
+        try:
+            await queue.enqueue(first, tmp_path / "1.mp3", runner)
+            await first_started.wait()
+            await queue.enqueue(second, tmp_path / "2.mp3", runner)
+
+            assert await queue.cancel(first) is True
+            await queue.join()
+
+            assert first_cancelled.is_set()
+            assert second_finished.is_set()
+            assert queue.active_job_id is None
+        finally:
+            await queue.stop()
+
+    asyncio.run(scenario())
+
+
+def test_analysis_queue_cancels_pending_job_before_it_runs(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        queue = AnalysisTaskQueue(JobStore(tmp_path))
+        first_started = asyncio.Event()
+        release_first = asyncio.Event()
+        ran: list[str] = []
+        first = "job_00000000000000000000000000000021"
+        second = "job_00000000000000000000000000000022"
+
+        async def runner(job_id: str, source: Path) -> None:
+            ran.append(job_id)
+            if job_id == first:
+                first_started.set()
+                await release_first.wait()
+
+        queue.start()
+        try:
+            await queue.enqueue(first, tmp_path / "1.mp3", runner)
+            await first_started.wait()
+            await queue.enqueue(second, tmp_path / "2.mp3", runner)
+
+            assert await queue.cancel(second) is True
+            release_first.set()
+            await queue.join()
+
+            assert ran == [first]
+        finally:
+            await queue.stop()
+
+    asyncio.run(scenario())

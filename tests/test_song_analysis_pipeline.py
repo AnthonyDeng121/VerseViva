@@ -123,6 +123,14 @@ class FakeDualTrackLyricsProvider(FakeLyricsProvider):
         return replace(result, plain_lyrics="hello world (yeah)")
 
 
+class FailingLyricsProvider:
+    provider = "lrclib"
+    last_api_call_count = 3
+
+    async def find(self, *, title, artist, duration_seconds):
+        raise RuntimeError("503 https://lrclib.net/private-provider-detail")
+
+
 class FakeVocalPartAnalyzer:
     provider = "fake-audio-model"
     model = "fake-vocal-part-model"
@@ -230,6 +238,28 @@ def test_pipeline_builds_and_persists_song_profile(tmp_path: Path) -> None:
     assert (
         tmp_path / "songs" / job.song_id / "audio" / "accompaniment.wav"
     ).read_bytes() == b"music"
+
+
+def test_lyrics_provider_failure_falls_back_without_exposing_raw_error(tmp_path: Path) -> None:
+    job, source, job_store, profile_store = make_job(tmp_path)
+
+    asyncio.run(
+        make_pipeline(
+            job_store,
+            profile_store,
+            lyrics_provider=FailingLyricsProvider(),
+        ).run(job.job_id, source)
+    )
+
+    completed = job_store.get(job.job_id)
+    profile = profile_store.get(job.song_id)
+    assert completed is not None
+    assert completed.status == AnalysisStatus.completed
+    assert completed.api_call_count == 3
+    assert completed.warnings[-1].message == "联网歌词查询失败，已回退到 WhisperX 转写。"
+    assert "lrclib.net" not in (completed.warnings[-1].detail or "")
+    assert profile is not None
+    assert profile.analysis.lyrics_source.value == "asr"
     assert profile.audio.accompaniment_url == (
         f"/api/v1/songs/{job.song_id}/audio/accompaniment"
     )

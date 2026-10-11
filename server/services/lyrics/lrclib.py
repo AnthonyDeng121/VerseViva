@@ -1,3 +1,4 @@
+import asyncio
 import re
 import unicodedata
 from difflib import SequenceMatcher
@@ -30,11 +31,14 @@ class LrclibLyricsProvider:
         timeout_seconds: float = 10.0,
         min_match_score: float = 0.78,
         transport: httpx.AsyncBaseTransport | None = None,
+        retry_delays: tuple[float, ...] = (0.5, 1.5),
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
         self.min_match_score = min_match_score
         self.transport = transport
+        self.retry_delays = retry_delays
+        self.last_api_call_count = 0
 
     async def find(
         self, *, title: str, artist: str | None, duration_seconds: float | None
@@ -43,13 +47,26 @@ class LrclibLyricsProvider:
         if artist:
             params["artist_name"] = artist
         headers = {"User-Agent": "VerseViva/0.1 (lyrics lookup for language coaching)"}
+        self.last_api_call_count = 0
         async with httpx.AsyncClient(
             timeout=self.timeout_seconds,
             transport=self.transport,
             headers=headers,
         ) as client:
-            response = await client.get(f"{self.base_url}/api/search", params=params)
-            response.raise_for_status()
+            for attempt in range(len(self.retry_delays) + 1):
+                try:
+                    self.last_api_call_count += 1
+                    response = await client.get(f"{self.base_url}/api/search", params=params)
+                    response.raise_for_status()
+                    break
+                except (httpx.TimeoutException, httpx.TransportError):
+                    if attempt >= len(self.retry_delays):
+                        raise
+                except httpx.HTTPStatusError as exc:
+                    retryable = exc.response.status_code == 429 or exc.response.status_code >= 500
+                    if not retryable or attempt >= len(self.retry_delays):
+                        raise
+                await asyncio.sleep(self.retry_delays[attempt])
         payload = response.json()
         if not isinstance(payload, list):
             return None

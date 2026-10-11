@@ -92,3 +92,35 @@ def test_lrclib_can_derive_plain_lyrics_from_synced_lyrics() -> None:
 
     assert result is not None
     assert result.plain_lyrics == "First line\nSecond line"
+
+
+def test_lrclib_retries_temporary_503_responses() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            return httpx.Response(503, request=request)
+        return httpx.Response(
+            200,
+            request=request,
+            json=[{
+                "id": 3,
+                "trackName": "Demo",
+                "artistName": "Artist",
+                "instrumental": False,
+                "plainLyrics": "good lyrics",
+            }],
+        )
+
+    provider = LrclibLyricsProvider(
+        transport=httpx.MockTransport(handler), retry_delays=(0, 0)
+    )
+    result = asyncio.run(
+        provider.find(title="Demo", artist="Artist", duration_seconds=None)
+    )
+
+    assert result is not None
+    assert calls == 3
+    assert provider.last_api_call_count == 3

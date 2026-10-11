@@ -36,6 +36,10 @@ class SubprocessCommandRunner:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
                 process.communicate(), timeout=self.timeout_seconds
             )
+        except asyncio.CancelledError:
+            process.kill()
+            await process.communicate()
+            raise
         except TimeoutError as exc:
             process.kill()
             await process.communicate()

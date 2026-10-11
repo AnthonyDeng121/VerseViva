@@ -7,6 +7,7 @@ export type AnalysisJob = {
   updated_at?: string; audio_duration_seconds?: number | null;
   estimated_total_seconds?: number | null; estimated_remaining_seconds?: number | null;
   api_call_count?: number;
+  queue_position?: number | null;
   stage_runtimes?: {
     stage: string; started_at: string; completed_at?: string | null;
     elapsed_seconds?: number | null; estimated_seconds?: number | null;

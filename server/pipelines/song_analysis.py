@@ -127,29 +127,44 @@ class SongAnalysisPipeline:
                     if warning.stage != AnalysisStage.fetching_lyrics
                 ]
                 self.job_store.save(job)
-            lyrics_lookup = _load_lyrics_lookup(job_dir / "lyrics" / "lookup.json")
+            job_lyrics_path = job_dir / "lyrics" / "lookup.json"
+            lyrics_lookup = _load_lyrics_lookup(job_lyrics_path)
             if not provided_lyrics_path.is_file():
                 self._advance(job, AnalysisStage.fetching_lyrics)
                 if lyrics_lookup is None:
                     try:
-                        if self.lyrics_provider.provider != "disabled":
-                            self._record_api_call(job, AnalysisStage.fetching_lyrics)
                         lyrics_lookup = await self.lyrics_provider.find(
                             title=job.title,
                             artist=job.artist,
                             duration_seconds=duration,
                         )
+                        api_calls = (
+                            0
+                            if self.lyrics_provider.provider == "disabled"
+                            else getattr(self.lyrics_provider, "last_api_call_count", 1)
+                        )
+                        for _ in range(api_calls):
+                            self._record_api_call(job, AnalysisStage.fetching_lyrics)
                         if lyrics_lookup is not None:
-                            _save_json(
-                                job_dir / "lyrics" / "lookup.json",
-                                asdict(lyrics_lookup),
-                            )
-                    except Exception as exc:
+                            _save_json(job_lyrics_path, asdict(lyrics_lookup))
+                    except Exception:
+                        api_calls = (
+                            0
+                            if self.lyrics_provider.provider == "disabled"
+                            else getattr(self.lyrics_provider, "last_api_call_count", 1)
+                        )
+                        recorded_calls = next(
+                            item.api_call_count
+                            for item in job.stage_runtimes
+                            if item.stage == AnalysisStage.fetching_lyrics
+                        )
+                        for _ in range(max(0, api_calls - recorded_calls)):
+                            self._record_api_call(job, AnalysisStage.fetching_lyrics)
                         job.warnings.append(
                             AnalysisWarning(
                                 stage=AnalysisStage.fetching_lyrics,
                                 message="联网歌词查询失败，已回退到 WhisperX 转写。",
-                                detail=str(exc),
+                                detail="外部歌词服务暂时不可用，结果可能不如标准歌词准确。",
                             )
                         )
                         self.job_store.save(job)
@@ -360,7 +375,7 @@ class SongAnalysisPipeline:
                 code=f"{failed_stage.value}_failed",
                 stage=failed_stage,
                 message=_stage_error_message(failed_stage),
-                detail=str(exc),
+                detail=_stage_error_detail(failed_stage, exc),
             )
             self.job_store.save(job)
 
@@ -569,6 +584,12 @@ def _load_lyrics_lookup(path: Path) -> LyricsLookupResult | None:
         return LyricsLookupResult(**json.loads(path.read_text(encoding="utf-8")))
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
         return None
+
+
+def _stage_error_detail(stage: AnalysisStage, exc: Exception) -> str:
+    if stage == AnalysisStage.fetching_lyrics:
+        return "外部歌词服务暂时不可用；已保留前序结果，可直接重试。"
+    return str(exc)
 
 
 def _load_observations(path: Path) -> LanguageObservationBatch | None:

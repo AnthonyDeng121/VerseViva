@@ -12,7 +12,7 @@
 
 中文歌曲会根据歌词自动识别，并跳过语言现象 Gemini 核查和练唱 Gemini 诊断。Demucs、WhisperX 时间对齐、Song Profile、播放、纯唱录音、多 Take 对齐、混音和导出仍正常使用。
 
-当前已接通的语言标注链路是：上传歌曲 → LRCLIB 自动查找歌词 → Demucs 人声分离 → WhisperX 词级对齐 → CMUdict/G2P 遍历全部相邻词边界 → Gemini 对候选逐项进行受限核查 → 程序映射为 `×`、`‿`、合并桥 → 点击标记查看中文证据与练习动作。文件名使用 `歌手 - 歌名.mp3` 时可自动推断查词条件，也可在页面补充歌手和歌名。手动歌词优先级最高；LRCLIB 查询失败、匹配不足或与 WhisperX 时间轴无法对上时，会回退到 ASR 歌词，不会让整个任务失败。
+当前已接通的语言标注链路是：上传歌曲 → LRCLIB 自动查找歌词 → Demucs 人声分离 → WhisperX 词级对齐 → CMUdict/G2P 遍历全部相邻词边界 → Gemini 对候选逐项进行受限核查 → 程序映射为 `×`、`‿`、合并桥 → 点击标记查看中文证据与练习动作。文件名使用 `歌手 - 歌名.mp3` 时可自动推断查词条件，也可在页面补充歌手和歌名。手动歌词优先级最高；LRCLIB 查询失败、匹配不足或与 WhisperX 时间轴无法对上时，会回退到 ASR 歌词，不会让整个任务失败，技巧分析歌词框会明确提示自动识别可能存在较大误差。
 
 这是“任意英文歌曲的候选标注流程”，不是母语级自动音素裁判；弱证据不会进入歌词主界面，Hero Song 仍需人工校对。
 
@@ -80,7 +80,7 @@ LRCLIB 默认启用且不需要 API Key。可通过 `VERSEVIVA_LYRICS_PROVIDER=d
 
 若 Gemini 明确返回当前服务器区域不支持，歌曲分析不会丢弃已经完成的 Demucs、WhisperX 和歌词产物，而会记录 warning、跳过语言技巧核查并继续生成 Profile。练唱分析仍记录为模型服务 `failed`，但界面只显示一次友好说明，不展示供应商原始错误，也不生成逐句建议或计入 Memory。
 
-歌曲上传进入单 FastAPI 进程内的 FIFO 分析队列。当前 Docker 只启动一个 Uvicorn worker，因此任意时刻最多运行一个 Demucs/WhisperX Pipeline，后续上传保持 `queued`，避免低配比赛服务器因多个 PyTorch 任务并发而耗尽内存。该队列不是跨进程队列；若未来增加 Uvicorn worker 或拆分多实例，必须先迁移到 Redis/Celery 等持久任务系统。
+歌曲上传进入单 FastAPI 进程内的 FIFO 分析队列。当前 Docker 只启动一个 Uvicorn worker，因此任意时刻最多运行一个 Demucs/WhisperX Pipeline，后续上传保持 `queued`，并向用户显示实时排队位次，避免低配比赛服务器因多个 PyTorch 任务并发而耗尽内存。用户可以取消等待中或正在执行的分析；取消会终止当前模型子进程、继续处理下一项，并清理该歌曲的 Job、输入、中间产物和关联会话数据。该队列不是跨进程队列；若未来增加 Uvicorn worker 或拆分多实例，必须先迁移到 Redis/Celery 等持久任务系统。
 
 ## 启动
 
@@ -263,6 +263,7 @@ POST /api/v1/songs/analyze
 GET  /api/v1/songs/jobs/{job_id}
 GET  /api/v1/songs/jobs/latest
 POST /api/v1/songs/jobs/{job_id}/retry
+DELETE /api/v1/songs/jobs/{job_id}
 POST /api/v1/songs/{song_id}/reanalyze
 DELETE /api/v1/songs/{song_id}
 GET  /api/v1/songs/{song_id}

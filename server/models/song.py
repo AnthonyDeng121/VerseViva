@@ -68,6 +68,7 @@ class AnalysisJob(BaseModel):
     estimated_remaining_seconds: float | None = Field(default=None, ge=0)
     api_call_count: int = Field(default=0, ge=0)
     stage_runtimes: list[StageRuntime] = Field(default_factory=list)
+    queue_position: int | None = Field(default=None, ge=0)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

@@ -113,7 +113,7 @@ async def analyze_song(
             destination,
             build_default_pipeline(settings).run,
         )
-    return job
+    return _with_queue_position(job, request)
 
 
 def _infer_song_identity(
@@ -135,7 +135,7 @@ async def get_latest_analysis_job(request: Request) -> AnalysisJob:
     job = JobStore(get_settings().data_dir).latest(session_id(request))
     if job is None:
         raise HTTPException(status_code=404, detail="No analysis jobs found")
-    return job
+    return _with_queue_position(job, request)
 
 
 @router.get("/jobs/{job_id}", response_model=AnalysisJob)
@@ -143,7 +143,7 @@ async def get_analysis_job(job_id: str, request: Request) -> AnalysisJob:
     job = JobStore(get_settings().data_dir).get(job_id)
     if job is None or job.session_id != session_id(request):
         raise HTTPException(status_code=404, detail="Analysis job not found")
-    return job
+    return _with_queue_position(job, request)
 
 
 @router.post(
@@ -179,7 +179,22 @@ async def retry_analysis_job(job_id: str, request: Request) -> AnalysisJob:
         sources[0],
         build_default_pipeline(settings).run,
     )
-    return job
+    return _with_queue_position(job, request)
+
+
+@router.delete("/jobs/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def cancel_analysis_job(job_id: str, request: Request) -> None:
+    settings = get_settings()
+    owner_session = session_id(request)
+    store = JobStore(settings.data_dir)
+    job = store.get(job_id)
+    if job is None or job.session_id != owner_session:
+        raise HTTPException(status_code=404, detail="Analysis job not found")
+    if job.status not in {AnalysisStatus.queued, AnalysisStatus.processing}:
+        raise HTTPException(status_code=409, detail="Analysis job is no longer running")
+    if not await request.app.state.analysis_queue.cancel(job_id):
+        raise HTTPException(status_code=409, detail="Analysis job is no longer running")
+    _delete_song_data(settings.data_dir, job, owner_session)
 
 
 @router.post(
@@ -232,7 +247,7 @@ async def reanalyze_song(song_id: str, request: Request) -> AnalysisJob:
         sources[0],
         build_default_pipeline(settings).run,
     )
-    return job
+    return _with_queue_position(job, request)
 
 
 @router.delete("/{song_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -248,14 +263,7 @@ async def delete_song(song_id: str, request: Request) -> None:
     if job.status in {AnalysisStatus.queued, AnalysisStatus.processing}:
         raise HTTPException(status_code=409, detail="Song analysis is still running")
 
-    take_store = TakeStore(settings.data_dir)
-    takes = take_store.list_for_song(song_id, session_id=owner_session)
-    PracticeStore(settings.data_dir).delete_for_song(song_id, owner_session)
-    for take in takes:
-        take_store.delete(take.take_id)
-        shutil.rmtree(settings.data_dir / "takes" / take.take_id, ignore_errors=True)
-    shutil.rmtree(settings.data_dir / "songs" / song_id, ignore_errors=True)
-    job_store.delete(job.job_id)
+    _delete_song_data(settings.data_dir, job, owner_session)
 
 
 @router.get("/{song_id}", response_model=SongProfile)
@@ -307,3 +315,19 @@ def _require_song_access(song_id: str, request: Request) -> None:
     settings = get_settings()
     if not JobStore(settings.data_dir).owns_song(song_id, session_id(request)):
         raise HTTPException(status_code=404, detail="Song profile not found")
+
+
+def _with_queue_position(job: AnalysisJob, request: Request) -> AnalysisJob:
+    queue = request.app.state.analysis_queue
+    return job.model_copy(update={"queue_position": queue.position(job.job_id)})
+
+
+def _delete_song_data(data_dir: Path, job: AnalysisJob, owner_session: str) -> None:
+    take_store = TakeStore(data_dir)
+    takes = take_store.list_for_song(job.song_id, session_id=owner_session)
+    PracticeStore(data_dir).delete_for_song(job.song_id, owner_session)
+    for take in takes:
+        take_store.delete(take.take_id)
+        shutil.rmtree(data_dir / "takes" / take.take_id, ignore_errors=True)
+    shutil.rmtree(data_dir / "songs" / job.song_id, ignore_errors=True)
+    JobStore(data_dir).delete(job.job_id)

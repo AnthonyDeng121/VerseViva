@@ -82,6 +82,9 @@ input[type="range"] { min-height: 24px; padding: 0; border: 0; background: trans
   font-weight: 800;
   cursor: pointer;
 }
+.input-warning { color: #c33f35; font-weight: 750; }
+.status-actions { display: flex; align-items: center; gap: 10px; }
+.status-actions .danger-link { border: 0; padding: 5px; color: #b5463c; background: transparent; font-weight: 800; cursor: pointer; }
 .hero-shortcut { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 14px; border: 0; border-radius: 0; background: #edf6f2; }
 .hero-shortcut > div { display: grid; gap: 4px; }
 .hero-shortcut p { font-size: 13px; }
@@ -100,6 +103,7 @@ input[type="range"] { min-height: 24px; padding: 0; border: 0; background: trans
 .progress-value { height: 100%; border-radius: inherit; background: #0e9f86; transition: width .35s ease; }
 .runtime-summary { display: grid; gap: 4px; padding: 11px 13px; border-radius: 11px; background: #edf6f2; }
 .runtime-summary span { color: #66746d; font-size: 11px; }
+.queue-note { padding: 11px 13px; border-radius: 11px; color: #765719; background: #fff5d8; font-size: 13px; font-weight: 700; }
 .runtime-details summary { color: #52615a; font-size: 12px; font-weight: 750; cursor: pointer; }
 .runtime-details ul { display: grid; gap: 5px; margin: 9px 0 0; padding: 0; list-style: none; }
 .runtime-details li { display: flex; justify-content: space-between; gap: 12px; color: #66746d; font-size: 11px; }
@@ -165,6 +169,7 @@ audio { width: 100%; }
 .legend b { margin-right: 5px; color: #087e6b; }
 
 .lyrics-stage-heading { display: flex; justify-content: space-between; align-items: end; gap: 18px; }
+.asr-lyrics-warning { margin: 8px 0 12px; padding: 9px 12px; border-radius: 10px; color: #9c3f32; background: #fce9e5; font-size: 13px; font-weight: 750; }
 .lyrics-mode-switch { display: flex; padding: 3px; border-radius: 12px; background: #e9efeb; }
 .lyrics-mode-switch button { min-height: 30px; border: 0; border-radius: 7px; padding: 4px 12px; color: #59665f; background: transparent; cursor: pointer; font-size: 12px; }
 .lyrics-mode-switch button.active { color: white; background: #087e6b; font-weight: 800; }

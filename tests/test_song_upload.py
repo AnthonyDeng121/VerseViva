@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -311,6 +312,29 @@ def test_completed_cached_song_can_be_deleted(upload_client) -> None:
     assert not (data_dir / "songs" / job.song_id).exists()
     assert not (data_dir / "jobs" / job.job_id).exists()
     assert client.get(f"/api/v1/songs/{job.song_id}").status_code == 404
+
+
+def test_running_song_analysis_can_be_cancelled_and_all_cache_removed(
+    upload_client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, data_dir = upload_client
+    uploaded = client.post(
+        "/api/v1/songs/analyze",
+        files={"audio": ("demo.mp3", b"ID3-demo", "audio/mpeg")},
+        data={"title": "Demo", "artist": "Artist"},
+    ).json()
+    song_dir = data_dir / "songs" / uploaded["song_id"]
+    song_dir.mkdir(parents=True)
+    (song_dir / "partial.tmp").write_text("partial", encoding="utf-8")
+    cancel = AsyncMock(return_value=True)
+    monkeypatch.setattr(client.app.state.analysis_queue, "cancel", cancel)
+
+    response = client.delete(f"/api/v1/songs/jobs/{uploaded['job_id']}")
+
+    assert response.status_code == 204
+    cancel.assert_awaited_once_with(uploaded["job_id"])
+    assert not (data_dir / "jobs" / uploaded["job_id"]).exists()
+    assert not song_dir.exists()
 
 
 def test_song_profile_query_returns_saved_profile(upload_client) -> None:

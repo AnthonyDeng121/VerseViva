@@ -201,6 +201,10 @@ function App() {
         setProfile(null);
         setPageMode("upload");
       }
+      if (job?.song_id === song.songId) {
+        window.localStorage.removeItem(ACTIVE_JOB_KEY);
+        setJob(null);
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "删除缓存歌曲失败");
     } finally {
@@ -230,6 +234,21 @@ function App() {
     setError(null);
   }
 
+  async function cancelAnalysis() {
+    if (!job || !window.confirm("确定取消分析吗？该任务的上传文件和分析缓存将全部删除。")) return;
+    setError(null);
+    try {
+      const response = await fetch(`/api/v1/songs/jobs/${job.job_id}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("取消分析失败，任务可能已经结束");
+      forgetSong(job.song_id);
+      window.localStorage.removeItem(ACTIVE_JOB_KEY);
+      setProfile(null);
+      setJob(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "取消分析失败");
+    }
+  }
+
   return (
     <main>
       <header className="hero">
@@ -257,7 +276,7 @@ function App() {
           <input name="audio" type="file" accept=".mp3,.wav,.flac,audio/*" required />
         </label>
         <label>
-          <span>歌曲名（必填，请区分大小写）</span>
+          <span className="input-warning">歌曲名（必填，请严格写出正确的歌名，区分大小写，不支持模糊匹配）</span>
           <input
             name="title"
             type="text"
@@ -268,7 +287,7 @@ function App() {
           />
         </label>
         <label>
-          <span>歌手（必填，请区分大小写）</span>
+          <span className="input-warning">歌手（必填，请严格写出正确的歌手名，区分大小写，不支持模糊匹配）</span>
           <input
             name="artist"
             type="text"
@@ -321,7 +340,7 @@ function App() {
         {cachedSongs.length === 0 && <p>还没有这台设备上传过的歌曲片段。</p>}
       </section></details>}
 
-      {job && !profile && (
+      {job && !profile && job.status !== "completed" && (
         <section className="status-card" aria-live="polite">
           <div className="status-line">
             <strong>
@@ -329,11 +348,23 @@ function App() {
                 ? `失败：${STAGE_LABELS[job.error?.stage ?? job.stage] ?? job.error?.stage}`
                 : STAGE_LABELS[job.stage] ?? job.stage}
             </strong>
-            <span>{job.progress}%</span>
+            <span className="status-actions">
+              <span>{job.progress}%</span>
+              {(job.status === "queued" || job.status === "processing") && (
+                <button className="danger-link" type="button"
+                  onClick={() => void cancelAnalysis()}>取消分析</button>
+              )}
+            </span>
           </div>
           <div className="progress-track">
             <div className="progress-value" style={{ width: `${job.progress}%` }} />
           </div>
+          {job.status === "queued" && job.queue_position != null && job.queue_position > 0 && (
+            <p className="queue-note">
+              已有其他用户正在分析歌曲。由于服务器算力有限，需要排队等待；
+              您目前排在第 {job.queue_position} 位，请您谅解。
+            </p>
+          )}
           {job.audio_duration_seconds && job.estimated_total_seconds
             ? <div className="runtime-summary">
                 <strong>{formatDuration(job.audio_duration_seconds)} 音频预计约需 {formatDuration(job.estimated_total_seconds)}</strong>
@@ -556,6 +587,12 @@ function ProfileView({
           </div>
         )}
       </div>
+
+      {profile.analysis.lyricsSource === "asr" && (
+        <p className="asr-lyrics-warning" role="status">
+          联网搜索歌词失败，使用自动识别，可能误差较大，请理解！
+        </p>
+      )}
 
       {lyricsMode === "layers" && profile.vocalParts.length > 0
         ? <VocalLayers

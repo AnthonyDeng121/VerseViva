@@ -27,11 +27,22 @@ class AnalysisTaskQueue:
         self._queue: asyncio.Queue[AnalysisTask] = asyncio.Queue()
         self._worker: asyncio.Task[None] | None = None
         self._scheduled_job_ids: set[str] = set()
+        self._pending_job_ids: list[str] = []
+        self._cancelled_job_ids: set[str] = set()
+        self._active_runner_task: asyncio.Task[None] | None = None
         self.active_job_id: str | None = None
 
     @property
     def pending_count(self) -> int:
-        return self._queue.qsize()
+        return len(self._pending_job_ids)
+
+    def position(self, job_id: str) -> int | None:
+        if job_id == self.active_job_id:
+            return 0
+        try:
+            return self._pending_job_ids.index(job_id) + 1
+        except ValueError:
+            return None
 
     def start(self) -> None:
         if self._worker is None or self._worker.done():
@@ -58,7 +69,23 @@ class AnalysisTaskQueue:
         if job_id in self._scheduled_job_ids:
             return False
         self._scheduled_job_ids.add(job_id)
+        self._pending_job_ids.append(job_id)
         await self._queue.put(AnalysisTask(job_id=job_id, source=source, runner=runner))
+        return True
+
+    async def cancel(self, job_id: str) -> bool:
+        if job_id in self._pending_job_ids:
+            self._pending_job_ids.remove(job_id)
+            self._scheduled_job_ids.discard(job_id)
+            self._cancelled_job_ids.add(job_id)
+            return True
+        if job_id != self.active_job_id or self._active_runner_task is None:
+            return False
+        self._active_runner_task.cancel()
+        try:
+            await self._active_runner_task
+        except asyncio.CancelledError:
+            pass
         return True
 
     async def join(self) -> None:
@@ -67,15 +94,27 @@ class AnalysisTaskQueue:
     async def _run(self) -> None:
         while True:
             task = await self._queue.get()
+            if task.job_id in self._cancelled_job_ids:
+                self._cancelled_job_ids.discard(task.job_id)
+                self._queue.task_done()
+                continue
+            if task.job_id in self._pending_job_ids:
+                self._pending_job_ids.remove(task.job_id)
             self.active_job_id = task.job_id
             try:
-                await task.runner(task.job_id, task.source)
+                self._active_runner_task = asyncio.create_task(
+                    task.runner(task.job_id, task.source),
+                    name=f"verseviva-analysis-{task.job_id}",
+                )
+                await self._active_runner_task
             except asyncio.CancelledError:
-                raise
+                if asyncio.current_task() is not None and asyncio.current_task().cancelling():
+                    raise
             except Exception as exc:  # pragma: no cover - pipeline normally persists its failures
                 logger.exception("Unhandled song analysis failure for %s", task.job_id)
                 self._persist_unhandled_failure(task.job_id, exc)
             finally:
+                self._active_runner_task = None
                 self.active_job_id = None
                 self._scheduled_job_ids.discard(task.job_id)
                 self._queue.task_done()
