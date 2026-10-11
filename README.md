@@ -263,6 +263,8 @@ POST /api/v1/songs/analyze
 GET  /api/v1/songs/jobs/{job_id}
 GET  /api/v1/songs/jobs/latest
 POST /api/v1/songs/jobs/{job_id}/retry
+POST /api/v1/songs/{song_id}/reanalyze
+DELETE /api/v1/songs/{song_id}
 GET  /api/v1/songs/{song_id}
 GET  /api/v1/songs/{song_id}/audio/source
 GET  /api/v1/songs/{song_id}/audio/vocals
@@ -293,6 +295,8 @@ Take 上传接受浏览器常见的 WebM、MP4/M4A、OGG 和 WAV。Hero 网页�
 内部仍保留 WAV 母文件用于音频分析和降级，不应把所有内部音频描述成 MP3。
 
 ## Demo 定型状态
+
+已缓存的用户上传歌曲支持删除和基于原始上传文件重新分析；删除会同时清理该会话下的歌曲派生产物、录音与练唱记录，Hero 示例不允许删除。歌曲分析阶段预估采用当前公网 CPU 实测基准，实际耗时仍会随片段内容和外部模型响应变化。
 
 当前已经完成歌曲分析、三首 Hero 预缓存、语言标记、双轨歌词、用户录音、多 Take、共享音频时钟、
 拖拽对齐、音量/静音、PracticeAttempt 前后比较、Memory 聚合、SQLite 持久化、结构化阶段耗时和

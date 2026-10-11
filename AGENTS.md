@@ -90,6 +90,8 @@ Pipeline 每阶段记录实际/估算耗时、API 调用次数、缓存命中和
 - `practice-language-v6` 将长录音按最多4句主轨或3段次轨分批，并按用户录音相对时间窗同步裁切用户音频与参考音频，避免长请求过载和重复副轨歌词串段。
 - 当前会话可导出 192 kbps MP3 整体混音；导出必须应用 Take 的 mute/gain、延迟补偿、手动偏移和整体增益。
 - 公网 Demo 使用后端签名的 HttpOnly、Secure、SameSite=Lax 匿名会话 Cookie；歌曲 Job、非 Hero Song、Take、录音、Attempt、Memory、混音和删除操作都按该会话隔离。客户端提交的 `session_id` 仅为旧接口兼容字段，不得作为授权依据；无归属的旧数据不得在生产环境公开。
+- 用户上传并已缓存的歌曲支持基于原始上传文件重新分析，也支持连同该会话下歌曲派生产物、Take 和 PracticeAttempt 一并删除；Hero 只读缓存不允许通过该入口删除或重分析。
+- 双轨歌词布局允许主、副轨时间边界存在 500 ms 以内的模型抖动，仍按最近的主轨行并排显示；练唱完成后“仅分析”和“分析并保存”都必须刷新 Memory 统计。
 - 后端回归、Ruff、前端 test/lint/build 构成冻结检查。
 
 当前 Hero：
@@ -131,7 +133,7 @@ python scripts/hero_assets.py restore artifacts/verseviva-hero-assets.zip --data
 
 ## 6. Demo 冻结结论与复赛优化
 
-当前 Demo 代码链路已定型：歌曲上传与恢复、单并发歌曲分析队列、三首 Hero、语言技巧展示、主/次轨录音、Gemini
+当前 Demo 代码链路已定型：歌曲上传、缓存删除与重新分析、单并发歌曲分析队列、三首 Hero、语言技巧展示、主/次轨录音、Gemini
 练唱分析、Attempt/Memory、多 Take 对齐混音与 MP3 导出均已有实现和回归覆盖。Hero 部署包已通过
 空数据目录恢复验收；冻结检查为后端 117 项、前端 12 项全绿，Ruff、ESLint 和生产构建通过。
 

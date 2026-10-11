@@ -66,11 +66,11 @@ STAGE_PROGRESS = {
 }
 STAGE_ESTIMATE = {
     AnalysisStage.probing_audio: (2.0, 0.0),
-    AnalysisStage.separating_vocals: (8.0, 3.1),
+    AnalysisStage.separating_vocals: (5.0, 1.7),
     AnalysisStage.fetching_lyrics: (5.0, 0.0),
-    AnalysisStage.aligning_lyrics: (20.0, 14.0),
-    AnalysisStage.analyzing_vocal_parts: (8.0, 1.7),
-    AnalysisStage.analyzing_language: (10.0, 5.0),
+    AnalysisStage.aligning_lyrics: (10.0, 2.7),
+    AnalysisStage.analyzing_vocal_parts: (5.0, 0.5),
+    AnalysisStage.analyzing_language: (10.0, 2.7),
     AnalysisStage.building_profile: (6.0, 0.1),
 }
 

@@ -251,6 +251,68 @@ def test_failed_job_can_retry_with_original_audio(
     assert response.json()["error"] is None
 
 
+def test_completed_song_can_be_reanalyzed_from_original_audio(
+    upload_client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, data_dir = upload_client
+    calls: list[tuple[str, Path]] = []
+
+    class StubPipeline:
+        async def run(self, job_id: str, source: Path) -> None:
+            calls.append((job_id, source))
+
+    uploaded = client.post(
+        "/api/v1/songs/analyze",
+        files={"audio": ("demo.mp3", b"ID3-demo", "audio/mpeg")},
+        data={"title": "Demo", "artist": "Artist"},
+    ).json()
+    store = JobStore(data_dir)
+    job = store.get(uploaded["job_id"])
+    assert job is not None
+    job.status = AnalysisStatus.completed
+    job.stage = AnalysisStage.completed
+    job.progress = 100
+    store.save(job)
+    ProfileStore(data_dir).save(make_profile().model_copy(update={"song_id": job.song_id}))
+    derived = data_dir / "jobs" / job.job_id / "alignment"
+    derived.mkdir()
+    (derived / "result.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(songs_route, "build_default_pipeline", lambda settings: StubPipeline())
+
+    response = client.post(f"/api/v1/songs/{job.song_id}/reanalyze")
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "queued"
+    assert response.json()["attempt_count"] == 1
+    assert not derived.exists()
+    assert not (data_dir / "songs" / job.song_id).exists()
+    assert (data_dir / "jobs" / job.job_id / "input" / "source.mp3").is_file()
+
+
+def test_completed_cached_song_can_be_deleted(upload_client) -> None:
+    client, data_dir = upload_client
+    uploaded = client.post(
+        "/api/v1/songs/analyze",
+        files={"audio": ("demo.mp3", b"ID3-demo", "audio/mpeg")},
+        data={"title": "Demo", "artist": "Artist"},
+    ).json()
+    store = JobStore(data_dir)
+    job = store.get(uploaded["job_id"])
+    assert job is not None
+    job.status = AnalysisStatus.completed
+    job.stage = AnalysisStage.completed
+    job.progress = 100
+    store.save(job)
+    ProfileStore(data_dir).save(make_profile().model_copy(update={"song_id": job.song_id}))
+
+    response = client.delete(f"/api/v1/songs/{job.song_id}")
+
+    assert response.status_code == 204
+    assert not (data_dir / "songs" / job.song_id).exists()
+    assert not (data_dir / "jobs" / job.job_id).exists()
+    assert client.get(f"/api/v1/songs/{job.song_id}").status_code == 404
+
+
 def test_song_profile_query_returns_saved_profile(upload_client) -> None:
     client, data_dir = upload_client
     song_id = "song_00000000000000000000000000000003"

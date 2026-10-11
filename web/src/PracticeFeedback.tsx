@@ -64,13 +64,13 @@ export function PracticeFeedback({ attempt, memory, sentences }: {
                   <p className="practice-action">下一遍：{item.action}</p>
                 </li>)}
               </ol>
-            : <p className="practice-success">这句话的现有目标没有发现可靠差异。</p>}
+            : <p className="practice-success">唱得不错！暂无改进建议。</p>}
       </div>
       <button className="hint-arrow" type="button" aria-label="下一句"
         disabled={index >= cards.length - 1} onClick={() => setIndex((value) => value + 1)}>›</button>
     </div>
     {memory && <p className="feedback-memory-count">
-      本会话累计：{memory.reliableAttempts}/{memory.totalAttempts} 次可靠分析；当前句历史以上方比较为准
+      本会话累计 {memory.totalAttempts} 次分析，其中 {memory.reliableAttempts} 次可靠
     </p>}
   </section>;
 }

@@ -484,7 +484,7 @@ export function RecordingStudio({
       }
       const created = await response.json() as RecordingTake;
       if (purpose === "guided_practice") {
-        const analysisSucceeded = await analyzeTake(created.takeId, saveTake);
+        const analysisSucceeded = await analyzeTake(created.takeId);
         if (!saveTake) {
           const deleted = await fetch(
             `/api/v1/takes/${created.takeId}?preserve_attempt=${analysisSucceeded}`,
@@ -515,7 +515,7 @@ export function RecordingStudio({
     }
   }
 
-  async function analyzeTake(takeId: string, refreshMemory = true, force = false) {
+  async function analyzeTake(takeId: string, force = false) {
     setAnalyzingTakeId(takeId);
     try {
       const started = await fetch(
@@ -549,12 +549,10 @@ export function RecordingStudio({
         throw new Error(attempt.insufficientReason ?? "本次练唱分析失败，请稍后重试。");
       }
       setAttempts((current) => [...current.filter((item) => item.takeId !== takeId), attempt]);
-      if (refreshMemory) {
-        const memoryResponse = await fetch(
-          `/api/v1/practice/memory?session_id=${encodeURIComponent(sessionId)}`,
-        );
-        if (memoryResponse.ok) setMemory(await memoryResponse.json() as PracticeMemory);
-      }
+      const memoryResponse = await fetch(
+        `/api/v1/practice/memory?session_id=${encodeURIComponent(sessionId)}`,
+      );
+      if (memoryResponse.ok) setMemory(await memoryResponse.json() as PracticeMemory);
       return true;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "本次练唱分析失败");
@@ -940,7 +938,7 @@ export function RecordingStudio({
             </button>
             {languageAnalysisEnabled && take.purpose === "guided_practice" && <button type="button" className="secondary-button"
               disabled={analyzingTakeId === take.takeId}
-              onClick={() => void analyzeTake(take.takeId, true, true)}>
+              onClick={() => void analyzeTake(take.takeId, true)}>
               {analyzingTakeId === take.takeId ? "分析中…" : "重分析"}
             </button>}
             <button type="button" className="secondary-button"

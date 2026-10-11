@@ -1,6 +1,6 @@
 import React, { FormEvent, useEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
-import { normalizeLoopTime } from "./audioTimeline";
+import { alignVocalRows, normalizeLoopTime } from "./audioTimeline";
 import { RecordingStudio } from "./RecordingStudio";
 import type { AnalysisJob, CharacterMark, LanguageHint, SongProfile, SongSentence, VocalPart } from "./songTypes";
 import "./styles.css";
@@ -35,6 +35,7 @@ function App() {
   const [selectedHint, setSelectedHint] = useState<LanguageHint | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [managingSongId, setManagingSongId] = useState<string | null>(null);
   const [loadingHeroId, setLoadingHeroId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
@@ -180,6 +181,49 @@ function App() {
     }
   }
 
+  function forgetSong(songId: string) {
+    setCachedSongs((current) => {
+      const next = current.filter((song) => song.songId !== songId);
+      window.localStorage.setItem(CACHED_SONGS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  async function deleteCachedSong(song: CachedSong) {
+    if (!window.confirm(`确定删除“${song.title}”吗？歌曲缓存、录音和练唱记录都会删除。`)) return;
+    setManagingSongId(song.songId);
+    setError(null);
+    try {
+      const response = await fetch(`/api/v1/songs/${song.songId}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("删除缓存歌曲失败");
+      forgetSong(song.songId);
+      if (profile?.songId === song.songId) {
+        setProfile(null);
+        setPageMode("upload");
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "删除缓存歌曲失败");
+    } finally {
+      setManagingSongId(null);
+    }
+  }
+
+  async function reanalyzeCachedSong(song: CachedSong) {
+    setManagingSongId(song.songId);
+    setError(null);
+    setProfile(null);
+    setSelectedHint(null);
+    try {
+      const response = await fetch(`/api/v1/songs/${song.songId}/reanalyze`, { method: "POST" });
+      if (!response.ok) throw new Error("重新分析缓存歌曲失败");
+      setJob(await response.json() as AnalysisJob);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "重新分析缓存歌曲失败");
+    } finally {
+      setManagingSongId(null);
+    }
+  }
+
   function dismissJob() {
     window.localStorage.removeItem(ACTIVE_JOB_KEY);
     setJob(null);
@@ -264,10 +308,16 @@ function App() {
 
       {pageMode === "upload" && <details className="home-collapsible">
         <summary>已缓存歌曲</summary><section className="song-cache">
-        <div>{cachedSongs.map((song) => <button className="secondary-button" type="button"
-          key={song.songId} onClick={() => void loadHero(song.songId)}>
-          {song.title}{song.artist ? ` · ${song.artist}` : ""}
-        </button>)}</div>
+        <div>{cachedSongs.map((song) => <div className="cached-song" key={song.songId}>
+          <button className="secondary-button" type="button"
+            disabled={managingSongId === song.songId} onClick={() => void loadHero(song.songId)}>
+            {song.title}{song.artist ? ` · ${song.artist}` : ""}
+          </button>
+          <button type="button" disabled={managingSongId === song.songId}
+            onClick={() => void reanalyzeCachedSong(song)}>重新分析</button>
+          <button className="danger-link" type="button" disabled={managingSongId === song.songId}
+            onClick={() => void deleteCachedSong(song)}>删除</button>
+        </div>)}</div>
         {cachedSongs.length === 0 && <p>还没有这台设备上传过的歌曲片段。</p>}
       </section></details>}
 
@@ -678,20 +728,7 @@ function VocalLayers({
   const secondary = vocalParts
     .filter((part) => part.lane === "secondary")
     .sort((left, right) => left.startSeconds - right.startSeconds);
-  const assignedSecondary = new Set<string>();
-  const rows = primary.map((part) => {
-    const overlapping = secondary.filter((candidate) => {
-      if (assignedSecondary.has(candidate.id)) return false;
-      const overlaps = candidate.startSeconds < part.endSeconds
-        && candidate.endSeconds > part.startSeconds;
-      if (overlaps) assignedSecondary.add(candidate.id);
-      return overlaps;
-    });
-    return { primary: [part], secondary: overlapping };
-  });
-  for (const part of secondary) {
-    if (!assignedSecondary.has(part.id)) rows.push({ primary: [], secondary: [part] });
-  }
+  const rows = alignVocalRows(primary, secondary);
   const activeRow = rows.findIndex((row) => [...row.primary, ...row.secondary].some(
     (part) => currentTime >= part.startSeconds && currentTime < part.endSeconds,
   ));

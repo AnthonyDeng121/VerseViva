@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 from uuid import uuid4
 
@@ -10,7 +11,9 @@ from server.pipelines.song_analysis import build_default_pipeline
 from server.services.anonymous_session import session_id
 from server.services.language import add_pronunciation_guides
 from server.storage.job_store import JobStore
+from server.storage.practice_store import PracticeStore
 from server.storage.profile_store import ProfileStore
+from server.storage.take_store import TakeStore
 
 router = APIRouter()
 PUBLIC_HERO_SONG_IDS = {
@@ -177,6 +180,82 @@ async def retry_analysis_job(job_id: str, request: Request) -> AnalysisJob:
         build_default_pipeline(settings).run,
     )
     return job
+
+
+@router.post(
+    "/{song_id}/reanalyze",
+    response_model=AnalysisJob,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def reanalyze_song(song_id: str, request: Request) -> AnalysisJob:
+    if song_id in PUBLIC_HERO_SONG_IDS:
+        raise HTTPException(status_code=409, detail="Hero songs cannot be reanalyzed here")
+    settings = get_settings()
+    store = JobStore(settings.data_dir)
+    job = store.for_song(song_id, session_id(request))
+    if job is None:
+        raise HTTPException(status_code=404, detail="Song profile not found")
+    if job.status in {AnalysisStatus.queued, AnalysisStatus.processing}:
+        raise HTTPException(status_code=409, detail="Song analysis is already running")
+    input_dir = settings.data_dir / "jobs" / job.job_id / "input"
+    sources = [
+        path
+        for suffix in ALLOWED_CONTENT_TYPES
+        if (path := input_dir / f"source{suffix}").is_file()
+    ]
+    if len(sources) != 1:
+        raise HTTPException(status_code=409, detail="Original audio is missing or ambiguous")
+
+    job_dir = settings.data_dir / "jobs" / job.job_id
+    for child in job_dir.iterdir():
+        if child.name in {"input", "job.json"}:
+            continue
+        if child.is_dir():
+            shutil.rmtree(child, ignore_errors=True)
+        else:
+            child.unlink(missing_ok=True)
+    shutil.rmtree(settings.data_dir / "songs" / song_id, ignore_errors=True)
+    job.status = AnalysisStatus.queued
+    job.stage = AnalysisStage.queued
+    job.progress = 0
+    job.error = None
+    job.warnings = []
+    job.audio_duration_seconds = None
+    job.estimated_total_seconds = None
+    job.estimated_remaining_seconds = None
+    job.api_call_count = 0
+    job.stage_runtimes = []
+    job.attempt_count += 1
+    store.save(job)
+    await request.app.state.analysis_queue.enqueue(
+        job.job_id,
+        sources[0],
+        build_default_pipeline(settings).run,
+    )
+    return job
+
+
+@router.delete("/{song_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_song(song_id: str, request: Request) -> None:
+    if song_id in PUBLIC_HERO_SONG_IDS:
+        raise HTTPException(status_code=409, detail="Hero songs cannot be deleted")
+    settings = get_settings()
+    owner_session = session_id(request)
+    job_store = JobStore(settings.data_dir)
+    job = job_store.for_song(song_id, owner_session)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Song profile not found")
+    if job.status in {AnalysisStatus.queued, AnalysisStatus.processing}:
+        raise HTTPException(status_code=409, detail="Song analysis is still running")
+
+    take_store = TakeStore(settings.data_dir)
+    takes = take_store.list_for_song(song_id, session_id=owner_session)
+    PracticeStore(settings.data_dir).delete_for_song(song_id, owner_session)
+    for take in takes:
+        take_store.delete(take.take_id)
+        shutil.rmtree(settings.data_dir / "takes" / take.take_id, ignore_errors=True)
+    shutil.rmtree(settings.data_dir / "songs" / song_id, ignore_errors=True)
+    job_store.delete(job.job_id)
 
 
 @router.get("/{song_id}", response_model=SongProfile)

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  alignVocalRows,
   buildTrackSlotId,
   calculateTimelinePlacement,
   canTransitionRecorder,
@@ -78,6 +79,27 @@ describe("practice analysis estimate", () => {
   it("keeps estimated progress below completion until a result arrives", () => {
     expect(estimateAnalysisProgress(0, 60)).toBe(8);
     expect(estimateAnalysisProgress(120, 60)).toBe(92);
+  });
+});
+
+describe("dual-lane lyric alignment", () => {
+  it("keeps a secondary line beside the nearest primary line across a short boundary gap", () => {
+    const primary = [{ id: "primary", startSeconds: 16.55, endSeconds: 17.87 }];
+    const secondary = [{ id: "secondary", startSeconds: 18.14, endSeconds: 20.24 }];
+
+    expect(alignVocalRows(primary, secondary)).toEqual([
+      { primary, secondary },
+    ]);
+  });
+
+  it("leaves a genuinely separate secondary line in its own row", () => {
+    const primary = [{ id: "primary", startSeconds: 1, endSeconds: 2 }];
+    const secondary = [{ id: "secondary", startSeconds: 4, endSeconds: 5 }];
+
+    expect(alignVocalRows(primary, secondary)).toEqual([
+      { primary, secondary: [] },
+      { primary: [], secondary },
+    ]);
   });
 });
 

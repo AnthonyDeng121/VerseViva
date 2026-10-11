@@ -1,5 +1,6 @@
 import json
 import re
+import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -65,6 +66,29 @@ class JobStore:
             if job.song_id == song_id and job.session_id == session_id:
                 return True
         return False
+
+    def for_song(self, song_id: str, session_id: str) -> AnalysisJob | None:
+        jobs = []
+        for source in self.jobs_dir.glob("job_*/job.json"):
+            try:
+                job = AnalysisJob.model_validate_json(source.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if job.song_id == song_id and job.session_id == session_id:
+                jobs.append(job)
+        return max(jobs, key=lambda job: job.updated_at, default=None)
+
+    def delete(self, job_id: str) -> None:
+        if JOB_ID_PATTERN.fullmatch(job_id) is None:
+            return
+        shutil.rmtree(self.jobs_dir / job_id, ignore_errors=True)
+        latest_pointer = self.jobs_dir / "latest-job-id"
+        if latest_pointer.is_file():
+            try:
+                if latest_pointer.read_text(encoding="utf-8").strip() == job_id:
+                    latest_pointer.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     def recover_interrupted_jobs(self) -> list[AnalysisJob]:
         """Turn states orphaned by a worker restart into explicit retryable failures."""

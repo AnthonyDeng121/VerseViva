@@ -106,6 +106,39 @@ export function summarizeTakeLyrics(lyrics: string[], lane: "primary" | "seconda
   return `${words.slice(0, 2).join(" ")} … ${words.slice(-2).join(" ")}`;
 }
 
+export type VocalRowPart = {
+  id: string;
+  startSeconds: number;
+  endSeconds: number;
+};
+
+export function alignVocalRows<T extends VocalRowPart>(
+  primary: T[],
+  secondary: T[],
+  toleranceSeconds = 0.5,
+) {
+  const rows = primary.map((part) => ({ primary: [part], secondary: [] as T[] }));
+  for (const candidate of secondary) {
+    let bestIndex = -1;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    rows.forEach((row, index) => {
+      const anchor = row.primary[0];
+      const gap = candidate.startSeconds > anchor.endSeconds
+        ? candidate.startSeconds - anchor.endSeconds
+        : anchor.startSeconds > candidate.endSeconds
+          ? anchor.startSeconds - candidate.endSeconds
+          : 0;
+      if (gap <= toleranceSeconds && gap < bestDistance) {
+        bestIndex = index;
+        bestDistance = gap;
+      }
+    });
+    if (bestIndex >= 0) rows[bestIndex].secondary.push(candidate);
+    else rows.push({ primary: [], secondary: [candidate] });
+  }
+  return rows;
+}
+
 const RECORDER_TRANSITIONS: Record<RecorderState, readonly RecorderState[]> = {
   idle: ["requesting"],
   requesting: ["idle", "recording"],

@@ -66,6 +66,13 @@ class PracticeStore:
         with self._connect() as connection:
             connection.execute("DELETE FROM practice_attempts WHERE take_id = ?", (take_id,))
 
+    def delete_for_song(self, song_id: str, session_id: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                "DELETE FROM practice_attempts WHERE song_id = ? AND session_id = ?",
+                (song_id, session_id),
+            )
+
     def list_for_session(
         self,
         session_id: str,
